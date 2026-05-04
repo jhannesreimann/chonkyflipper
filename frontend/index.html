@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChonkyFlipper - IoT Pentesting Rig</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎯 ChonkyFlipper</h1>
+            <div class="status-indicator" id="status-indicator">
+                <span class="dot offline"></span>
+                <span id="status-text">Offline</span>
+            </div>
+        </header>
+
+        <!-- System Info -->
+        <section class="card system-card">
+            <h2>📊 System</h2>
+            <div class="system-grid">
+                <div class="info-item">
+                    <span class="label">Hostname</span>
+                    <span class="value" id="hostname">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Uptime</span>
+                    <span class="value" id="uptime">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Temperature</span>
+                    <span class="value" id="temp">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Battery</span>
+                    <span class="value" id="battery">UPS Active</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Module Status -->
+        <section class="card">
+            <h2>🔧 Modules</h2>
+            <div class="module-grid" id="module-grid">
+                <div class="module-item" data-module="wifi">
+                    <span class="module-icon">📡</span>
+                    <span class="module-name">Wi-Fi</span>
+                    <span class="module-status" id="status-wifi">-</span>
+                </div>
+                <div class="module-item" data-module="bluetooth">
+                    <span class="module-icon">📶</span>
+                    <span class="module-name">Bluetooth</span>
+                    <span class="module-status" id="status-bluetooth">-</span>
+                </div>
+                <div class="module-item" data-module="ir">
+                    <span class="module-icon">📺</span>
+                    <span class="module-name">IR</span>
+                    <span class="module-status" id="status-ir">-</span>
+                </div>
+                <div class="module-item" data-module="cc1101">
+                    <span class="module-icon">📻</span>
+                    <span class="module-name">Sub-1GHz</span>
+                    <span class="module-status" id="status-cc1101">-</span>
+                </div>
+                <div class="module-item" data-module="pn532">
+                    <span class="module-icon">💳</span>
+                    <span class="module-name">NFC</span>
+                    <span class="module-status" id="status-pn532">-</span>
+                </div>
+                <div class="module-item" data-module="zigbee">
+                    <span class="module-icon">🏠</span>
+                    <span class="module-name">Zigbee</span>
+                    <span class="module-status" id="status-zigbee">-</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Wi-Fi Scanner -->
+        <section class="card module-panel" id="panel-wifi">
+            <h2>📡 Wi-Fi Scanner</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="wifiScan()">🔍 Scan</button>
+                <button class="btn btn-secondary" onclick="wifiMonitorMode()">📡 Monitor Mode</button>
+                <button class="btn btn-danger" onclick="wifiCapture()">💾 Capture</button>
+            </div>
+            <div class="table-container" id="wifi-results">
+                <p class="placeholder">Click Scan to find networks...</p>
+            </div>
+        </section>
+
+        <!-- BLE Scanner -->
+        <section class="card module-panel" id="panel-bluetooth">
+            <h2>📶 Bluetooth Scanner</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="bleScan()">🔍 Scan BLE</button>
+                <button class="btn btn-secondary" onclick="bleBeacons()">📡 Beacons</button>
+            </div>
+            <div class="table-container" id="ble-results">
+                <p class="placeholder">Click Scan to find BLE devices...</p>
+            </div>
+        </section>
+
+        <!-- IR Control -->
+        <section class="card module-panel" id="panel-ir">
+            <h2>📺 Infrared</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="irRecord()">🔴 Record</button>
+                <button class="btn btn-secondary" onclick="irTransmit()">📤 Transmit</button>
+            </div>
+            <div class="signal-list" id="ir-signals">
+                <p class="placeholder">No signals recorded yet...</p>
+            </div>
+        </section>
+
+        <!-- Sub-1GHz -->
+        <section class="card module-panel" id="panel-cc1101">
+            <h2>📻 Sub-1GHz (433/868MHz)</h2>
+            <div class="freq-selector">
+                <label>Frequency:</label>
+                <select id="subghz-freq">
+                    <option value="433.92">433.92 MHz (Garage/Sockets)</option>
+                    <option value="868.35">868.35 MHz (ISM Band)</option>
+                    <option value="315.00">315.00 MHz (US Remotes)</option>
+                </select>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="subghzRecord()">🔴 Record</button>
+                <button class="btn btn-secondary" onclick="subghzTransmit()">📤 Replay</button>
+            </div>
+            <div class="signal-list" id="subghz-signals">
+                <p class="placeholder">No signals recorded yet...</p>
+            </div>
+        </section>
+
+        <!-- NFC/RFID -->
+        <section class="card module-panel" id="panel-pn532">
+            <h2>💳 NFC / RFID</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="nfcRead()">📖 Read Card</button>
+                <button class="btn btn-secondary" onclick="nfcClone()">📋 Clone</button>
+            </div>
+            <div class="card-display" id="nfc-card">
+                <p class="placeholder">Hold card near reader...</p>
+            </div>
+        </section>
+
+        <!-- BadUSB -->
+        <section class="card module-panel" id="panel-badusb">
+            <h2>💉 BadUSB</h2>
+            <div class="warning-box">
+                ⚠️ USB-C port must be connected to target PC
+            </div>
+            <div class="button-group">
+                <button class="btn btn-danger" onclick="badusbExecute('rickroll')">🎵 Rickroll</button>
+                <button class="btn btn-danger" onclick="badusbExecute('reverse_shell')">🐚 Reverse Shell</button>
+                <button class="btn btn-danger" onclick="badusbExecute('wifi_grab')">📶 WiFi Grab</button>
+            </div>
+        </section>
+
+        <!-- Settings / Maintenance -->
+        <section class="card">
+            <h2>⚙️ Settings</h2>
+            
+            <div class="settings-section">
+                <h3>Network Mode</h3>
+                <div id="network-status-display">
+                    <p>Mode: <span id="current-mode">Loading...</span></p>
+                    <p>Internet: <span id="internet-status">Unknown</span></p>
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="showMaintenanceDialog()">
+                        🔧 Maintenance Mode
+                    </button>
+                    <button class="btn btn-secondary" onclick="restoreAPMode()">
+                        📡 Back to AP Mode
+                    </button>
+                </div>
+            </div>
+            
+            <div class="settings-section">
+                <h3>System Update</h3>
+                <p class="hint">Requires maintenance mode with internet</p>
+                <button class="btn btn-primary" onclick="runSystemUpdate()">
+                    🔄 Update from GitHub
+                </button>
+                <div id="update-output" class="output-box" style="display:none;"></div>
+            </div>
+            
+            <div class="settings-section">
+                <h3>Connection Info</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="label">AP SSID</span>
+                        <span class="value">Chonky_Control</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">AP Password</span>
+                        <span class="value">chonky123</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">AP IP</span>
+                        <span class="value">192.168.4.1</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Maintenance Mode Dialog (hidden by default) -->
+        <div id="maintenance-dialog" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3>🔧 Enable Maintenance Mode</h3>
+                <p>Connect ChonkyFlipper to an external WiFi for internet access.</p>
+                <div class="form-group">
+                    <label>SSID (WiFi Name):</label>
+                    <input type="text" id="maintenance-ssid" placeholder="YourWiFi">
+                </div>
+                <div class="form-group">
+                    <label>Password:</label>
+                    <input type="password" id="maintenance-password" placeholder="password">
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="enableMaintenanceMode()">Connect</button>
+                    <button class="btn btn-secondary" onclick="hideMaintenanceDialog()">Cancel</button>
+                </div>
+                <p class="hint">⚠️ You will be disconnected from Chonky_Control. Reconnect via the new network.</p>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <section class="card">
+            <h2>📋 Activity Log</h2>
+            <div class="log-container" id="activity-log">
+                <div class="log-entry">System initialized...</div>
+            </div>
+        </section>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
