@@ -47,7 +47,6 @@ Two separate voltage rails distribute power: 5V for the infrared modules, 3.3V f
 ### Prerequisites
 
 * Kali Linux ARM64 for Raspberry Pi
-* Enabled SPI and I2C interfaces (raspi-config)
 * Physical hardware assembly completed
 
 ### Automated Install
@@ -67,13 +66,12 @@ For custom installations or development:
 
 ```bash
 sudo apt update
-sudo apt install python3-pip python3-venv pigpio aircrack-ng tcpdump nmap
+sudo apt install python3-pip python3-venv aircrack-ng tcpdump nmap hostapd dnsmasq nginx
 
-pip3 install flask flask-cors pigpio gunicorn
-
-sudo systemctl enable pigpiod
-sudo systemctl start pigpiod
+pip3 install flask flask-cors gunicorn
 ```
+
+I2C and SPI are enabled automatically by `install.sh` via `/boot/firmware/config.txt`. No `raspi-config` required.
 
 ## Project Structure
 
@@ -166,7 +164,7 @@ All captured data (pcap files, IR signals, RF recordings, card data) stores loca
 
 **Completed:** Backend API skeleton, mobile frontend, installation automation, hardware assembly documentation.
 
-**Pending:** Hardware driver implementation for SPI/I2C communication, pigpio integration for precise timing, Zigbee2MQTT setup, USB gadget mode configuration for BadUSB, 3D printed enclosure design.
+**Pending:** SPI/I2C driver implementation for CC1101/PN532, pigpio integration for IR timing, hardware wiring (breadboard), Zigbee2MQTT setup, USB gadget mode for BadUSB, 3D printed enclosure.
 
 ## Disclaimer
 
