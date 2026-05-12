@@ -77,11 +77,17 @@ if [ -f /boot/firmware/config.txt ]; then
 else
     BOOT_CONFIG=/boot/config.txt
 fi
-if ! grep -q "dtparam=i2c_arm=on" "$BOOT_CONFIG"; then
-    echo "dtparam=i2c_arm=on" >> "$BOOT_CONFIG"
+if ! grep -q "^dtparam=i2c_arm=on" "$BOOT_CONFIG"; then
+    sed -i 's/^#dtparam=i2c_arm=on/dtparam=i2c_arm=on/g' "$BOOT_CONFIG"
+    if ! grep -q "^dtparam=i2c_arm=on" "$BOOT_CONFIG"; then
+        echo "dtparam=i2c_arm=on" >> "$BOOT_CONFIG"
+    fi
 fi
-if ! grep -q "dtparam=spi=on" "$BOOT_CONFIG"; then
-    echo "dtparam=spi=on" >> "$BOOT_CONFIG"
+if ! grep -q "^dtparam=spi=on" "$BOOT_CONFIG"; then
+    sed -i 's/^#dtparam=spi=on/dtparam=spi=on/g' "$BOOT_CONFIG"
+    if ! grep -q "^dtparam=spi=on" "$BOOT_CONFIG"; then
+        echo "dtparam=spi=on" >> "$BOOT_CONFIG"
+    fi
 fi
 # Load modules
 modprobe i2c-dev 2>/dev/null || true
@@ -145,8 +151,11 @@ pip install -r requirements.txt
 # Configure PWM fan on GPIO 12
 echo ""
 echo "Step 10: Configuring PWM fan (GPIO 12)..."
-if ! grep -q 'dtoverlay=gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
-    echo 'dtoverlay=gpio-fan,gpiopin=12,temp=60000' >> "$BOOT_CONFIG"
+if ! grep -q '^dtoverlay=gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
+    sed -i 's/^#dtoverlay=gpio-fan/dtoverlay=gpio-fan/g' "$BOOT_CONFIG" 2>/dev/null || true
+    if ! grep -q '^dtoverlay=gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
+        echo 'dtoverlay=gpio-fan,gpiopin=12,temp=60000' >> "$BOOT_CONFIG"
+    fi
 fi
 
 # Configure hostapd and dnsmasq for AP mode
