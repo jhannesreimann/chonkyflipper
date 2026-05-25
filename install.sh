@@ -47,7 +47,8 @@ apt-get install -y \
     rfkill \
     iw \
     swig \
-    python3-dev
+    python3-dev \
+    ir-keytable
 
 # Note: pigpio daemon compilation fails on newer kernels
 # The Python pigpio library will be installed via pip for client mode
@@ -116,7 +117,9 @@ fi
 echo ""
 echo "Step 6: Creating service user..."
 if ! id "$SERVICE_USER" &>/dev/null; then
-    useradd -r -s /bin/false -G gpio,i2c,spi,bluetooth "$SERVICE_USER"
+    useradd -r -s /bin/false -G gpio,i2c,spi,bluetooth,video "$SERVICE_USER"
+else
+    usermod -aG video "$SERVICE_USER" || true
 fi
 
 # Create directories
@@ -148,14 +151,19 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Configure PWM fan on GPIO 12
+# Configure PWM fan on GPIO 12 & IR Transmitter/Receiver
 echo ""
-echo "Step 10: Configuring PWM fan (GPIO 12)..."
-if ! grep -q '^dtoverlay=gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
-    sed -i 's/^#dtoverlay=gpio-fan/dtoverlay=gpio-fan/g' "$BOOT_CONFIG" 2>/dev/null || true
-    if ! grep -q '^dtoverlay=gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
-        echo 'dtoverlay=gpio-fan,gpiopin=12,temp=60000' >> "$BOOT_CONFIG"
-    fi
+echo "Step 10: Configuring PWM fan (GPIO 12) & IR Transmitter/Receiver..."
+# Remove any old simple gpio-fan overlays to avoid conflicts
+sed -i '/^dtoverlay=gpio-fan/d' "$BOOT_CONFIG" 2>/dev/null || true
+if ! grep -q '^dtoverlay=pwm-gpio-fan' "$BOOT_CONFIG" 2>/dev/null; then
+    echo 'dtoverlay=pwm-gpio-fan,fan_gpio=12' >> "$BOOT_CONFIG"
+fi
+if ! grep -q '^dtoverlay=gpio-ir,' "$BOOT_CONFIG" 2>/dev/null; then
+    echo 'dtoverlay=gpio-ir,gpio_pin=27' >> "$BOOT_CONFIG"
+fi
+if ! grep -q '^dtoverlay=gpio-ir-tx' "$BOOT_CONFIG" 2>/dev/null; then
+    echo 'dtoverlay=gpio-ir-tx,gpio_pin=17' >> "$BOOT_CONFIG"
 fi
 
 # Configure hostapd and dnsmasq for AP mode
@@ -228,7 +236,7 @@ Type=simple
 User=chonky
 Group=chonky
 WorkingDirectory=/opt/chonkyflipper
-Environment="PATH=/opt/chonkyflipper/venv/bin"
+Environment="PATH=/opt/chonkyflipper/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/chonkyflipper/venv/bin/gunicorn -b 0.0.0.0:5000 -w 2 --access-logfile /opt/chonkyflipper/logs/access.log --error-logfile /opt/chonkyflipper/logs/error.log app:app
 Restart=always
 RestartSec=5
