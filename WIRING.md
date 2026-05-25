@@ -49,7 +49,7 @@ This unified schematic shows all hardware modules connected simultaneously in th
 * **KY-022 IR Receiver:** Powered by the 5.0V Breadboard Rail, Ground to the Breadboard GND Rail, and signal line wired to Pin 13.
 
 ```mermaid
-graph TD
+graph LR
     %% Raspberry Pi 4 B GPIO Header Block
     subgraph RPi [Raspberry Pi 4 B GPIO Header]
         PIN1[Pin 1: 3.3V OUT]
