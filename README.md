@@ -36,6 +36,8 @@ The system uses a three tier architecture: physical hardware layer (GPIO/SPI/I2C
 * KY-022 IR receiver (GPIO 27)
 * Mini breadboard with dual voltage rails (5V and 3.3V)
 
+For complete schematics and a detailed GPIO allocation table, see [WIRING.md](WIRING.md).
+
 ## Power Design
 
 The PiPower UPS HAT delivers power through the GPIO header pins, leaving the native USB-C port available exclusively for data connections. This enables BadUSB attacks where the device emulates keyboards or storage devices when connected to target computers.
@@ -162,9 +164,9 @@ All captured data (pcap files, IR signals, RF recordings, card data) stores loca
 
 ## Development Status
 
-**Completed:** Backend API skeleton, mobile frontend, installation automation, hardware assembly documentation.
+**Completed:** Backend API and core driver implementations (PN532 via CircuitPython, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing.
 
-**Pending:** SPI/I2C driver implementation for CC1101/PN532, pigpio integration for IR timing, hardware wiring (breadboard), Zigbee2MQTT setup, USB gadget mode for BadUSB, 3D printed enclosure.
+**Pending:** Zigbee2MQTT setup, USB gadget mode for BadUSB, 3D printed enclosure.
 
 ## Disclaimer
 
