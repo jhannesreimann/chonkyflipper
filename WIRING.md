@@ -151,19 +151,27 @@ graph TD
     PIN13 ---> RX_OUT
 
     %% Styling
-    classDef rpi fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef board fill:#efebe9,stroke:#3e2723,stroke-width:2px;
-    classDef nfc fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;
-    classDef subghz fill:#f3e5f5,stroke:#4a148c,stroke-width:2px;
-    classDef ir fill:#ffebee,stroke:#c62828,stroke-width:2px;
-    classDef fan fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef rpi fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000000;
+    classDef board fill:#efebe9,stroke:#3e2723,stroke-width:2px,color:#000000;
+    classDef nfc fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000000;
+    classDef subghz fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000000;
+    classDef ir fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000000;
+    classDef fan fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000000;
     
-    class RPi,PIN1,PIN2,PIN3,PIN4,PIN5,PIN6,PIN11,PIN13,PIN18,PIN19,PIN21,PIN23,PIN24,PIN32,PIN34 rpi;
+    class RPi,PIN1,PIN2,PIN3,PIN4,PIN5,PIN6,PIN11,PIN13,PIN18,PIN19,PIN21,PIN22,PIN23,PIN24,PIN32,PIN34 rpi;
     class Breadboard,VCC3,VCC5,GND board;
     class NFC,PN_VCC,PN_GND,PN_SDA,PN_SCL nfc;
     class SubGHz,CC_VCC,CC_GND,CC_SI,CC_SO,CC_SCLK,CC_CS,CC_GD0,CC_GD2 subghz;
     class IR_TX,TX_VCC,TX_GND,TX_DAT,IR_RX,RX_VCC,RX_GND,RX_OUT ir;
     class Cooling,Fan_VCC,Fan_GND,Fan_PWM fan;
+
+    style RPi fill:#f5fbfd,stroke:#01579b,stroke-width:1.5px,color:#000000;
+    style Breadboard fill:#fbfaf9,stroke:#3e2723,stroke-width:1.5px,color:#000000;
+    style NFC fill:#f5faf6,stroke:#1b5e20,stroke-width:1.5px,color:#000000;
+    style SubGHz fill:#faf5fc,stroke:#4a148c,stroke-width:1.5px,color:#000000;
+    style IR_TX fill:#fff5f5,stroke:#c62828,stroke-width:1.5px,color:#000000;
+    style IR_RX fill:#fff5f5,stroke:#c62828,stroke-width:1.5px,color:#000000;
+    style Cooling fill:#fffaf5,stroke:#e65100,stroke-width:1.5px,color:#000000;
 
     %% Custom Link Styling to show wire colors in diagram
     linkStyle 0 stroke:#ffeb3b,stroke-width:2px;
