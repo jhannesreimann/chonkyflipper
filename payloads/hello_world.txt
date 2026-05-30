@@ -1,0 +1,11 @@
+REM Basic sanity test — open Notepad and type a message
+
+GUI r
+DELAY 600
+STRING notepad
+ENTER
+DELAY 800
+STRING Hello from ChonkyFlipper!
+ENTER
+STRING BadUSB is working.
+ENTER

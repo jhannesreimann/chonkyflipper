@@ -14,6 +14,7 @@ from modules.bluetooth import BluetoothModule
 from modules.ir import IRModule
 from modules.cc1101 import CC1101Module
 from modules.pn532 import PN532Module
+from modules.badusb import BadUSBModule
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for mobile web app access
@@ -29,7 +30,8 @@ def get_module(name):
             'bluetooth': BluetoothModule,
             'ir': IRModule,
             'cc1101': CC1101Module,
-            'pn532': PN532Module
+            'pn532': PN532Module,
+            'badusb': BadUSBModule
         }
         modules[name] = module_map[name]()
     return modules[name]
@@ -162,25 +164,18 @@ def nfc_write():
 @app.route('/api/badusb/payloads', methods=['GET'])
 def badusb_list_payloads():
     """List available BadUSB payloads"""
-    payloads_dir = '/opt/chonkyflipper/payloads'
-    try:
-        payloads = [f for f in os.listdir(payloads_dir) if f.endswith('.txt')]
-        return jsonify({'payloads': payloads})
-    except:
-        return jsonify({'payloads': []})
+    badusb = get_module('badusb')
+    return jsonify(badusb.list_payloads())
 
 @app.route('/api/badusb/execute', methods=['POST'])
 def badusb_execute():
     """Execute BadUSB payload"""
     data = request.json or {}
     payload_name = data.get('payload')
-    # This requires USB Gadget Mode setup (configfs)
-    # Implementation will be added later
-    return jsonify({
-        'status': 'executing',
-        'payload': payload_name,
-        'note': 'USB Gadget Mode must be configured first'
-    })
+    if not payload_name:
+        return jsonify({'success': False, 'error': 'payload name required'}), 400
+    badusb = get_module('badusb')
+    return jsonify(badusb.execute_payload(payload_name))
 
 @app.route('/api/network/status', methods=['GET'])
 def network_status():

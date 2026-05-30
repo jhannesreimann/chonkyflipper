@@ -1,0 +1,12 @@
+REM Basic sanity test — open Notepad and type a message
+REM Run this first to confirm the script works at all
+
+GUI r
+DELAY 600
+STRING notepad
+ENTER
+DELAY 800
+STRING Hello from ChonkyFlipper!
+ENTER
+STRING BadUSB test payload is working.
+ENTER

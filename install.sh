@@ -94,6 +94,16 @@ fi
 modprobe i2c-dev 2>/dev/null || true
 modprobe spidev 2>/dev/null || true
 
+# Enable USB OTG device mode for BadUSB (USB HID gadget)
+if ! grep -q '^dtoverlay=dwc2' "$BOOT_CONFIG"; then
+    echo 'dtoverlay=dwc2' >> "$BOOT_CONFIG"
+fi
+for module in dwc2 libcomposite; do
+    if ! grep -q "^$module" /etc/modules 2>/dev/null; then
+        echo "$module" >> /etc/modules
+    fi
+done
+
 # Configure Pi 4 full power-off for PiPower5 safe shutdown
 echo ""
 echo "Step 4: Configuring Pi 4 shutdown behaviour for PiPower5..."
@@ -137,6 +147,12 @@ mkdir -p "$INSTALL_DIR/logs"
 echo ""
 echo "Step 8: Copying backend files..."
 cp -r backend/* "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/setup-gadget.sh"
+
+# Seed sample payloads (never overwrites existing files)
+if [ -d "$SCRIPT_DIR/payloads" ]; then
+    cp -n "$SCRIPT_DIR/payloads/"*.txt "$INSTALL_DIR/payloads/" 2>/dev/null || true
+fi
 
 # Set permissions
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
@@ -245,9 +261,29 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# BadUSB gadget service — runs setup-gadget.sh before the Flask backend starts
+cat > /etc/systemd/system/chonky-gadget.service << 'EOF'
+[Unit]
+Description=ChonkyFlipper USB HID Gadget Setup
+After=sysinit.target local-fs.target
+Before=chonkyflipper.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/chonkyflipper/setup-gadget.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Allow the service user to write to /dev/hidg0 without root
+echo 'KERNEL=="hidg*", MODE="0666"' > /etc/udev/rules.d/99-chonky-hidg.rules
+
 # Enable and start services
 systemctl daemon-reload
 systemctl enable chonkyflipper
+systemctl enable chonky-gadget
 
 # Start AP services (after reboot)
 systemctl unmask hostapd
