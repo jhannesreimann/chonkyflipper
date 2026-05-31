@@ -75,6 +75,19 @@ async function checkStatus() {
         if (data.hostname) {
             document.getElementById('hostname').textContent = data.hostname;
         }
+
+        // Update battery
+        if (data.power) {
+            const el = document.getElementById('battery');
+            const pct = data.power.battery_percentage;
+            if (pct !== null && pct !== undefined) {
+                el.textContent = pct + '%' + (data.power.is_charging ? ' ⚡' : '');
+                el.className = 'value ' + (pct >= 60 ? 'battery-good' : pct >= 20 ? 'battery-warn' : 'battery-low');
+            } else {
+                el.textContent = 'UPS Active';
+                el.className = 'value';
+            }
+        }
         
     } catch (error) {
         const indicator = document.getElementById('status-indicator');

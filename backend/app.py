@@ -22,6 +22,29 @@ CORS(app)  # Enable CORS for mobile web app access
 # Initialize modules (lazy loading on first use)
 modules = {}
 
+_pipower = None
+
+def _get_power_data():
+    global _pipower
+    try:
+        if _pipower is None:
+            from pipower5 import PiPower5
+            _pipower = PiPower5()
+        data = _pipower.read_all()
+        return {
+            'battery_percentage': data.get('battery_percentage'),
+            'battery_voltage': data.get('battery_voltage'),
+            'is_charging': data.get('is_charging', False),
+            'ups_active': True
+        }
+    except Exception:
+        return {
+            'battery_percentage': None,
+            'battery_voltage': None,
+            'is_charging': None,
+            'ups_active': True
+        }
+
 def get_module(name):
     """Lazy module initialization"""
     if name not in modules:
@@ -50,10 +73,7 @@ def get_status():
             'pn532': {'available': True, 'i2c': '0x24'},
             'zigbee': {'available': True, 'usb': 'ttyUSB0'}
         },
-        'power': {
-            'battery_voltage': None,  # Will be implemented with PiPower
-            'ups_active': True
-        }
+        'power': _get_power_data()
     })
 
 @app.route('/api/system/info', methods=['GET'])

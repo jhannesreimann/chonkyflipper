@@ -79,6 +79,11 @@ body {
     50% { opacity: 0.5; }
 }
 
+/* Battery state colours */
+.battery-good { color: var(--accent-success); }
+.battery-warn { color: var(--accent-warning); }
+.battery-low  { color: var(--accent-primary); }
+
 /* Cards */
 .card {
     background: var(--bg-card);
