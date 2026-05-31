@@ -95,7 +95,11 @@ modprobe i2c-dev 2>/dev/null || true
 modprobe spidev 2>/dev/null || true
 
 # Enable USB OTG device mode for BadUSB (USB HID gadget)
-if ! grep -q '^dtoverlay=dwc2' "$BOOT_CONFIG"; then
+# Comment out otg_mode=1 on Pi 4 (which forces host mode) to allow legacy DWC2 device mode
+if grep -q '^otg_mode=1' "$BOOT_CONFIG" 2>/dev/null; then
+    sed -i 's/^otg_mode=1/#otg_mode=1 # Commented out for legacy DWC2 device mode \/ BadUSB/g' "$BOOT_CONFIG" 2>/dev/null || true
+fi
+if ! grep -q '^dtoverlay=dwc2' "$BOOT_CONFIG" 2>/dev/null; then
     echo 'dtoverlay=dwc2' >> "$BOOT_CONFIG"
 fi
 for module in dwc2 libcomposite; do
