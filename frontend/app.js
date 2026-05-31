@@ -500,6 +500,26 @@ async function updateNetworkStatus() {
     }
 }
 
+function showPoweroffDialog() {
+    document.getElementById('poweroff-dialog').style.display = 'flex';
+}
+
+function hidePoweroffDialog() {
+    document.getElementById('poweroff-dialog').style.display = 'none';
+}
+
+async function confirmPoweroff() {
+    hidePoweroffDialog();
+    log('🔴 Shutting down...');
+    try {
+        await fetch(`${API_URL}/system/poweroff`, { method: 'POST' });
+        log('⏳ Device is powering off. Reconnect after restart.');
+    } catch (error) {
+        // Expected — the Pi cuts the connection as it shuts down
+        log('⏳ Device is powering off. Reconnect after restart.');
+    }
+}
+
 function showMaintenanceDialog() {
     document.getElementById('maintenance-dialog').style.display = 'flex';
 }

@@ -284,6 +284,10 @@ EOF
 # Allow the service user to write to /dev/hidg0 without root
 echo 'KERNEL=="hidg*", MODE="0666"' > /etc/udev/rules.d/99-chonky-hidg.rules
 
+# Allow service user to shut down the device without a password prompt
+echo "chonky ALL=(ALL) NOPASSWD: /sbin/shutdown" > /etc/sudoers.d/chonky-shutdown
+chmod 440 /etc/sudoers.d/chonky-shutdown
+
 # Enable and start services
 systemctl daemon-reload
 systemctl enable chonkyflipper

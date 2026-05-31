@@ -181,6 +181,13 @@
             </div>
             
             <div class="settings-section">
+                <h3>Power</h3>
+                <button class="btn btn-danger" onclick="showPoweroffDialog()">
+                    🔴 Power Off
+                </button>
+            </div>
+
+            <div class="settings-section">
                 <h3>System Update</h3>
                 <p class="hint">Requires maintenance mode with internet</p>
                 <button class="btn btn-primary" onclick="runSystemUpdate()">
@@ -207,6 +214,18 @@
                 </div>
             </div>
         </section>
+
+        <!-- Power Off Confirmation Dialog -->
+        <div id="poweroff-dialog" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3>🔴 Power Off</h3>
+                <p>Are you sure you want to shut down ChonkyFlipper? You will need physical access to turn it back on.</p>
+                <div class="button-group">
+                    <button class="btn btn-danger" onclick="confirmPoweroff()">Power Off</button>
+                    <button class="btn btn-secondary" onclick="hidePoweroffDialog()">Cancel</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Maintenance Mode Dialog (hidden by default) -->
         <div id="maintenance-dialog" class="modal" style="display:none;">

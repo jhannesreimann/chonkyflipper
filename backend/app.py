@@ -300,6 +300,15 @@ def enable_ap_mode():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/system/poweroff', methods=['POST'])
+def system_poweroff():
+    """Shut down the Raspberry Pi"""
+    try:
+        subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
+        return jsonify({'success': True, 'message': 'Shutting down...'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/system/update', methods=['POST'])
 def system_update():
     """Run git pull to update ChonkyFlipper (requires internet)"""
