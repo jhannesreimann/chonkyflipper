@@ -7,7 +7,7 @@ pigpio==1.78
 spidev>=3.6
 RPi.GPIO>=0.7.1
 adafruit-circuitpython-pn532>=2.4.9
-pipower5
+# pipower5 — installed from /opt/pipower5/ by install.sh (not on PyPI)
 # bleak==0.20.2  # For BLE - optional, requires Python 3.7+
 # pyserial==3.5  # For UART modules if needed
 

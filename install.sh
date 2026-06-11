@@ -177,6 +177,12 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# Install pipower5 from local source (not available on PyPI)
+if [ -d "/opt/pipower5" ]; then
+    echo "Installing pipower5 from local source..."
+    pip install /opt/pipower5/ 2>&1 | tail -3
+fi
+
 # Configure PWM fan on GPIO 12 & IR Transmitter/Receiver
 echo ""
 echo "Step 10: Configuring PWM fan (GPIO 12) & IR Transmitter/Receiver..."

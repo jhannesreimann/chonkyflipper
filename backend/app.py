@@ -28,7 +28,7 @@ def _get_power_data():
     global _pipower
     try:
         if _pipower is None:
-            from pipower5 import PiPower5
+            from pipower5.pipower5 import PiPower5
             _pipower = PiPower5()
         data = _pipower.read_all()
         return {
