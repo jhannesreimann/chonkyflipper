@@ -61,6 +61,10 @@ NEW_COMMIT=$(git rev-parse --short HEAD)
 echo "New version:      $NEW_COMMIT"
 echo ""
 
+# Write version file so the Flask API (running as chonky user) can read it
+echo "$NEW_COMMIT" > "$INSTALL_DIR/VERSION"
+chown chonky:chonky "$INSTALL_DIR/VERSION"
+
 if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
     echo "✅ Already up to date — nothing to do."
     exit 0

@@ -311,27 +311,34 @@ def system_poweroff():
 
 @app.route('/api/system/version', methods=['GET'])
 def system_version():
-    """Get the currently deployed git version"""
+    """Get the currently deployed version"""
+    version_file = '/opt/chonkyflipper/VERSION'
     try:
-        repo_dir = '/home/kali/chonkyflipper'
-        if os.path.isdir(os.path.join(repo_dir, '.git')):
-            sha = subprocess.check_output(
-                ['git', 'rev-parse', '--short', 'HEAD'],
-                cwd=repo_dir
-            ).decode().strip()
-            branch = subprocess.check_output(
-                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                cwd=repo_dir
-            ).decode().strip()
+        if os.path.isfile(version_file):
+            with open(version_file) as f:
+                sha = f.read().strip()
             return jsonify({
                 'sha': sha,
-                'branch': branch,
                 'repo': 'github.com/jhannesreimann/chonkyflipper'
             })
         else:
-            return jsonify({'sha': 'unknown', 'branch': 'unknown'})
+            # Fallback: try git (may fail if repo is inaccessible to chonky user)
+            repo_dir = '/home/kali/chonkyflipper'
+            if os.path.isdir(os.path.join(repo_dir, '.git')):
+                try:
+                    sha = subprocess.check_output(
+                        ['git', 'rev-parse', '--short', 'HEAD'],
+                        cwd=repo_dir, stderr=subprocess.DEVNULL
+                    ).decode().strip()
+                    return jsonify({
+                        'sha': sha,
+                        'repo': 'github.com/jhannesreimann/chonkyflipper'
+                    })
+                except Exception:
+                    pass
+            return jsonify({'sha': 'unknown'})
     except Exception as e:
-        return jsonify({'sha': 'unknown', 'branch': 'unknown', 'error': str(e)})
+        return jsonify({'sha': 'unknown', 'error': str(e)})
 
 
 @app.route('/api/system/update', methods=['POST'])
