@@ -17,6 +17,11 @@ INSTALL_DIR="/opt/chonkyflipper"
 REPO_DIR="/home/kali/chonkyflipper"
 FRONTEND_DIR="/var/www/html"
 
+# ── Ensure git can use SSH keys (needed when running as root via sudo) ──
+if [ -z "$GIT_SSH_COMMAND" ] && [ -f /home/kali/.ssh/id_ed25519 ]; then
+    export GIT_SSH_COMMAND="ssh -i /home/kali/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new"
+fi
+
 echo "🔄 ChonkyFlipper Update"
 echo "========================"
 echo ""
