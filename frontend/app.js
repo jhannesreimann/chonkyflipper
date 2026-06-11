@@ -34,10 +34,12 @@ async function init() {
     
     // Initial status check
     await checkStatus();
-    
+    await fetchVersion();
+
     // Start periodic updates
     setInterval(checkStatus, 5000);
     setInterval(updateSystemInfo, 10000);
+    setInterval(fetchVersion, 60000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -105,9 +107,9 @@ async function updateSystemInfo() {
     try {
         const response = await fetch(`${API_URL}/system/info`);
         if (!response.ok) return;
-        
+
         const data = await response.json();
-        
+
         if (data.uptime) {
             document.getElementById('uptime').textContent = data.uptime;
         }
@@ -116,6 +118,22 @@ async function updateSystemInfo() {
         }
     } catch (error) {
         // Silent fail - status check handles connectivity
+    }
+}
+
+async function fetchVersion() {
+    try {
+        const response = await fetch(`${API_URL}/system/version`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const el = document.getElementById('current-version');
+        if (el && data.sha && data.sha !== 'unknown') {
+            el.textContent = `${data.branch || 'main'} @ ${data.sha}`;
+            el.className = 'value';
+        }
+    } catch (error) {
+        // Silent fail
     }
 }
 
@@ -586,21 +604,47 @@ async function restoreAPMode() {
 async function runSystemUpdate() {
     const outputBox = document.getElementById('update-output');
     outputBox.style.display = 'block';
-    outputBox.innerHTML = '<p>🔄 Checking for updates...</p>';
-    
+    outputBox.innerHTML = '<p>🔄 Checking internet and starting update...</p>';
+
     log('🔄 Starting system update from GitHub...');
-    
+
     try {
         const response = await fetch(`${API_URL}/system/update`, {
             method: 'POST'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
-            outputBox.innerHTML = `<pre class="success">${escapeHtml(data.output || 'Update successful')}</pre>`;
-            log('✅ System update complete!');
-            log('🔄 Restarting services...');
+            outputBox.innerHTML = `<pre class="success">${escapeHtml(data.message || 'Update started')}</pre>`;
+            log('✅ ' + data.message);
+            log('⏳ Backend will restart — reconnecting automatically...');
+
+            // The backend will restart. Poll for it to come back.
+            let attempts = 0;
+            const checkBack = setInterval(async () => {
+                attempts++;
+                outputBox.innerHTML = `<pre class="success">Update in progress... (checking back: ${attempts})</pre>`;
+
+                try {
+                    const resp = await fetch(`${API_URL}/status`);
+                    if (resp.ok) {
+                        clearInterval(checkBack);
+                        outputBox.innerHTML = '<pre class="success">✅ Update complete! Backend restarted successfully.</pre>';
+                        log('✅ Update complete — backend is back online!');
+                        fetchVersion();  // refresh displayed version
+                        checkStatus();
+                    }
+                } catch {
+                    // Still restarting, keep polling
+                }
+
+                if (attempts > 30) {
+                    clearInterval(checkBack);
+                    outputBox.innerHTML = '<pre class="error">⚠ Update may have failed — backend did not return after 30s.</pre>';
+                    log('⚠ Update timeout — backend did not return');
+                }
+            }, 2000);
         } else {
             outputBox.innerHTML = `<pre class="error">${escapeHtml(data.error || 'Update failed')}</pre>`;
             log('❌ Update failed: ' + (data.error || 'Check internet connection'));

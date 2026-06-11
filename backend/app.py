@@ -309,33 +309,76 @@ def system_poweroff():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/system/version', methods=['GET'])
+def system_version():
+    """Get the currently deployed git version"""
+    try:
+        repo_dir = '/home/kali/chonkyflipper'
+        if os.path.isdir(os.path.join(repo_dir, '.git')):
+            sha = subprocess.check_output(
+                ['git', 'rev-parse', '--short', 'HEAD'],
+                cwd=repo_dir
+            ).decode().strip()
+            branch = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                cwd=repo_dir
+            ).decode().strip()
+            return jsonify({
+                'sha': sha,
+                'branch': branch,
+                'repo': 'github.com/jhannesreimann/chonkyflipper'
+            })
+        else:
+            return jsonify({'sha': 'unknown', 'branch': 'unknown'})
+    except Exception as e:
+        return jsonify({'sha': 'unknown', 'branch': 'unknown', 'error': str(e)})
+
+
 @app.route('/api/system/update', methods=['POST'])
 def system_update():
-    """Run git pull to update ChonkyFlipper (requires internet)"""
+    """Pull latest code from GitHub and deploy (requires internet)"""
     try:
         # Check internet first
         try:
-            subprocess.run(['ping', '-c', '1', '-W', '2', 'github.com'],
+            subprocess.run(['ping', '-c', '1', '-W', '3', 'github.com'],
                          capture_output=True, check=True)
         except:
             return jsonify({
                 'success': False,
-                'error': 'No internet connection. Enable maintenance mode first.'
+                'error': (
+                    'No internet connection.\n\n'
+                    'Connect an Ethernet cable to the Pi for seamless updates '
+                    '(the Chonky_Control AP stays up).\n\n'
+                    'Or enable Maintenance Mode in Settings to connect via WiFi.'
+                )
             }), 400
-        
-        # Run update script
-        result = subprocess.run(
-            ['/opt/chonkyflipper/update.sh'],
-            capture_output=True,
-            text=True
+
+        # Check update script exists
+        if not os.path.isfile('/opt/chonkyflipper/update.sh'):
+            return jsonify({
+                'success': False,
+                'error': 'Update script not found at /opt/chonkyflipper/update.sh'
+            }), 500
+
+        # Run update in background so the response returns before the
+        # service restarts itself. The update script runs systemctl restart
+        # at the end, which kills this process — we must be detached.
+        subprocess.Popen(
+            ['sudo', '/opt/chonkyflipper/update.sh'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True  # detach from gunicorn process group
         )
-        
+
         return jsonify({
-            'success': result.returncode == 0,
-            'output': result.stdout,
-            'error': result.stderr if result.returncode != 0 else None
+            'success': True,
+            'message': (
+                'Update started in background.\n'
+                'The backend will restart when the update completes.\n'
+                'The dashboard will reconnect automatically in a few seconds.'
+            )
         })
-        
+
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

@@ -153,6 +153,12 @@ echo "Step 8: Copying backend files..."
 cp -r backend/* "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/setup-gadget.sh"
 
+# Copy update script (lives in repo root, not backend/)
+if [ -f "$SCRIPT_DIR/update.sh" ]; then
+    cp "$SCRIPT_DIR/update.sh" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/update.sh"
+fi
+
 # Seed sample payloads (never overwrites existing files)
 if [ -d "$SCRIPT_DIR/payloads" ]; then
     cp -n "$SCRIPT_DIR/payloads/"*.txt "$INSTALL_DIR/payloads/" 2>/dev/null || true
@@ -284,9 +290,12 @@ EOF
 # Allow the service user to write to /dev/hidg0 without root
 echo 'KERNEL=="hidg*", MODE="0666"' > /etc/udev/rules.d/99-chonky-hidg.rules
 
-# Allow service user to shut down the device without a password prompt
-echo "chonky ALL=(ALL) NOPASSWD: /sbin/shutdown" > /etc/sudoers.d/chonky-shutdown
-chmod 440 /etc/sudoers.d/chonky-shutdown
+# Allow service user to run update script and shut down without a password prompt
+cat > /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
+chonky ALL=(ALL) NOPASSWD: /sbin/shutdown
+chonky ALL=(ALL) NOPASSWD: /opt/chonkyflipper/update.sh
+EOFSUDOERS
+chmod 440 /etc/sudoers.d/chonky-ops
 
 # Enable and start services
 systemctl daemon-reload
@@ -330,38 +339,17 @@ echo "Copying maintenance mode script..."
 cp "$SCRIPT_DIR/backend/maintenance-mode.sh" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/maintenance-mode.sh"
 
-# Create git update helper
-cat > "$INSTALL_DIR/update.sh" << 'EOFUPDATE'
-#!/bin/bash
-# ChonkyFlipper Update Script
-# Run when in maintenance mode (with internet)
-
-set -e
-
-INSTALL_DIR="/opt/chonkyflipper"
-REPO_DIR="/home/kali/chonkyflipper"
-
-echo "Updating ChonkyFlipper..."
-
-if ! ping -c 1 github.com &>/dev/null; then
-    echo "Error: No internet connection. Switch to maintenance mode first."
-    exit 1
-fi
-
-if [ -d "$REPO_DIR/.git" ]; then
-    cd "$REPO_DIR"
-    git pull
-    cp -r backend/* "$INSTALL_DIR/"
-    cp -r frontend/* /var/www/html/
+# Create git update helper (already copied from repo in Step 8)
+# The update.sh is a tracked file in the repo and is deployed alongside backend files.
+# It is invoked via: sudo /opt/chonkyflipper/update.sh
+echo ""
+echo "Verifying update script..."
+if [ ! -f "$INSTALL_DIR/update.sh" ]; then
+    echo "Warning: update.sh not found — update functionality will be unavailable."
 else
-    echo "Error: git repository not found at $REPO_DIR"
-    exit 1
+    chmod +x "$INSTALL_DIR/update.sh"
+    echo "Update script deployed."
 fi
-
-systemctl restart chonkyflipper
-echo "Update complete."
-EOFUPDATE
-chmod +x "$INSTALL_DIR/update.sh"
 
 # Create settings file for maintenance network
 mkdir -p "$INSTALL_DIR/config"
