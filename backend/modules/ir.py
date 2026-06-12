@@ -441,7 +441,7 @@ class IRModule:
         """Load IR payload definitions from JSON files."""
         payloads = {}
         payload_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            os.path.dirname(os.path.dirname(__file__)),
             'payloads', 'ir'
         )
         if not os.path.isdir(payload_dir):
