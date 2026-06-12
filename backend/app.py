@@ -378,7 +378,7 @@ def wifi_scan_networks():
 
     try:
         output = subprocess.check_output(
-            ['iw', 'dev', 'wlan1', 'scan'],
+            ['sudo', '-n', 'iw', 'dev', 'wlan1', 'scan'],
             text=True, stderr=subprocess.DEVNULL, timeout=15
         )
     except subprocess.TimeoutExpired:
