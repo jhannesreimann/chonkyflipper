@@ -378,25 +378,32 @@ def wifi_scan_networks():
     subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
                    capture_output=True)
 
-    # Use wpa_cli for reliable security info (needs wpa_supplicant running)
-    # Start wpa_supplicant temporarily if needed
-    wpa_was_running = subprocess.run(
+    # Keep wpa_supplicant running on wlan1 (start if not active)
+    wpa_active = subprocess.run(
         ['systemctl', 'is-active', '--quiet', 'wpa_supplicant@wlan1']
     ).returncode == 0
-
-    if not wpa_was_running:
+    if not wpa_active:
         subprocess.run(
             ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
             capture_output=True
         )
-        time.sleep(1)
+        time.sleep(2)
 
     networks = []
     try:
-        # Trigger scan via wpa_cli (needs root for control socket)
-        subprocess.run(['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan'],
-                      capture_output=True, timeout=5)
-        time.sleep(3)
+        # Trigger a fresh scan, retry if busy
+        for attempt in range(3):
+            result = subprocess.run(
+                ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan'],
+                capture_output=True, text=True, timeout=5
+            )
+            if 'OK' in result.stdout:
+                time.sleep(3)
+                break
+            if 'FAIL-BUSY' in result.stdout:
+                time.sleep(1)
+                continue
+            time.sleep(1)
 
         output = subprocess.check_output(
             ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan_results'],
@@ -445,13 +452,6 @@ def wifi_scan_networks():
 
     except Exception:
         pass
-
-    # Stop wpa_supplicant if we started it
-    if not wpa_was_running:
-        subprocess.run(
-            ['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
-            capture_output=True
-        )
 
     # Deduplicate by SSID, keep strongest signal
     seen = {}
