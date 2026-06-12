@@ -222,7 +222,6 @@ def network_status():
                 capture_output=True
             ).returncode == 0
             if wlan1_active:
-                # Get connected SSID
                 try:
                     ssid_out = subprocess.check_output(
                         ['wpa_cli', '-i', 'wlan1', 'status'],
@@ -230,9 +229,11 @@ def network_status():
                     )
                     for line in ssid_out.split('\n'):
                         if line.startswith('ssid='):
-                            wlan1_ssid = line.split('=', 1)[1]
+                            val = line.split('=', 1)[1]
+                            wlan1_ssid = val if val else None
                         if line.startswith('ip_address='):
-                            wlan1_ip = line.split('=', 1)[1]
+                            val = line.split('=', 1)[1]
+                            wlan1_ip = val if val else None
                 except Exception:
                     pass
 
@@ -395,9 +396,10 @@ def wifi_scan_networks():
             if current.get('bssid'):
                 networks.append(current)
             current = {}
-            parts = line.split()
-            if len(parts) >= 2:
-                current['bssid'] = parts[1].upper()
+            # Extract MAC from "BSS xx:xx:xx:xx:xx:xx(on wlan1)"
+            mac_match = re.search(r'([0-9a-fA-F:]{17})', line)
+            if mac_match:
+                current['bssid'] = mac_match.group(1).upper()
         elif 'SSID:' in line:
             ssid = line.split('SSID:', 1)[1].strip()
             current['ssid'] = ssid if ssid else '(hidden)'
@@ -409,15 +411,17 @@ def wifi_scan_networks():
             match = re.search(r'(\d+)', line)
             if match:
                 freq = int(match.group(1))
-                # Convert frequency to channel (rough)
-                if freq >= 2412 and freq <= 2484:
+                if 2412 <= freq <= 2484:
                     current['channel'] = (freq - 2412) // 5 + 1
-                elif freq >= 5180:
+                elif 5180 <= freq <= 5885:
                     current['channel'] = (freq - 5180) // 5 + 36
-        elif 'RSN:' in line:
+        elif line.startswith('RSN:'):
             current['security'] = 'WPA2'
-        elif 'WPA:' in line:
+        elif line.startswith('WPA:'):
             current['security'] = 'WPA'
+        elif 'WPS:' in line and 'security' not in current:
+            # WPS-capable APs are almost always WPA2
+            current['security'] = 'WPA2'
 
     if current.get('bssid'):
         networks.append(current)
@@ -426,7 +430,12 @@ def wifi_scan_networks():
     seen = {}
     for net in networks:
         ssid = net.get('ssid', '')
+        if not ssid:
+            continue
         if ssid not in seen or net.get('signal_dbm', -100) > seen[ssid].get('signal_dbm', -100):
+            # Merge: entry with signal wins, but keep security if the winner lacks it
+            if ssid in seen and 'security' not in seen[ssid] and 'security' in net:
+                net['security'] = net['security']
             seen[ssid] = net
 
     result = sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
@@ -456,10 +465,16 @@ def wifi_connect():
             'error': 'SSID and password required'
         }), 400
 
-    # Stop any existing wlan1 wpa_supplicant
+    # Clean up any stale state
     subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
                    capture_output=True)
     subprocess.run(['sudo', '-n', 'ip', 'addr', 'flush', 'dev', 'wlan1'],
+                   capture_output=True)
+    subprocess.run(['sudo', '-n', 'rm', '-f', '/var/run/wpa_supplicant/wlan1'],
+                   capture_output=True)
+
+    # Bring interface up in managed mode
+    subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
                    capture_output=True)
 
     # Write wpa_supplicant config for wlan1 (via sudo tee)
