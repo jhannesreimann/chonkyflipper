@@ -457,12 +457,12 @@ def wifi_connect():
         }), 400
 
     # Stop any existing wlan1 wpa_supplicant
-    subprocess.run(['systemctl', 'stop', 'wpa_supplicant@wlan1'],
+    subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
                    capture_output=True)
-    subprocess.run(['ip', 'addr', 'flush', 'dev', 'wlan1'],
+    subprocess.run(['sudo', '-n', 'ip', 'addr', 'flush', 'dev', 'wlan1'],
                    capture_output=True)
 
-    # Write wpa_supplicant config for wlan1
+    # Write wpa_supplicant config for wlan1 (via sudo tee)
     config = (
         f'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n'
         f'update_config=1\n'
@@ -474,15 +474,18 @@ def wifi_connect():
         f'}}\n'
     )
     conf_path = '/etc/wpa_supplicant/wpa_supplicant-wlan1.conf'
-    with open(conf_path, 'w') as f:
-        f.write(config)
-    os.chmod(conf_path, 0o600)
+    tee = subprocess.Popen(
+        ['sudo', '-n', 'tee', conf_path],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    tee.communicate(input=config.encode())
+    subprocess.run(['sudo', '-n', 'chmod', '600', conf_path], capture_output=True)
 
     # Start wpa_supplicant on wlan1
-    subprocess.run(['systemctl', 'enable', 'wpa_supplicant@wlan1'],
+    subprocess.run(['sudo', '-n', 'systemctl', 'enable', 'wpa_supplicant@wlan1'],
                    capture_output=True)
-    result = subprocess.run(['systemctl', 'start', 'wpa_supplicant@wlan1'],
-                            capture_output=True)
+    subprocess.run(['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
+                   capture_output=True)
 
     # Wait for connection
     connected = False
@@ -531,11 +534,11 @@ def wifi_connect():
 @app.route('/api/network/wifi-disconnect', methods=['POST'])
 def wifi_disconnect():
     """Disconnect wlan1 from WiFi network"""
-    subprocess.run(['systemctl', 'stop', 'wpa_supplicant@wlan1'],
+    subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
                    capture_output=True)
-    subprocess.run(['systemctl', 'disable', 'wpa_supplicant@wlan1'],
+    subprocess.run(['sudo', '-n', 'systemctl', 'disable', 'wpa_supplicant@wlan1'],
                    capture_output=True)
-    subprocess.run(['ip', 'addr', 'flush', 'dev', 'wlan1'],
+    subprocess.run(['sudo', '-n', 'ip', 'addr', 'flush', 'dev', 'wlan1'],
                    capture_output=True)
 
     # Remove saved config
