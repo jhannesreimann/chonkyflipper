@@ -82,13 +82,22 @@ echo ""
 
 # -- Update backend files --
 echo "Updating backend..."
-for item in app.py requirements.txt setup-gadget.sh maintenance-mode.sh modules payloads; do
+for item in app.py requirements.txt setup-gadget.sh maintenance-mode.sh modules; do
     src="$REPO_DIR/backend/$item"
     if [ -e "$src" ]; then
         cp -r "$src" "$INSTALL_DIR/"
         echo "  ✓ backend/$item"
     fi
 done
+
+# Copy payloads (BadUSB scripts from backend, IR codes from repo root)
+if [ -d "$REPO_DIR/backend/payloads" ]; then
+    cp -r "$REPO_DIR/backend/payloads/"* "$INSTALL_DIR/payloads/" 2>/dev/null || true
+fi
+if [ -d "$REPO_DIR/payloads" ]; then
+    cp -r "$REPO_DIR/payloads/"* "$INSTALL_DIR/payloads/"
+    echo "  ✓ payloads (IR + BadUSB)"
+fi
 
 # -- Update update.sh itself --
 if [ -f "$REPO_DIR/update.sh" ]; then
