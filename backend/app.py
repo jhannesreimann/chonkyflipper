@@ -393,13 +393,13 @@ def wifi_scan_networks():
 
     networks = []
     try:
-        # Trigger scan via wpa_cli
-        subprocess.run(['wpa_cli', '-i', 'wlan1', 'scan'],
+        # Trigger scan via wpa_cli (needs root for control socket)
+        subprocess.run(['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan'],
                       capture_output=True, timeout=5)
         time.sleep(3)
 
         output = subprocess.check_output(
-            ['wpa_cli', '-i', 'wlan1', 'scan_results'],
+            ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan_results'],
             text=True, stderr=subprocess.DEVNULL, timeout=10
         )
 
