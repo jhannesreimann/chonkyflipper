@@ -233,7 +233,7 @@ dhcp-option=3,192.168.4.1
 dhcp-option=6,192.168.4.1
 server=8.8.8.8
 server=8.8.4.4
-address=/chonkyflipper.local/192.168.4.1
+address=/chonkyflipper.pi/192.168.4.1
 EOF
 
 # Configure static IP for wlan0 via systemd service (interfaces.d not reliable on Kali)

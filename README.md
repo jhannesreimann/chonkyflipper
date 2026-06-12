@@ -154,7 +154,7 @@ install.sh              System setup script
 
 2. Connect a smartphone to the Chonky_Control network.
 
-3. Open a web browser and navigate to http://192.168.4.1 or http://chonkyflipper.local.
+3. Open a web browser and navigate to http://192.168.4.1 or http://chonkyflipper.pi.
 
 4. Select the desired testing module from the dashboard grid.
 
