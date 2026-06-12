@@ -34,6 +34,7 @@ async function init() {
     
     // Initial status check
     await checkStatus();
+    await updateSystemInfo();
     await fetchVersion();
     await updateNetworkStatus();
 
