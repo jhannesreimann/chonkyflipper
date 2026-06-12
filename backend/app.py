@@ -374,57 +374,84 @@ def wifi_scan_networks():
             'error': 'Alfa WiFi adapter not connected'
         }), 400
 
-    # Ensure wlan1 is up and in managed mode
-    subprocess.run(['ip', 'link', 'set', 'wlan1', 'up'], capture_output=True)
+    # Ensure wlan1 is up
+    subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
+                   capture_output=True)
 
-    try:
-        output = subprocess.check_output(
-            ['sudo', '-n', 'iw', 'dev', 'wlan1', 'scan'],
-            text=True, stderr=subprocess.DEVNULL, timeout=15
+    # Use wpa_cli for reliable security info (needs wpa_supplicant running)
+    # Start wpa_supplicant temporarily if needed
+    wpa_was_running = subprocess.run(
+        ['systemctl', 'is-active', '--quiet', 'wpa_supplicant@wlan1']
+    ).returncode == 0
+
+    if not wpa_was_running:
+        subprocess.run(
+            ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
+            capture_output=True
         )
-    except subprocess.TimeoutExpired:
-        return jsonify({'success': False, 'error': 'Scan timed out'}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        time.sleep(1)
 
     networks = []
-    current = {}
+    try:
+        # Trigger scan via wpa_cli
+        subprocess.run(['wpa_cli', '-i', 'wlan1', 'scan'],
+                      capture_output=True, timeout=5)
+        time.sleep(3)
 
-    for line in output.split('\n'):
-        line = line.strip()
-        if line.startswith('BSS '):
-            if current.get('bssid'):
-                networks.append(current)
-            current = {}
-            # Extract MAC from "BSS xx:xx:xx:xx:xx:xx(on wlan1)"
-            mac_match = re.search(r'([0-9a-fA-F:]{17})', line)
-            if mac_match:
-                current['bssid'] = mac_match.group(1).upper()
-        elif 'SSID:' in line:
-            ssid = line.split('SSID:', 1)[1].strip()
-            current['ssid'] = ssid if ssid else '(hidden)'
-        elif 'signal:' in line:
-            match = re.search(r'(-?\d+)', line)
-            if match:
-                current['signal_dbm'] = int(match.group(1))
-        elif 'freq:' in line:
-            match = re.search(r'(\d+)', line)
-            if match:
-                freq = int(match.group(1))
-                if 2412 <= freq <= 2484:
-                    current['channel'] = (freq - 2412) // 5 + 1
-                elif 5180 <= freq <= 5885:
-                    current['channel'] = (freq - 5180) // 5 + 36
-        elif line.startswith('RSN:'):
-            current['security'] = 'WPA2'
-        elif line.startswith('WPA:'):
-            current['security'] = 'WPA'
-        elif 'WPS:' in line and 'security' not in current:
-            # WPS-capable APs are almost always WPA2
-            current['security'] = 'WPA2'
+        output = subprocess.check_output(
+            ['wpa_cli', '-i', 'wlan1', 'scan_results'],
+            text=True, stderr=subprocess.DEVNULL, timeout=10
+        )
 
-    if current.get('bssid'):
-        networks.append(current)
+        # Parse tab-separated output (skip header line)
+        for line in output.split('\n'):
+            parts = line.split('\t')
+            if len(parts) < 5:
+                continue
+            bssid = parts[0].strip()
+            if not re.match(r'^[0-9a-fA-F:]{17}$', bssid):
+                continue
+
+            try:
+                freq = int(parts[1].strip())
+                signal = int(parts[2].strip())
+            except ValueError:
+                continue
+
+            flags = parts[3].strip()
+            ssid = parts[4].strip() if len(parts) > 4 else '(hidden)'
+
+            # Determine security from flags
+            security = None
+            if 'WPA2' in flags:
+                security = 'WPA2'
+            elif 'WPA-' in flags:
+                security = 'WPA'
+
+            # Convert frequency to channel
+            channel = None
+            if 2412 <= freq <= 2484:
+                channel = (freq - 2412) // 5 + 1
+            elif 5180 <= freq <= 5885:
+                channel = (freq - 5180) // 5 + 36
+
+            networks.append({
+                'bssid': bssid.upper(),
+                'ssid': ssid,
+                'signal_dbm': signal,
+                'channel': channel,
+                'security': security
+            })
+
+    except Exception:
+        pass
+
+    # Stop wpa_supplicant if we started it
+    if not wpa_was_running:
+        subprocess.run(
+            ['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
+            capture_output=True
+        )
 
     # Deduplicate by SSID, keep strongest signal
     seen = {}
@@ -433,10 +460,11 @@ def wifi_scan_networks():
         if not ssid:
             continue
         if ssid not in seen or net.get('signal_dbm', -100) > seen[ssid].get('signal_dbm', -100):
-            # Merge: entry with signal wins, but keep security if the winner lacks it
-            if ssid in seen and 'security' not in seen[ssid] and 'security' in net:
-                net['security'] = net['security']
-            seen[ssid] = net
+            # Keep security from any entry if the winner lacks it
+            if ssid in seen and not seen[ssid].get('security') and net.get('security'):
+                seen[ssid]['security'] = net['security']
+            else:
+                seen[ssid] = net
 
     result = sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
 
