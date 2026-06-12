@@ -509,6 +509,7 @@ def wifi_connect():
     config = (
         f'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n'
         f'update_config=1\n'
+        f'bgscan=""\n'
         f'country=DE\n\n'
         f'network={{\n'
         f'    ssid="{ssid}"\n'
