@@ -1,6 +1,6 @@
 {
-  "brand": "Samsung",
-  "device": "TV (short header variant)",
+  "brand": "Samsung Short",
+  "device": "TV (Crystal UHD, ~4500us header)",
   "protocol": "NEC",
   "notes": "Samsung TVs using ~4500us header instead of 9000us (e.g. GU50AU7179UXZQ Crystal UHD models). Captured from original remote.",
   "source_urls": [],
