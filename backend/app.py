@@ -580,8 +580,6 @@ def wifi_disconnect():
     """Disconnect wlan1 from WiFi network"""
     subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
                    capture_output=True)
-    subprocess.run(['sudo', '-n', 'systemctl', 'disable', 'wpa_supplicant@wlan1'],
-                   capture_output=True)
     subprocess.run(['sudo', '-n', 'ip', 'addr', 'flush', 'dev', 'wlan1'],
                    capture_output=True)
 
