@@ -296,10 +296,11 @@ EOF
 # Allow the service user to write to /dev/hidg0 without root
 echo 'KERNEL=="hidg*", MODE="0666"' > /etc/udev/rules.d/99-chonky-hidg.rules
 
-# Allow service user to run update script and shut down without a password prompt
+# Allow service user to run privileged operations without a password prompt
 cat > /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
 chonky ALL=(ALL) NOPASSWD: /sbin/shutdown
 chonky ALL=(ALL) NOPASSWD: /opt/chonkyflipper/update.sh
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/iw dev wlan1 scan
 EOFSUDOERS
 chmod 440 /etc/sudoers.d/chonky-ops
 
