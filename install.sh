@@ -301,12 +301,17 @@ cat > /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
 chonky ALL=(ALL) NOPASSWD: /sbin/shutdown
 chonky ALL=(ALL) NOPASSWD: /opt/chonkyflipper/update.sh
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/iw dev wlan1 scan
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli -i wlan1 scan
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli -i wlan1 scan_results
 chonky ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/wpa_supplicant/wpa_supplicant-wlan1.conf
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl start wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip addr flush dev wlan1
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip link set wlan1 up
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/i2cdetect -y 1
+chonky ALL=(ALL) NOPASSWD: /usr/bin/rm -f /var/run/wpa_supplicant/wlan1
 EOFSUDOERS
 chmod 440 /etc/sudoers.d/chonky-ops
 
