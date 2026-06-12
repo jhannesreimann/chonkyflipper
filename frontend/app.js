@@ -549,12 +549,19 @@ async function updateNetworkStatus() {
             updateHint.textContent = 'Connect LAN cable or WiFi client for internet access.';
         }
 
-        // Show disconnect button if connected
+        // Show/hide UI based on connection state
         const discBtn = document.getElementById('wifi-disconnect-btn');
         const scanBtn = document.getElementById('wifi-scan-btn');
+        const netTable = document.getElementById('wifi-networks-table');
+        const pwPrompt = document.getElementById('wifi-password-prompt');
+        const scanStatus = document.getElementById('wifi-scan-status');
+
         if (data.wifi_client && data.wifi_client.connected) {
             discBtn.style.display = '';
             scanBtn.style.display = 'none';
+            netTable.style.display = 'none';
+            pwPrompt.style.display = 'none';
+            scanStatus.style.display = 'none';
         } else {
             discBtn.style.display = 'none';
             scanBtn.style.display = '';
