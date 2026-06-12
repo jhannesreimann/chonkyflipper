@@ -76,24 +76,11 @@ class IRModule:
         pulses = []
         spaces = []
         try:
-            fd = os.open(self.rx_dev, os.O_RDONLY)
-            # Set blocking mode so we don't busy-wait
-            os.set_blocking(fd, True)
-
+            fd = os.open(self.rx_dev, os.O_RDONLY | os.O_NONBLOCK)
             start = time.time()
             while (time.time() - start) < duration:
-                # Calculate remaining time for this read
-                remaining = duration - (time.time() - start)
-                if remaining <= 0:
-                    break
-
-                # Use select-like approach: set a short timeout via alarm
                 try:
-                    import signal
-                    signal.alarm(max(1, int(remaining)))
                     data = os.read(fd, 4)
-                    signal.alarm(0)
-
                     if data and len(data) == 4:
                         val = struct.unpack('I', data)[0]
                         length = val & 0x00FFFFFF
@@ -101,19 +88,13 @@ class IRModule:
 
                         if p_type == 0:  # space
                             spaces.append(length)
-                            # New pulse-space pair complete
-                            if pulses and len(spaces) > len(pulses) - 1:
-                                pass  # normal alternation
                         elif p_type == 1:  # pulse
                             pulses.append(length)
                         # type 2 = timeout, skip
-                except (OSError, IOError):
-                    # Alarm signal interrupted the read
-                    signal.alarm(0)
+                except BlockingIOError:
+                    time.sleep(0.005)
+                except OSError:
                     break
-                except Exception:
-                    break
-
             os.close(fd)
 
         except Exception as e:
