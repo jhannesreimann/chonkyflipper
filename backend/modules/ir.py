@@ -86,11 +86,19 @@ class IRModule:
                         length = val & 0x00FFFFFF
                         p_type = (val >> 24) & 0xFF
 
+                        # Filter LIRC timeout markers (0x00FFFFFF = 16777215)
+                        if length >= 0x00FFFF00:
+                            # Timeout/overflow — skip, end of signal
+                            continue
+
                         if p_type == 0:  # space
-                            spaces.append(length)
+                            # Also filter unreasonably long spaces (>1 second)
+                            if length < 1000000:
+                                spaces.append(length)
                         elif p_type == 1:  # pulse
-                            pulses.append(length)
-                        # type 2 = timeout, skip
+                            # Filter unreasonably long pulses
+                            if length < 100000:
+                                pulses.append(length)
                 except BlockingIOError:
                     time.sleep(0.005)
                 except OSError:
@@ -205,11 +213,16 @@ class IRModule:
 
     def _transmit_pairs(self, pairs, label='raw'):
         """Write pulse-space file and transmit via ir-ctl"""
-        # Build ir-ctl pulse file
+        # Build ir-ctl pulse file, filtering any unreasonable values
         lines = []
         for p in pairs:
-            t = p['type']
             dur = p['duration_us']
+            # Skip timeout markers and unreasonably long values
+            if dur >= 1000000:  # >1 second is a LIRC timeout, not a real signal
+                continue
+            if p['type'] == 'pulse' and dur > 100000:
+                continue
+            t = p['type']
             lines.append(f'{t} {dur}')
 
         tmpfile = f'/tmp/ir-tx-{os.getpid()}.txt'
