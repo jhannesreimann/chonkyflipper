@@ -403,24 +403,34 @@ class IRModule:
 
     @staticmethod
     def _encode_nec(address, command, header_pulse=9000, header_space=4500,
-                    unit_pulse=560, unit_space_0=560, unit_space_1=1690):
+                    unit_pulse=560, unit_space_0=560, unit_space_1=1690,
+                    samsung32=False):
         """
         Build NEC protocol pulse and space arrays from address and command.
         Returns (pulses, spaces) lists in microseconds.
-        Standard NEC: 9000us header pulse, 4500us header space, 32 bits LSB first,
-        each bit is 560us pulse followed by 560us (0) or 1690us (1) space.
-        Samsung variant: 4500us header pulse, 4500us header space.
+        Standard NEC: 9000us header, 32 bits (addr + ~addr + cmd + ~cmd).
+        Samsung variant: 4500us header, 32 bits (addr + addr + cmd + ~cmd).
         """
         pulses = [header_pulse]
         spaces = [header_space]
 
-        # Encode 32 bits: address (LSB), address inverse, command (LSB), command inverse
-        data = [
-            address & 0xFF,
-            (~address) & 0xFF,
-            command & 0xFF,
-            (~command) & 0xFF
-        ]
+        # Build 32-bit payload
+        if samsung32:
+            # Samsung32: address repeated, command inverted
+            data = [
+                address & 0xFF,
+                address & 0xFF,        # repeated, not inverted
+                command & 0xFF,
+                (~command) & 0xFF
+            ]
+        else:
+            # Standard NEC: both inverted
+            data = [
+                address & 0xFF,
+                (~address) & 0xFF,
+                command & 0xFF,
+                (~command) & 0xFF
+            ]
 
         for byte in data:
             for bit_pos in range(8):
@@ -458,9 +468,11 @@ class IRModule:
                     if proto == 'NEC':
                         hp = data.get('header_pulse', 9000)
                         hs = data.get('header_space', 4500)
+                        s32 = data.get('samsung32', False)
                         p, s = self._encode_nec(
                             btn['address'], btn['command'],
-                            header_pulse=hp, header_space=hs
+                            header_pulse=hp, header_space=hs,
+                            samsung32=s32
                         )
                         payloads[f'{brand.lower()}_{btn_id}'] = {
                             'name': f'{brand} {btn["label"]}',

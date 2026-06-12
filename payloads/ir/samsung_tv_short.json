@@ -2,15 +2,16 @@
   "brand": "Samsung Short",
   "device": "TV (Crystal UHD, ~4500us header)",
   "protocol": "NEC",
-  "notes": "Samsung TVs using ~4500us header instead of 9000us (e.g. GU50AU7179UXZQ Crystal UHD models). Captured from original remote.",
+  "samsung32": true,
+  "notes": "Samsung TVs using ~4500us header and Samsung32 bit format (address repeated, not inverted). Captured from GU50AU7179UXZQ original remote.",
   "source_urls": [],
   "header_pulse": 4500,
   "header_space": 4500,
   "buttons": {
     "power_toggle": {
-      "label": "Power Toggle (short header)",
+      "label": "Power Toggle (captured from GU50AU7179)",
       "address": 7,
-      "command": 2
+      "command": 230
     }
   }
 }
