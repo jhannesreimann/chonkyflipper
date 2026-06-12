@@ -1,0 +1,16 @@
+{
+  "brand": "Samsung",
+  "device": "TV (short header variant)",
+  "protocol": "NEC",
+  "notes": "Samsung TVs using ~4500us header instead of 9000us (e.g. GU50AU7179UXZQ Crystal UHD models). Captured from original remote.",
+  "source_urls": [],
+  "header_pulse": 4500,
+  "header_space": 4500,
+  "buttons": {
+    "power_toggle": {
+      "label": "Power Toggle (short header)",
+      "address": 7,
+      "command": 2
+    }
+  }
+}

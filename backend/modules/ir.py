@@ -402,15 +402,17 @@ class IRModule:
     # -----------------------------------------------------------
 
     @staticmethod
-    def _encode_nec(address, command):
+    def _encode_nec(address, command, header_pulse=9000, header_space=4500,
+                    unit_pulse=560, unit_space_0=560, unit_space_1=1690):
         """
         Build NEC protocol pulse and space arrays from address and command.
         Returns (pulses, spaces) lists in microseconds.
-        Standard NEC: 9000us header pulse, 4500us space, then 32 bits LSB first,
+        Standard NEC: 9000us header pulse, 4500us header space, 32 bits LSB first,
         each bit is 560us pulse followed by 560us (0) or 1690us (1) space.
+        Samsung variant: 4500us header pulse, 4500us header space.
         """
-        pulses = [9000]
-        spaces = [4500]
+        pulses = [header_pulse]
+        spaces = [header_space]
 
         # Encode 32 bits: address (LSB), address inverse, command (LSB), command inverse
         data = [
@@ -422,13 +424,13 @@ class IRModule:
 
         for byte in data:
             for bit_pos in range(8):
-                pulses.append(560)
+                pulses.append(unit_pulse)
                 if byte & (1 << bit_pos):
-                    spaces.append(1690)
+                    spaces.append(unit_space_1)
                 else:
-                    spaces.append(560)
+                    spaces.append(unit_space_0)
 
-        pulses.append(560)  # trailing pulse
+        pulses.append(unit_pulse)  # trailing pulse
         return pulses, spaces
 
     def _load_payload_files(self):
@@ -454,7 +456,12 @@ class IRModule:
                 for btn_id, btn in data.get('buttons', {}).items():
                     proto = data.get('protocol', 'NEC')
                     if proto == 'NEC':
-                        p, s = self._encode_nec(btn['address'], btn['command'])
+                        hp = data.get('header_pulse', 9000)
+                        hs = data.get('header_space', 4500)
+                        p, s = self._encode_nec(
+                            btn['address'], btn['command'],
+                            header_pulse=hp, header_space=hs
+                        )
                         payloads[f'{brand.lower()}_{btn_id}'] = {
                             'name': f'{brand} {btn["label"]}',
                             'brand': brand,
