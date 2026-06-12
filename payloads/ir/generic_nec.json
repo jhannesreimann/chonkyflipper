@@ -1,0 +1,31 @@
+{
+  "brand": "Generic",
+  "device": "Various",
+  "protocol": "NEC",
+  "notes": "Standard NEC protocol codes used by many TV brands.",
+  "source_urls": [
+    "https://docs.rs/infrared/0.14.0/src/infrared/remotecontrol/nec/nec.rs.html"
+  ],
+  "buttons": {
+    "power_toggle": {
+      "label": "Power Toggle",
+      "address": 0,
+      "command": 69
+    },
+    "volume_up": {
+      "label": "Volume Up",
+      "address": 0,
+      "command": 16
+    },
+    "volume_down": {
+      "label": "Volume Down",
+      "address": 0,
+      "command": 17
+    },
+    "mute": {
+      "label": "Mute",
+      "address": 0,
+      "command": 9
+    }
+  }
+}

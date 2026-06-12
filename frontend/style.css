@@ -546,6 +546,18 @@ body {
 .net-value.offline { color: #dc2626; }
 .net-value.warning { color: var(--accent-warning); }
 
+/* Payload items */
+.payload-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-dark);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    gap: 8px;
+}
+
 /* Status message (for scan progress etc) */
 .status-msg {
     padding: 8px 12px;

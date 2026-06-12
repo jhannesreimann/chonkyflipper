@@ -105,12 +105,38 @@
         <!-- IR Control -->
         <section class="card module-panel" id="panel-ir">
             <h2>📺 Infrared</h2>
-            <div class="button-group">
-                <button class="btn btn-primary" onclick="irRecord()">🔴 Record</button>
-                <button class="btn btn-secondary" onclick="irTransmit()">📤 Transmit</button>
+
+            <!-- Record & Signals -->
+            <div class="settings-section">
+                <h3>Capture</h3>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="irRecord()">🔴 Record (5s)</button>
+                    <button class="btn btn-secondary" onclick="irLoadSignals()">🔄 Refresh</button>
+                </div>
+                <div id="ir-record-status" class="status-msg" style="display:none;"></div>
+                <div class="table-container" id="ir-signals-table" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr><th>Signal</th><th>Protocol</th><th>Pulses</th><th></th></tr>
+                        </thead>
+                        <tbody id="ir-signals-body"></tbody>
+                    </table>
+                </div>
+                <div id="ir-signals-empty" class="placeholder">No signals recorded yet.</div>
             </div>
-            <div class="signal-list" id="ir-signals">
-                <p class="placeholder">No signals recorded yet...</p>
+
+            <!-- Built-in Payloads -->
+            <div class="settings-section">
+                <h3>Payload Library</h3>
+                <div id="ir-payloads-list"></div>
+            </div>
+
+            <!-- Brute Force -->
+            <div class="settings-section">
+                <h3>Device Discovery</h3>
+                <p class="hint">Send power toggle codes for common TV brands. Watch the target device.</p>
+                <button class="btn btn-secondary" onclick="irBruteforce()">⚡ Brute Force Power</button>
+                <div id="ir-bruteforce-status" class="status-msg" style="display:none;"></div>
             </div>
         </section>
 

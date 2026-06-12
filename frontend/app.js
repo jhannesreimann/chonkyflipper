@@ -161,7 +161,13 @@ function showModulePanel(module) {
         const item = document.querySelector(`.module-item[data-module="${module}"]`);
         if (item) item.classList.add('active');
         
-        log(`📂 Opened ${module.toUpperCase()} panel`);
+        // Auto-load data for specific panels
+        if (module === 'ir') {
+            irLoadSignals();
+            irLoadPayloads();
+        }
+
+        log(`Opened ${module.toUpperCase()} panel`);
     }
 }
 
@@ -325,8 +331,11 @@ async function bleBeacons() {
 // -----------------------------------------------------------
 
 async function irRecord() {
-    log('🔴 Recording IR signal (5s)...');
-    
+    const status = document.getElementById('ir-record-status');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Recording 5 seconds... point remote at receiver and press buttons.';
+
     try {
         const response = await fetch(`${API_URL}/ir/record`, {
             method: 'POST',
@@ -334,21 +343,141 @@ async function irRecord() {
             body: JSON.stringify({ duration: 5 })
         });
         const data = await response.json();
-        
+
         if (data.success) {
-            log(`✅ IR signal saved: ${data.name}`);
+            status.className = 'status-msg success';
+            status.textContent = 'Captured: ' + (data.preview || data.name);
+            log('IR signal recorded: ' + data.name + ' (' + data.protocol + ')');
+            irLoadSignals();
         } else {
-            log('❌ IR record failed: ' + (data.error || 'Unknown'));
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Record failed';
+            log('IR record failed: ' + (data.error || 'Unknown'));
         }
     } catch (error) {
-        log('❌ IR record error: ' + error.message);
+        status.className = 'status-msg error';
+        status.textContent = 'Record error: ' + error.message;
     }
 }
 
-async function irTransmit() {
-    log('📤 Transmit IR - select signal from list...');
-    // Would show signal selection modal
-    log('ℹ️ Select a signal from the list to transmit');
+async function irLoadSignals() {
+    try {
+        const response = await fetch(`${API_URL}/ir/signals`);
+        const data = await response.json();
+        const table = document.getElementById('ir-signals-table');
+        const body = document.getElementById('ir-signals-body');
+        const empty = document.getElementById('ir-signals-empty');
+
+        if (data.signals && data.signals.length > 0) {
+            table.style.display = '';
+            empty.style.display = 'none';
+            body.innerHTML = data.signals.map(s => `
+                <tr>
+                    <td>${escapeHtml(s.name)}</td>
+                    <td>${escapeHtml(s.protocol || '?')}</td>
+                    <td>${s.pulses || 0}</td>
+                    <td><button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;"
+                            onclick="irTransmitSignal('${escapeHtmlAttr(s.name)}')">Send</button></td>
+                </tr>`).join('');
+        } else {
+            table.style.display = 'none';
+            empty.style.display = '';
+        }
+    } catch (error) {
+        log('IR signal list error: ' + error.message);
+    }
+}
+
+async function irTransmitSignal(name) {
+    log('Transmitting: ' + name);
+    try {
+        const response = await fetch(`${API_URL}/ir/transmit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signal_id: name })
+        });
+        const data = await response.json();
+        if (data.success) {
+            log('Signal sent: ' + name);
+        } else {
+            log('Transmit failed: ' + (data.error || 'Unknown'));
+        }
+    } catch (error) {
+        log('Transmit error: ' + error.message);
+    }
+}
+
+async function irLoadPayloads() {
+    try {
+        const response = await fetch(`${API_URL}/ir/payloads`);
+        const data = await response.json();
+        const list = document.getElementById('ir-payloads-list');
+
+        if (data.payloads && data.payloads.length > 0) {
+            list.innerHTML = data.payloads.map(p => `
+                <div class="payload-item">
+                    <div>
+                        <strong>${escapeHtml(p.name)}</strong>
+                        <span style="color:var(--text-secondary);font-size:0.75rem;">
+                            ${escapeHtml(p.protocol)} - ${escapeHtml(p.description)}
+                        </span>
+                    </div>
+                    <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;"
+                            onclick="irSendPayload('${escapeHtmlAttr(p.id)}')">Send</button>
+                </div>`).join('');
+        } else {
+            list.innerHTML = '<p class="placeholder">No payloads available.</p>';
+        }
+    } catch (error) {
+        log('IR payload list error: ' + error.message);
+    }
+}
+
+async function irSendPayload(id) {
+    log('Sending payload: ' + id);
+    try {
+        const response = await fetch(`${API_URL}/ir/payloads/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload_id: id })
+        });
+        const data = await response.json();
+        if (data.success) {
+            log('Payload sent: ' + id);
+        } else {
+            log('Payload failed: ' + (data.error || 'Unknown'));
+        }
+    } catch (error) {
+        log('Payload error: ' + error.message);
+    }
+}
+
+async function irBruteforce() {
+    const status = document.getElementById('ir-bruteforce-status');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Sending power codes... watch the target device.';
+
+    log('Brute forcing IR power codes...');
+    try {
+        const response = await fetch(`${API_URL}/ir/bruteforce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brands: ['samsung', 'generic'] })
+        });
+        const data = await response.json();
+        if (data.success) {
+            status.className = 'status-msg success';
+            status.textContent = 'Sent ' + data.sent + ' power codes.';
+            log('Brute force done: ' + data.sent + ' codes sent');
+        } else {
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Failed';
+        }
+    } catch (error) {
+        status.className = 'status-msg error';
+        status.textContent = 'Error: ' + error.message;
+    }
 }
 
 // -----------------------------------------------------------

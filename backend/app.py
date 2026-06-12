@@ -185,6 +185,47 @@ def ir_transmit():
     result = ir.transmit_signal(signal_id)
     return jsonify(result)
 
+
+@app.route('/api/ir/signals', methods=['GET'])
+def ir_list_signals():
+    """List recorded IR signals"""
+    ir = get_module('ir')
+    return jsonify(ir.list_signals())
+
+
+@app.route('/api/ir/signals/<signal_id>', methods=['DELETE'])
+def ir_delete_signal(signal_id):
+    """Delete a recorded IR signal"""
+    ir = get_module('ir')
+    return jsonify(ir.delete_signal(signal_id))
+
+
+@app.route('/api/ir/payloads', methods=['GET'])
+def ir_payloads():
+    """List built-in IR payloads"""
+    ir = get_module('ir')
+    return jsonify(ir.list_payloads())
+
+
+@app.route('/api/ir/payloads/execute', methods=['POST'])
+def ir_execute_payload():
+    """Execute a built-in IR payload"""
+    data = request.json or {}
+    payload_id = data.get('payload_id')
+    if not payload_id:
+        return jsonify({'success': False, 'error': 'payload_id required'}), 400
+    ir = get_module('ir')
+    return jsonify(ir.execute_payload(payload_id))
+
+
+@app.route('/api/ir/bruteforce', methods=['POST'])
+def ir_bruteforce():
+    """Send common power toggle codes for device discovery"""
+    ir = get_module('ir')
+    data = request.json or {}
+    brands = data.get('brands', None)
+    return jsonify(ir.brute_force_power(brands))
+
 @app.route('/api/subghz/record', methods=['POST'])
 def subghz_record():
     """Record Sub-1 GHz signal (433/868 MHz)"""
