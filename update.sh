@@ -95,6 +95,7 @@ if [ -d "$REPO_DIR/backend/payloads" ]; then
     cp -r "$REPO_DIR/backend/payloads/"* "$INSTALL_DIR/payloads/" 2>/dev/null || true
 fi
 if [ -d "$REPO_DIR/payloads" ]; then
+    mkdir -p "$INSTALL_DIR/payloads"
     cp -r "$REPO_DIR/payloads/"* "$INSTALL_DIR/payloads/"
     echo "  ✓ payloads (IR + BadUSB)"
 fi
