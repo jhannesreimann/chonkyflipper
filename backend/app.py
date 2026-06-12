@@ -213,29 +213,29 @@ def network_status():
         wlan1_exists = os.path.exists('/sys/class/net/wlan1')
 
         # Check wlan1 client mode status
-        wlan1_active = False
+        wlan1_connected = False
         wlan1_ssid = None
         wlan1_ip = None
         if wlan1_exists:
-            wlan1_active = subprocess.run(
-                ['systemctl', 'is-active', 'wpa_supplicant@wlan1'],
-                capture_output=True
-            ).returncode == 0
-            if wlan1_active:
-                try:
-                    ssid_out = subprocess.check_output(
-                        ['wpa_cli', '-i', 'wlan1', 'status'],
-                        text=True, stderr=subprocess.DEVNULL
-                    )
-                    for line in ssid_out.split('\n'):
-                        if line.startswith('ssid='):
-                            val = line.split('=', 1)[1]
-                            wlan1_ssid = val if val else None
-                        if line.startswith('ip_address='):
-                            val = line.split('=', 1)[1]
-                            wlan1_ip = val if val else None
-                except Exception:
-                    pass
+            # wpa_cli status tells us if we have a real connection
+            try:
+                ssid_out = subprocess.check_output(
+                    ['wpa_cli', '-i', 'wlan1', 'status'],
+                    text=True, stderr=subprocess.DEVNULL
+                )
+                wpa_state = None
+                for line in ssid_out.split('\n'):
+                    if line.startswith('wpa_state='):
+                        wpa_state = line.split('=', 1)[1]
+                    if line.startswith('ssid='):
+                        val = line.split('=', 1)[1]
+                        wlan1_ssid = val if val else None
+                    if line.startswith('ip_address='):
+                        val = line.split('=', 1)[1]
+                        wlan1_ip = val if val else None
+                wlan1_connected = (wpa_state == 'COMPLETED')
+            except Exception:
+                pass
 
         # Check eth0 link and IP
         eth0_connected = False
@@ -286,7 +286,7 @@ def network_status():
             },
             'wifi_client': {
                 'adapter_present': wlan1_exists,
-                'connected': wlan1_active,
+                'connected': wlan1_connected,
                 'ssid': wlan1_ssid,
                 'ip': wlan1_ip
             },
