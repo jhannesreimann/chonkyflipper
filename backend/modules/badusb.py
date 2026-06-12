@@ -78,7 +78,7 @@ class BadUSBModule:
 
     def __init__(self):
         self.hid_device = '/dev/hidg0'
-        self.payloads_dir = '/opt/chonkyflipper/payloads'
+        self.payloads_dir = '/opt/chonkyflipper/payloads/badusb'
         os.makedirs(self.payloads_dir, exist_ok=True)
 
     def _check_device(self):

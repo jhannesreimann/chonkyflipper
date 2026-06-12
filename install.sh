@@ -159,9 +159,10 @@ if [ -f "$SCRIPT_DIR/update.sh" ]; then
     chmod +x "$INSTALL_DIR/update.sh"
 fi
 
-# Seed sample payloads (never overwrites existing files)
-if [ -d "$SCRIPT_DIR/payloads" ]; then
-    cp -n "$SCRIPT_DIR/payloads/"*.txt "$INSTALL_DIR/payloads/" 2>/dev/null || true
+# Seed sample BadUSB payloads (never overwrites existing files)
+if [ -d "$SCRIPT_DIR/payloads/badusb" ]; then
+    mkdir -p "$INSTALL_DIR/payloads/badusb"
+    cp -n "$SCRIPT_DIR/payloads/badusb/"*.txt "$INSTALL_DIR/payloads/badusb/" 2>/dev/null || true
 fi
 
 # Set permissions
