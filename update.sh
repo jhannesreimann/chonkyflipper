@@ -17,7 +17,7 @@ INSTALL_DIR="/opt/chonkyflipper"
 REPO_DIR="/home/kali/chonkyflipper"
 FRONTEND_DIR="/var/www/html"
 
-# ── Ensure git can use SSH keys (needed when running as root via sudo) ──
+# -- Ensure git can use SSH keys (needed when running as root via sudo) --
 if [ -z "$GIT_SSH_COMMAND" ] && [ -f /home/kali/.ssh/id_ed25519 ]; then
     export GIT_SSH_COMMAND="ssh -i /home/kali/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new"
 fi
@@ -26,13 +26,13 @@ echo "🔄 ChonkyFlipper Update"
 echo "========================"
 echo ""
 
-# ── Check internet (try multiple interfaces) ──
+# -- Check internet (try multiple interfaces) --
 echo "Checking internet connectivity..."
 if ! ping -c 1 -W 3 github.com &>/dev/null; then
     echo "❌ No internet connection to github.com"
     echo ""
     echo "   Options:"
-    echo "   1. Connect Ethernet cable (LAN) — seamless, AP stays up"
+    echo "   1. Connect Ethernet cable (LAN)  --  seamless, AP stays up"
     echo "   2. Enable maintenance mode from the dashboard"
     echo "   3. USB tether: sudo /opt/chonkyflipper/maintenance-mode.sh usb-tether"
     exit 1
@@ -40,7 +40,7 @@ fi
 echo "✅ Internet: reachable"
 echo ""
 
-# ── Verify repo exists ──
+# -- Verify repo exists --
 if [ ! -d "$REPO_DIR/.git" ]; then
     echo "❌ Git repository not found at $REPO_DIR"
     echo "   Clone it first:"
@@ -48,7 +48,7 @@ if [ ! -d "$REPO_DIR/.git" ]; then
     exit 1
 fi
 
-# ── Git pull ──
+# -- Git pull --
 cd "$REPO_DIR"
 OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 echo "Current version: $OLD_COMMIT"
@@ -71,7 +71,7 @@ echo "$NEW_COMMIT" > "$INSTALL_DIR/VERSION"
 chown chonky:chonky "$INSTALL_DIR/VERSION"
 
 if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
-    echo "✅ Already up to date — nothing to do."
+    echo "✅ Already up to date  --  nothing to do."
     exit 0
 fi
 
@@ -80,7 +80,7 @@ echo "Changes:"
 git --no-pager log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "  (detailed log unavailable)"
 echo ""
 
-# ── Update backend files ──
+# -- Update backend files --
 echo "Updating backend..."
 for item in app.py requirements.txt setup-gadget.sh maintenance-mode.sh modules payloads; do
     src="$REPO_DIR/backend/$item"
@@ -90,21 +90,21 @@ for item in app.py requirements.txt setup-gadget.sh maintenance-mode.sh modules 
     fi
 done
 
-# ── Update update.sh itself ──
+# -- Update update.sh itself --
 if [ -f "$REPO_DIR/update.sh" ]; then
     cp "$REPO_DIR/update.sh" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/update.sh"
     echo "  ✓ update.sh (self-updated)"
 fi
 
-# ── Update frontend ──
+# -- Update frontend --
 echo "Updating frontend..."
 if [ -d "$REPO_DIR/frontend" ]; then
     cp -r "$REPO_DIR/frontend/"* "$FRONTEND_DIR/"
     echo "  ✓ frontend/* → $FRONTEND_DIR"
 fi
 
-# ── Update Python dependencies ──
+# -- Update Python dependencies --
 echo "Checking Python dependencies..."
 if [ -f "$INSTALL_DIR/venv/bin/activate" ]; then
     source "$INSTALL_DIR/venv/bin/activate"
@@ -114,17 +114,17 @@ else
     echo "  ⚠ venv not found, skipping pip install"
 fi
 
-# ── Fix permissions ──
+# -- Fix permissions --
 chown -R chonky:chonky "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/setup-gadget.sh" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/maintenance-mode.sh" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/update.sh" 2>/dev/null || true
 
-# ── Restart service ──
+# -- Restart service --
 echo ""
 echo "Restarting ChonkyFlipper service..."
 systemctl restart chonkyflipper
 
 echo ""
 echo "✅ Update complete: $OLD_COMMIT → $NEW_COMMIT"
-echo "   The backend restarted — dashboard will reconnect automatically."
+echo "   The backend restarted  --  dashboard will reconnect automatically."

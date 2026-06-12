@@ -86,7 +86,8 @@ class WiFiModule:
             
             # Signal Strength
             if 'Signal level' in line or 'signal:' in line:
-                signal_match = re.search(r'(-?\d+)', line)
+                # "Signal level=-42 dBm" or "signal: -42.00 dBm"
+                signal_match = re.search(r'[=-]\s*(-?\d+)', line)
                 if signal_match:
                     current_net['signal_dbm'] = int(signal_match.group(1))
         

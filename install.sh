@@ -277,7 +277,7 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# BadUSB gadget service — runs setup-gadget.sh before the Flask backend starts
+# BadUSB gadget service  --  runs setup-gadget.sh before the Flask backend starts
 cat > /etc/systemd/system/chonky-gadget.service << 'EOF'
 [Unit]
 Description=ChonkyFlipper USB HID Gadget Setup
@@ -351,7 +351,7 @@ chmod +x "$INSTALL_DIR/maintenance-mode.sh"
 echo ""
 echo "Verifying update script..."
 if [ ! -f "$INSTALL_DIR/update.sh" ]; then
-    echo "Warning: update.sh not found — update functionality will be unavailable."
+    echo "Warning: update.sh not found  --  update functionality will be unavailable."
 else
     chmod +x "$INSTALL_DIR/update.sh"
     echo "Update script deployed."

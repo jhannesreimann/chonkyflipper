@@ -13,9 +13,9 @@ const API_URL = `${API_BASE}/api`;
 let systemStatus = {};
 let activeModule = null;
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // INIT
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
     init();
@@ -35,16 +35,18 @@ async function init() {
     // Initial status check
     await checkStatus();
     await fetchVersion();
+    await updateNetworkStatus();
 
     // Start periodic updates
     setInterval(checkStatus, 5000);
     setInterval(updateSystemInfo, 10000);
     setInterval(fetchVersion, 60000);
+    setInterval(updateNetworkStatus, 10000);
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // STATUS & SYSTEM
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function checkStatus() {
     try {
@@ -162,9 +164,9 @@ function showModulePanel(module) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // WI-FI FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function wifiScan() {
     log('🔍 Scanning Wi-Fi networks...');
@@ -253,9 +255,9 @@ async function wifiCapture() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // BLUETOOTH FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function bleScan() {
     log('📶 Scanning BLE devices...');
@@ -317,9 +319,9 @@ async function bleBeacons() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // IR FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function irRecord() {
     log('🔴 Recording IR signal (5s)...');
@@ -348,9 +350,9 @@ async function irTransmit() {
     log('ℹ️ Select a signal from the list to transmit');
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // SUB-1GHZ FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function subghzRecord() {
     const freq = document.getElementById('subghz-freq').value;
@@ -378,9 +380,9 @@ async function subghzTransmit() {
     log('📤 Transmit Sub-1GHz - select signal...');
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // NFC FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function nfcRead() {
     log('📖 Reading NFC card...');
@@ -413,9 +415,9 @@ async function nfcClone() {
     log('📋 NFC clone - read card first, then write to magic card');
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // BADUSB FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 async function badusbExecute(payload) {
     log(`💉 Executing BadUSB payload: ${payload}`);
@@ -446,9 +448,9 @@ async function badusbExecute(payload) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // UTILITIES
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 function log(message) {
     const container = document.getElementById('activity-log');
@@ -481,41 +483,249 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // NETWORK / SETTINGS FUNCTIONS
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
+
+let selectedWifiSsid = null;
+let selectedWifiBssid = null;
 
 async function updateNetworkStatus() {
     try {
         const response = await fetch(`${API_URL}/network/status`);
         const data = await response.json();
-        
-        // Update display
-        const modeEl = document.getElementById('current-mode');
-        const internetEl = document.getElementById('internet-status');
-        
-        if (data.ap_mode) {
-            modeEl.textContent = 'AP Mode (Chonky_Control)';
-            modeEl.className = 'value status-ap';
-        } else if (data.client_mode) {
-            modeEl.textContent = 'Client Mode (Maintenance)';
-            modeEl.className = 'value status-client';
+
+        // LAN status
+        const eth0El = document.getElementById('net-eth0');
+        if (data.ethernet && data.ethernet.connected) {
+            eth0El.textContent = 'Connected (' + (data.ethernet.ip || 'no IP') + ')';
+            eth0El.className = 'net-value online';
         } else {
-            modeEl.textContent = 'Unknown';
-            modeEl.className = 'value';
+            eth0El.textContent = 'Not connected';
+            eth0El.className = 'net-value offline';
         }
-        
+
+        // WiFi client status
+        const wlan1El = document.getElementById('net-wlan1');
+        const wifiSection = document.getElementById('wifi-scanner-section');
+        if (data.wifi_client && data.wifi_client.adapter_present) {
+            wifiSection.style.display = '';
+            if (data.wifi_client.connected) {
+                wlan1El.textContent = 'Connected to ' + data.wifi_client.ssid;
+                wlan1El.className = 'net-value online';
+            } else {
+                wlan1El.textContent = 'Not connected';
+                wlan1El.className = 'net-value warning';
+            }
+        } else {
+            wifiSection.style.display = 'none';
+            wlan1El.textContent = 'Adapter not found';
+            wlan1El.className = 'net-value offline';
+        }
+
+        // Internet
+        const internetEl = document.getElementById('net-internet');
         if (data.internet_available) {
-            internetEl.textContent = '✅ Connected';
-            internetEl.className = 'value status-online';
+            const source = data.internet_source;
+            const label = source === 'ethernet' ? 'Online (LAN)' :
+                          source === 'wifi' ? 'Online (WiFi)' :
+                          source === 'ap_client' ? 'Online (AP client)' : 'Online';
+            internetEl.textContent = label;
+            internetEl.className = 'net-value online';
         } else {
-            internetEl.textContent = '❌ No Internet';
-            internetEl.className = 'value status-offline';
+            internetEl.textContent = 'Offline';
+            internetEl.className = 'net-value offline';
         }
-        
+
+        // Enable/disable update button
+        const updateBtn = document.getElementById('update-btn');
+        const updateHint = document.getElementById('update-hint');
+        if (data.internet_available) {
+            updateBtn.disabled = false;
+            updateHint.textContent = 'Internet available via ' +
+                (data.internet_source || 'unknown') + '. Updates will not disconnect you.';
+        } else {
+            updateBtn.disabled = true;
+            updateHint.textContent = 'Connect LAN cable or WiFi client for internet access.';
+        }
+
+        // Show disconnect button if connected
+        const discBtn = document.getElementById('wifi-disconnect-btn');
+        const scanBtn = document.getElementById('wifi-scan-btn');
+        if (data.wifi_client && data.wifi_client.connected) {
+            discBtn.style.display = '';
+            scanBtn.style.display = 'none';
+        } else {
+            discBtn.style.display = 'none';
+            scanBtn.style.display = '';
+        }
+
     } catch (error) {
         console.log('Network status check failed:', error);
     }
+}
+
+async function scanWifiNetworks() {
+    const table = document.getElementById('wifi-networks-table');
+    const body = document.getElementById('wifi-networks-body');
+    const status = document.getElementById('wifi-scan-status');
+    const scanBtn = document.getElementById('wifi-scan-btn');
+
+    scanBtn.disabled = true;
+    scanBtn.textContent = 'Scanning...';
+    table.style.display = 'none';
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Scanning for networks...';
+
+    try {
+        const response = await fetch(`${API_URL}/network/wifi-scan`);
+        const data = await response.json();
+
+        if (!data.success) {
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Scan failed';
+            scanBtn.disabled = false;
+            scanBtn.textContent = '🔍 Scan';
+            return;
+        }
+
+        if (!data.networks || data.networks.length === 0) {
+            status.className = 'status-msg info';
+            status.textContent = 'No networks found.';
+            scanBtn.disabled = false;
+            scanBtn.textContent = '🔍 Scan';
+            return;
+        }
+
+        status.style.display = 'none';
+        table.style.display = '';
+
+        body.innerHTML = data.networks.map(net => {
+            const ssid = net.ssid || '(hidden)';
+            const signal = net.signal_dbm ? net.signal_dbm + ' dBm' : '?';
+            const sec = net.security || '?';
+            const bars = signalToBars(net.signal_dbm);
+            return `
+                <tr class="wifi-network-row" onclick="selectWifiNetwork('${escapeHtmlAttr(ssid)}', '${net.bssid || ''}')">
+                    <td>${escapeHtml(ssid)}</td>
+                    <td>${bars} ${signal}</td>
+                    <td>${escapeHtml(sec)}</td>
+                    <td><button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;">→</button></td>
+                </tr>`;
+        }).join('');
+
+        log('Found ' + data.networks.length + ' WiFi networks');
+
+    } catch (error) {
+        status.className = 'status-msg error';
+        status.textContent = 'Scan error: ' + error.message;
+    }
+
+    scanBtn.disabled = false;
+    scanBtn.textContent = '🔍 Scan';
+}
+
+function selectWifiNetwork(ssid, bssid) {
+    selectedWifiSsid = ssid;
+    selectedWifiBssid = bssid;
+
+    document.getElementById('wifi-selected-ssid').textContent = ssid;
+    document.getElementById('wifi-password-input').value = '';
+    document.getElementById('wifi-password-prompt').style.display = '';
+
+    // Highlight selected row
+    document.querySelectorAll('.wifi-network-row').forEach(r => r.classList.remove('active'));
+    const rows = document.querySelectorAll('.wifi-network-row');
+    rows.forEach(r => {
+        if (r.cells[0].textContent === ssid) r.classList.add('active');
+    });
+}
+
+function cancelWifiConnect() {
+    document.getElementById('wifi-password-prompt').style.display = 'none';
+    selectedWifiSsid = null;
+    selectedWifiBssid = null;
+}
+
+async function connectToNetwork() {
+    const password = document.getElementById('wifi-password-input').value;
+    if (!password || !selectedWifiSsid) return;
+
+    const status = document.getElementById('wifi-scan-status');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Connecting to ' + selectedWifiSsid + '...';
+
+    document.getElementById('wifi-password-prompt').style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_URL}/network/wifi-connect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid: selectedWifiSsid, password: password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            status.className = 'status-msg success';
+            status.textContent = 'Connected to ' + selectedWifiSsid +
+                (data.ip ? ' (' + data.ip + ')' : '');
+            log('Connected to WiFi: ' + selectedWifiSsid);
+            updateNetworkStatus();
+        } else {
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Connection failed';
+            log('WiFi connection failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        status.className = 'status-msg error';
+        status.textContent = 'Connection error: ' + error.message;
+    }
+
+    selectedWifiSsid = null;
+    selectedWifiBssid = null;
+}
+
+async function disconnectWifi() {
+    const status = document.getElementById('wifi-scan-status');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Disconnecting...';
+
+    try {
+        const response = await fetch(`${API_URL}/network/wifi-disconnect`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            status.className = 'status-msg success';
+            status.textContent = 'Disconnected.';
+            document.getElementById('wifi-networks-table').style.display = 'none';
+            updateNetworkStatus();
+            log('WiFi client disconnected');
+        } else {
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Disconnect failed';
+        }
+    } catch (error) {
+        status.className = 'status-msg error';
+        status.textContent = 'Disconnect error: ' + error.message;
+    }
+}
+
+function signalToBars(dbm) {
+    if (dbm === null || dbm === undefined) return '';
+    if (dbm >= -50) return '▁▃▅▇';
+    if (dbm >= -65) return '▁▃▅';
+    if (dbm >= -75) return '▁▃';
+    return '▁';
+}
+
+function escapeHtmlAttr(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
 function showPoweroffDialog() {
@@ -528,85 +738,21 @@ function hidePoweroffDialog() {
 
 async function confirmPoweroff() {
     hidePoweroffDialog();
-    log('🔴 Shutting down...');
+    log('Shutting down...');
     try {
         await fetch(`${API_URL}/system/poweroff`, { method: 'POST' });
-        log('⏳ Device is powering off. Reconnect after restart.');
+        log('Device is powering off. Reconnect after restart.');
     } catch (error) {
-        // Expected — the Pi cuts the connection as it shuts down
-        log('⏳ Device is powering off. Reconnect after restart.');
-    }
-}
-
-function showMaintenanceDialog() {
-    document.getElementById('maintenance-dialog').style.display = 'flex';
-}
-
-function hideMaintenanceDialog() {
-    document.getElementById('maintenance-dialog').style.display = 'none';
-}
-
-async function enableMaintenanceMode() {
-    const ssid = document.getElementById('maintenance-ssid').value;
-    const password = document.getElementById('maintenance-password').value;
-    
-    if (!ssid || !password) {
-        log('❌ Please enter both SSID and password');
-        return;
-    }
-    
-    log(`🔧 Enabling maintenance mode: connecting to ${ssid}...`);
-    hideMaintenanceDialog();
-    
-    try {
-        const response = await fetch(`${API_URL}/network/maintenance`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid, password })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            log(`✅ Maintenance mode enabled! Connect to ${ssid}`);
-            log(`⚠️  You will be disconnected from Chonky_Control`);
-            log(`🔗 New IP will be shown in your router or reconnect to check`);
-        } else {
-            log('❌ Failed to enable maintenance: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        log('❌ Maintenance mode error: ' + error.message);
-    }
-}
-
-async function restoreAPMode() {
-    log('📡 Restoring AP mode (Chonky_Control)...');
-    
-    try {
-        const response = await fetch(`${API_URL}/network/apmode`, {
-            method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            log(`✅ AP mode restored!`);
-            log(`🔗 Reconnect to: ${data.ssid} (IP: ${data.ip})`);
-            log(`⏳ This may take 30 seconds...`);
-        } else {
-            log('❌ Failed to restore AP: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        log('❌ AP mode error: ' + error.message);
+        log('Device is powering off. Reconnect after restart.');
     }
 }
 
 async function runSystemUpdate() {
     const outputBox = document.getElementById('update-output');
     outputBox.style.display = 'block';
-    outputBox.innerHTML = '<p>🔄 Checking internet and starting update...</p>';
+    outputBox.innerHTML = '<p>Starting update...</p>';
 
-    log('🔄 Starting system update from GitHub...');
+    log('Starting system update from GitHub...');
 
     try {
         const response = await fetch(`${API_URL}/system/update`, {
@@ -617,48 +763,46 @@ async function runSystemUpdate() {
 
         if (data.success) {
             outputBox.innerHTML = `<pre class="success">${escapeHtml(data.message || 'Update started')}</pre>`;
-            log('✅ ' + data.message);
-            log('⏳ Backend will restart — reconnecting automatically...');
+            log(data.message);
 
-            // The backend will restart. Poll for it to come back.
             let attempts = 0;
             const checkBack = setInterval(async () => {
                 attempts++;
-                outputBox.innerHTML = `<pre class="success">Update in progress... (checking back: ${attempts})</pre>`;
+                outputBox.innerHTML = `<pre class="success">Update in progress... (${attempts})</pre>`;
 
                 try {
                     const resp = await fetch(`${API_URL}/status`);
                     if (resp.ok) {
                         clearInterval(checkBack);
-                        outputBox.innerHTML = '<pre class="success">✅ Update complete! Backend restarted successfully.</pre>';
-                        log('✅ Update complete — backend is back online!');
-                        fetchVersion();  // refresh displayed version
+                        outputBox.innerHTML = '<pre class="success">Update complete.</pre>';
+                        log('Update complete  --  backend is back online.');
+                        fetchVersion();
                         checkStatus();
                     }
                 } catch {
-                    // Still restarting, keep polling
+                    // Still restarting
                 }
 
                 if (attempts > 30) {
                     clearInterval(checkBack);
-                    outputBox.innerHTML = '<pre class="error">⚠ Update may have failed — backend did not return after 30s.</pre>';
-                    log('⚠ Update timeout — backend did not return');
+                    outputBox.innerHTML = '<pre class="error">Update timed out. Check system status.</pre>';
+                    log('Update timeout  --  backend did not return after 30s.');
                 }
             }, 2000);
         } else {
             outputBox.innerHTML = `<pre class="error">${escapeHtml(data.error || 'Update failed')}</pre>`;
-            log('❌ Update failed: ' + (data.error || 'Check internet connection'));
+            log('Update failed: ' + (data.error || 'Check internet connection'));
         }
     } catch (error) {
         outputBox.innerHTML = `<pre class="error">${escapeHtml(error.message)}</pre>`;
-        log('❌ Update error: ' + error.message);
+        log('Update error: ' + error.message);
     }
 }
 
-// Add periodic network status update
+// Periodic network status update
 setInterval(updateNetworkStatus, 10000);
 
 // Global error handler
 window.addEventListener('error', (e) => {
-    log('❌ JavaScript error: ' + e.message);
+    log('JavaScript error: ' + e.message);
 });

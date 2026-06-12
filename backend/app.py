@@ -5,8 +5,10 @@ Mobile IoT Pentesting Rig Controller
 """
 
 import os
+import re
 import subprocess
 import json
+import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from modules.wifi import WiFiModule
@@ -201,32 +203,94 @@ def badusb_execute():
 def network_status():
     """Get current network mode status"""
     try:
-        # Check hostapd status
+        # Check AP mode via hostapd
         hostapd_active = subprocess.run(
             ['systemctl', 'is-active', 'hostapd'],
             capture_output=True
         ).returncode == 0
-        
-        # Check client mode status
-        wpa_active = subprocess.run(
-            ['systemctl', 'is-active', 'wpa_supplicant@wlan0'],
-            capture_output=True
-        ).returncode == 0
-        
-        # Check internet connectivity
+
+        # Check if wlan1 exists (Alfa adapter)
+        wlan1_exists = os.path.exists('/sys/class/net/wlan1')
+
+        # Check wlan1 client mode status
+        wlan1_active = False
+        wlan1_ssid = None
+        wlan1_ip = None
+        if wlan1_exists:
+            wlan1_active = subprocess.run(
+                ['systemctl', 'is-active', 'wpa_supplicant@wlan1'],
+                capture_output=True
+            ).returncode == 0
+            if wlan1_active:
+                # Get connected SSID
+                try:
+                    ssid_out = subprocess.check_output(
+                        ['wpa_cli', '-i', 'wlan1', 'status'],
+                        text=True, stderr=subprocess.DEVNULL
+                    )
+                    for line in ssid_out.split('\n'):
+                        if line.startswith('ssid='):
+                            wlan1_ssid = line.split('=', 1)[1]
+                        if line.startswith('ip_address='):
+                            wlan1_ip = line.split('=', 1)[1]
+                except Exception:
+                    pass
+
+        # Check eth0 link and IP
+        eth0_connected = False
+        eth0_ip = None
         try:
-            subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], 
+            with open('/sys/class/net/eth0/operstate') as f:
+                eth0_connected = f.read().strip() == 'up'
+            if eth0_connected:
+                ip_out = subprocess.check_output(
+                    ['ip', '-4', '-br', 'addr', 'show', 'eth0'],
+                    text=True, stderr=subprocess.DEVNULL
+                )
+                match = re.search(r'(\d+\.\d+\.\d+\.\d+)', ip_out)
+                if match:
+                    eth0_ip = match.group(1)
+        except Exception:
+            pass
+
+        # Check internet connectivity
+        internet = False
+        internet_source = None
+        try:
+            subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'],
                          capture_output=True, check=True)
             internet = True
-        except:
-            internet = False
-        
+            # Determine which interface provides internet
+            route_out = subprocess.check_output(
+                ['ip', 'route', 'get', '8.8.8.8'], text=True, stderr=subprocess.DEVNULL
+            )
+            if 'eth0' in route_out:
+                internet_source = 'ethernet'
+            elif 'wlan1' in route_out:
+                internet_source = 'wifi'
+            elif 'wlan0' in route_out:
+                internet_source = 'ap_client'
+            else:
+                internet_source = 'unknown'
+        except Exception:
+            pass
+
         return jsonify({
             'ap_mode': hostapd_active,
-            'client_mode': wpa_active,
-            'internet_available': internet,
             'ap_ssid': 'Chonky_Control' if hostapd_active else None,
-            'ap_ip': '192.168.4.1' if hostapd_active else None
+            'ap_ip': '192.168.4.1' if hostapd_active else None,
+            'ethernet': {
+                'connected': eth0_connected,
+                'ip': eth0_ip
+            },
+            'wifi_client': {
+                'adapter_present': wlan1_exists,
+                'connected': wlan1_active,
+                'ssid': wlan1_ssid,
+                'ip': wlan1_ip
+            },
+            'internet_available': internet,
+            'internet_source': internet_source
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -300,6 +364,191 @@ def enable_ap_mode():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/network/wifi-scan', methods=['GET'])
+def wifi_scan_networks():
+    """Scan for WiFi networks using the Alfa adapter (wlan1)"""
+    if not os.path.exists('/sys/class/net/wlan1'):
+        return jsonify({
+            'success': False,
+            'error': 'Alfa WiFi adapter not connected'
+        }), 400
+
+    # Ensure wlan1 is up and in managed mode
+    subprocess.run(['ip', 'link', 'set', 'wlan1', 'up'], capture_output=True)
+
+    try:
+        output = subprocess.check_output(
+            ['iw', 'dev', 'wlan1', 'scan'],
+            text=True, stderr=subprocess.DEVNULL, timeout=15
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Scan timed out'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    networks = []
+    current = {}
+
+    for line in output.split('\n'):
+        line = line.strip()
+        if line.startswith('BSS '):
+            if current.get('bssid'):
+                networks.append(current)
+            current = {}
+            parts = line.split()
+            if len(parts) >= 2:
+                current['bssid'] = parts[1].upper()
+        elif 'SSID:' in line:
+            ssid = line.split('SSID:', 1)[1].strip()
+            current['ssid'] = ssid if ssid else '(hidden)'
+        elif 'signal:' in line:
+            match = re.search(r'(-?\d+)', line)
+            if match:
+                current['signal_dbm'] = int(match.group(1))
+        elif 'freq:' in line:
+            match = re.search(r'(\d+)', line)
+            if match:
+                freq = int(match.group(1))
+                # Convert frequency to channel (rough)
+                if freq >= 2412 and freq <= 2484:
+                    current['channel'] = (freq - 2412) // 5 + 1
+                elif freq >= 5180:
+                    current['channel'] = (freq - 5180) // 5 + 36
+        elif 'RSN:' in line:
+            current['security'] = 'WPA2'
+        elif 'WPA:' in line:
+            current['security'] = 'WPA'
+
+    if current.get('bssid'):
+        networks.append(current)
+
+    # Deduplicate by SSID, keep strongest signal
+    seen = {}
+    for net in networks:
+        ssid = net.get('ssid', '')
+        if ssid not in seen or net.get('signal_dbm', -100) > seen[ssid].get('signal_dbm', -100):
+            seen[ssid] = net
+
+    result = sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
+
+    return jsonify({
+        'success': True,
+        'networks': result
+    })
+
+
+@app.route('/api/network/wifi-connect', methods=['POST'])
+def wifi_connect():
+    """Connect wlan1 to a WiFi network (leaves wlan0 AP untouched)"""
+    if not os.path.exists('/sys/class/net/wlan1'):
+        return jsonify({
+            'success': False,
+            'error': 'Alfa WiFi adapter not connected'
+        }), 400
+
+    data = request.json or {}
+    ssid = data.get('ssid')
+    password = data.get('password')
+
+    if not ssid or not password:
+        return jsonify({
+            'success': False,
+            'error': 'SSID and password required'
+        }), 400
+
+    # Stop any existing wlan1 wpa_supplicant
+    subprocess.run(['systemctl', 'stop', 'wpa_supplicant@wlan1'],
+                   capture_output=True)
+    subprocess.run(['ip', 'addr', 'flush', 'dev', 'wlan1'],
+                   capture_output=True)
+
+    # Write wpa_supplicant config for wlan1
+    config = (
+        f'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n'
+        f'update_config=1\n'
+        f'country=DE\n\n'
+        f'network={{\n'
+        f'    ssid="{ssid}"\n'
+        f'    psk="{password}"\n'
+        f'    key_mgmt=WPA-PSK\n'
+        f'}}\n'
+    )
+    conf_path = '/etc/wpa_supplicant/wpa_supplicant-wlan1.conf'
+    with open(conf_path, 'w') as f:
+        f.write(config)
+    os.chmod(conf_path, 0o600)
+
+    # Start wpa_supplicant on wlan1
+    subprocess.run(['systemctl', 'enable', 'wpa_supplicant@wlan1'],
+                   capture_output=True)
+    result = subprocess.run(['systemctl', 'start', 'wpa_supplicant@wlan1'],
+                            capture_output=True)
+
+    # Wait for connection
+    connected = False
+    ip_addr = None
+    for _ in range(15):
+        time.sleep(1)
+        try:
+            status = subprocess.check_output(
+                ['wpa_cli', '-i', 'wlan1', 'status'],
+                text=True, stderr=subprocess.DEVNULL
+            )
+            if 'wpa_state=COMPLETED' in status:
+                connected = True
+                # Get IP
+                ip_out = subprocess.check_output(
+                    ['ip', '-4', '-br', 'addr', 'show', 'wlan1'],
+                    text=True, stderr=subprocess.DEVNULL
+                )
+                match = re.search(r'(\d+\.\d+\.\d+\.\d+)', ip_out)
+                if match:
+                    ip_addr = match.group(1)
+                break
+        except Exception:
+            pass
+
+    if connected:
+        # Save credentials for auto-reconnect
+        config_file = '/opt/chonkyflipper/config/wifi-client.conf'
+        with open(config_file, 'w') as f:
+            f.write(f'SSID={ssid}\nPASSWORD={password}\n')
+        os.chmod(config_file, 0o600)
+
+        return jsonify({
+            'success': True,
+            'message': f'Connected to {ssid}',
+            'ssid': ssid,
+            'ip': ip_addr
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': f'Could not connect to {ssid}. Check password and try again.'
+        }), 400
+
+
+@app.route('/api/network/wifi-disconnect', methods=['POST'])
+def wifi_disconnect():
+    """Disconnect wlan1 from WiFi network"""
+    subprocess.run(['systemctl', 'stop', 'wpa_supplicant@wlan1'],
+                   capture_output=True)
+    subprocess.run(['systemctl', 'disable', 'wpa_supplicant@wlan1'],
+                   capture_output=True)
+    subprocess.run(['ip', 'addr', 'flush', 'dev', 'wlan1'],
+                   capture_output=True)
+
+    # Remove saved config
+    config_file = '/opt/chonkyflipper/config/wifi-client.conf'
+    if os.path.isfile(config_file):
+        os.remove(config_file)
+
+    return jsonify({
+        'success': True,
+        'message': 'Disconnected from WiFi'
+    })
+
+
 @app.route('/api/system/poweroff', methods=['POST'])
 def system_poweroff():
     """Shut down the Raspberry Pi"""
@@ -369,7 +618,7 @@ def system_update():
 
         # Run update in background so the response returns before the
         # service restarts itself. The update script runs systemctl restart
-        # at the end, which kills this process — we must be detached.
+        # at the end, which kills this process  --  we must be detached.
         subprocess.Popen(
             ['sudo', '/opt/chonkyflipper/update.sh'],
             stdout=subprocess.DEVNULL,

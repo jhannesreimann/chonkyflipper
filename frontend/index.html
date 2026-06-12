@@ -159,27 +159,77 @@
             </div>
         </section>
 
-        <!-- Settings / Maintenance -->
+        <!-- Settings -->
         <section class="card">
             <h2>⚙️ Settings</h2>
-            
+
+            <!-- Network Status -->
             <div class="settings-section">
-                <h3>Network Mode</h3>
-                <div id="network-status-display">
-                    <p>Mode: <span id="current-mode">Loading...</span></p>
-                    <p>Internet: <span id="internet-status">Unknown</span></p>
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn btn-secondary" onclick="showMaintenanceDialog()">
-                        🔧 Maintenance Mode
-                    </button>
-                    <button class="btn btn-secondary" onclick="restoreAPMode()">
-                        📡 Back to AP Mode
-                    </button>
+                <h3>Network Status</h3>
+                <div class="network-status-grid">
+                    <div class="network-row">
+                        <span class="net-label">LAN</span>
+                        <span id="net-eth0" class="net-value">...</span>
+                    </div>
+                    <div class="network-row">
+                        <span class="net-label">AP</span>
+                        <span id="net-ap" class="net-value">Chonky_Control (192.168.4.1)</span>
+                    </div>
+                    <div class="network-row">
+                        <span class="net-label">WiFi Client</span>
+                        <span id="net-wlan1" class="net-value">...</span>
+                    </div>
+                    <div class="network-row">
+                        <span class="net-label">Internet</span>
+                        <span id="net-internet" class="net-value">...</span>
+                    </div>
                 </div>
             </div>
-            
+
+            <!-- WiFi Scanner -->
+            <div class="settings-section" id="wifi-scanner-section">
+                <h3>WiFi Networks</h3>
+                <p class="hint" id="wifi-scanner-hint">Scan for nearby networks to connect the Alfa adapter.</p>
+
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="scanWifiNetworks()" id="wifi-scan-btn">
+                        🔍 Scan
+                    </button>
+                    <button class="btn btn-secondary" onclick="disconnectWifi()" id="wifi-disconnect-btn" style="display:none;">
+                        ✕ Disconnect
+                    </button>
+                </div>
+
+                <div id="wifi-scan-status" class="status-msg" style="display:none;"></div>
+
+                <div class="table-container" id="wifi-networks-table" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Network</th>
+                                <th>Signal</th>
+                                <th>Sec</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="wifi-networks-body"></tbody>
+                    </table>
+                </div>
+
+                <!-- Password prompt (hidden until network selected) -->
+                <div id="wifi-password-prompt" style="display:none;">
+                    <div class="form-group">
+                        <label>Password for <strong id="wifi-selected-ssid"></strong>:</label>
+                        <input type="password" id="wifi-password-input" placeholder="Network password">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="connectToNetwork()">Connect</button>
+                        <button class="btn btn-secondary" onclick="cancelWifiConnect()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Power -->
             <div class="settings-section">
                 <h3>Power</h3>
                 <button class="btn btn-danger" onclick="showPoweroffDialog()">
@@ -187,33 +237,17 @@
                 </button>
             </div>
 
+            <!-- System Update -->
             <div class="settings-section">
                 <h3>System Update</h3>
-                <p class="hint">Internet via LAN keeps the AP online — no disconnect needed</p>
+                <p class="hint" id="update-hint">Connect LAN or WiFi for internet access.</p>
                 <p>Current version: <span id="current-version" class="value">...</span></p>
-                <button class="btn btn-primary" onclick="runSystemUpdate()">
+                <button class="btn btn-primary" onclick="runSystemUpdate()" id="update-btn" disabled>
                     🔄 Update from GitHub
                 </button>
                 <div id="update-output" class="output-box" style="display:none;"></div>
             </div>
-            
-            <div class="settings-section">
-                <h3>Connection Info</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="label">AP SSID</span>
-                        <span class="value">Chonky_Control</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">AP Password</span>
-                        <span class="value">chonky123</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">AP IP</span>
-                        <span class="value">192.168.4.1</span>
-                    </div>
-                </div>
-            </div>
+
         </section>
 
         <!-- Power Off Confirmation Dialog -->
@@ -225,27 +259,6 @@
                     <button class="btn btn-danger" onclick="confirmPoweroff()">Power Off</button>
                     <button class="btn btn-secondary" onclick="hidePoweroffDialog()">Cancel</button>
                 </div>
-            </div>
-        </div>
-
-        <!-- Maintenance Mode Dialog (hidden by default) -->
-        <div id="maintenance-dialog" class="modal" style="display:none;">
-            <div class="modal-content">
-                <h3>🔧 Enable Maintenance Mode</h3>
-                <p>Connect ChonkyFlipper to an external WiFi for internet access.</p>
-                <div class="form-group">
-                    <label>SSID (WiFi Name):</label>
-                    <input type="text" id="maintenance-ssid" placeholder="YourWiFi">
-                </div>
-                <div class="form-group">
-                    <label>Password:</label>
-                    <input type="password" id="maintenance-password" placeholder="password">
-                </div>
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="enableMaintenanceMode()">Connect</button>
-                    <button class="btn btn-secondary" onclick="hideMaintenanceDialog()">Cancel</button>
-                </div>
-                <p class="hint">⚠️ You will be disconnected from Chonky_Control. Reconnect via the new network.</p>
             </div>
         </div>
 
