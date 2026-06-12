@@ -63,18 +63,56 @@ def get_module(name):
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    """Get overall system status"""
+    """Get overall system status with live hardware detection"""
+    modules = {
+        'wifi': {
+            'available': os.path.exists('/sys/class/net/wlan1'),
+            'interface': 'wlan1'
+        },
+        'bluetooth': {
+            'available': os.path.exists('/sys/class/bluetooth/hci0'),
+            'interface': 'hci0'
+        },
+        'ir': {
+            'available': os.path.exists('/dev/lirc0'),
+            'gpio': '17/27'
+        },
+        'cc1101': {
+            'available': os.path.exists('/sys/bus/spi/devices/spi0.0'),
+            'spi': '0.0'
+        },
+        'pn532': {
+            'available': False,
+            'i2c': '0x24'
+        },
+        'zigbee': {
+            'available': bool(
+                __import__('glob').glob('/dev/ttyUSB*') or
+                __import__('glob').glob('/dev/ttyACM*')
+            ),
+            'usb': 'ttyUSB0'
+        }
+    }
+
+    # PN532: check I2C bus for device at 0x24
+    try:
+        i2c_out = subprocess.check_output(
+            ['sudo', '-n', 'i2cdetect', '-y', '1'],
+            text=True, stderr=subprocess.DEVNULL, timeout=3
+        )
+        if '24' in i2c_out:
+            # Verify it's at address 0x24, not just any "24" in the output
+            for line in i2c_out.split('\n'):
+                if line.startswith('20:') and '24' in line.split():
+                    modules['pn532']['available'] = True
+                    break
+    except Exception:
+        pass
+
     return jsonify({
         'status': 'online',
         'hostname': 'chonkyflipper',
-        'modules': {
-            'wifi': {'available': True, 'interface': 'wlan1'},
-            'bluetooth': {'available': True, 'interface': 'hci0'},
-            'ir': {'available': True, 'gpio': '17/27'},
-            'cc1101': {'available': True, 'spi': '0.0'},
-            'pn532': {'available': True, 'i2c': '0x24'},
-            'zigbee': {'available': True, 'usb': 'ttyUSB0'}
-        },
+        'modules': modules,
         'power': _get_power_data()
     })
 
