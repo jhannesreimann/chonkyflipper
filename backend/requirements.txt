@@ -11,5 +11,8 @@ adafruit-circuitpython-pn532>=2.4.9
 # bleak==0.20.2  # For BLE - optional, requires Python 3.7+
 # pyserial==3.5  # For UART modules if needed
 
+# MQTT client for Zigbee2MQTT communication
+paho-mqtt>=1.6.1
+
 # Production WSGI server
 gunicorn==21.2.0

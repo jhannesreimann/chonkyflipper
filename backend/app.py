@@ -17,6 +17,7 @@ from modules.ir import IRModule
 from modules.cc1101 import CC1101Module
 from modules.pn532 import PN532Module
 from modules.badusb import BadUSBModule
+from modules.zigbee import ZigbeeModule
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for mobile web app access
@@ -56,7 +57,8 @@ def get_module(name):
             'ir': IRModule,
             'cc1101': CC1101Module,
             'pn532': PN532Module,
-            'badusb': BadUSBModule
+            'badusb': BadUSBModule,
+            'zigbee': ZigbeeModule
         }
         modules[name] = module_map[name]()
     return modules[name]
@@ -761,6 +763,54 @@ def system_update():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/zigbee/bridge', methods=['GET'])
+def zigbee_bridge():
+    """Get Zigbee2MQTT bridge status and configuration"""
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.get_bridge_info())
+
+
+@app.route('/api/zigbee/devices', methods=['GET'])
+def zigbee_devices():
+    """List all paired Zigbee devices"""
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.get_devices())
+
+
+@app.route('/api/zigbee/permit_join', methods=['POST'])
+def zigbee_permit_join():
+    """Enable or disable Zigbee pairing mode"""
+    data = request.json or {}
+    enable = data.get('enable', True)
+    duration = data.get('duration', 254)
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.permit_join(enable, duration))
+
+
+@app.route('/api/zigbee/device/<device_name>', methods=['GET'])
+def zigbee_device_state(device_name):
+    """Get current state of a paired Zigbee device"""
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.get_device_state(device_name))
+
+
+@app.route('/api/zigbee/device/<device_name>/set', methods=['POST'])
+def zigbee_device_set(device_name):
+    """Set state of a Zigbee device (e.g. {"state": "ON", "brightness": 128})"""
+    payload = request.json or {}
+    if not payload:
+        return jsonify({'success': False, 'error': 'payload required'}), 400
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.set_device_state(device_name, payload))
+
+
+@app.route('/api/zigbee/device/<device_name>', methods=['DELETE'])
+def zigbee_device_remove(device_name):
+    """Remove (unpair) a Zigbee device"""
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.remove_device(device_name))
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

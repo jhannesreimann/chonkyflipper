@@ -375,6 +375,95 @@ mkdir -p "$INSTALL_DIR/config"
 touch "$INSTALL_DIR/config/maintenance-network.conf"
 chmod 600 "$INSTALL_DIR/config/maintenance-network.conf"
 
+# Install MQTT broker (mosquitto) for Zigbee2MQTT
+echo ""
+echo "Step 14: Installing MQTT broker (mosquitto)..."
+apt-get install -y mosquitto mosquitto-clients
+systemctl enable mosquitto
+systemctl start mosquitto
+
+# Install Node.js (required by Zigbee2MQTT, minimum version 18)
+echo ""
+echo "Step 15: Installing Node.js..."
+if command -v node &>/dev/null; then
+    NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+else
+    NODE_MAJOR=0
+fi
+if [ "$NODE_MAJOR" -lt 18 ]; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+fi
+
+# Install Zigbee2MQTT
+echo ""
+echo "Step 16: Installing Zigbee2MQTT..."
+if [ ! -d "/opt/zigbee2mqtt" ]; then
+    git clone --depth 1 https://github.com/Koenkk/zigbee2mqtt.git /opt/zigbee2mqtt
+fi
+cd /opt/zigbee2mqtt
+npm ci
+cd "$INSTALL_DIR"
+
+# Create Zigbee2MQTT data dir and default config (only if not already configured)
+mkdir -p /opt/zigbee2mqtt/data
+if [ ! -f /opt/zigbee2mqtt/data/configuration.yaml ]; then
+    cat > /opt/zigbee2mqtt/data/configuration.yaml << 'EOF'
+homeassistant: false
+permit_join: false
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://localhost:1883
+serial:
+  port: /dev/ttyUSB0
+  adapter: auto
+advanced:
+  log_level: warn
+  pan_id: GENERATE
+  network_key: GENERATE
+frontend: false
+EOF
+fi
+
+# Dedicated service user with dialout access (needed for /dev/ttyUSB0)
+if ! id zigbee2mqtt &>/dev/null; then
+    useradd -r -s /bin/false -G dialout zigbee2mqtt
+fi
+chown -R zigbee2mqtt:zigbee2mqtt /opt/zigbee2mqtt
+
+# Allow chonky service user to manage the zigbee2mqtt service
+cat >> /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl start zigbee2mqtt
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop zigbee2mqtt
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart zigbee2mqtt
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl status zigbee2mqtt
+EOFSUDOERS
+
+# Zigbee2MQTT systemd service
+cat > /etc/systemd/system/zigbee2mqtt.service << 'EOF'
+[Unit]
+Description=Zigbee2MQTT
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node index.js
+WorkingDirectory=/opt/zigbee2mqtt
+Restart=on-failure
+RestartSec=10s
+User=zigbee2mqtt
+Group=zigbee2mqtt
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+# Enable but do not start — requires Zigbee USB dongle to be present first
+systemctl enable zigbee2mqtt
+
 echo ""
 echo "==================================================="
 echo "  Installation Complete!"
@@ -388,6 +477,13 @@ echo ""
 echo "  4. Dashboard: http://192.168.4.1 (after reboot, connect to Chonky_Control)"
 echo "  5. AP SSID: Chonky_Control / Password: chonky123"
 echo "  6. Maintenance mode: sudo /opt/chonkyflipper/maintenance-mode.sh"
+echo ""
+echo "  Zigbee:"
+echo "  7. Connect your Zigbee USB dongle (CC2531, SONOFF Zigbee 3.0, etc.)"
+echo "  8. Verify serial port: ls /dev/ttyUSB* /dev/ttyACM*"
+echo "     If not /dev/ttyUSB0, update: /opt/zigbee2mqtt/data/configuration.yaml"
+echo "  9. Start Zigbee2MQTT: sudo systemctl start zigbee2mqtt"
+echo "     API: GET /api/zigbee/devices  POST /api/zigbee/permit_join"
 echo ""
 echo "  NOTE: A reboot is required for I2C/SPI/fan/shutdown changes to take effect."
 echo "  Run: sudo reboot"
