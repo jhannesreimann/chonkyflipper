@@ -805,6 +805,13 @@ def zigbee_device_set(device_name):
     return jsonify(zigbee.set_device_state(device_name, payload))
 
 
+@app.route('/api/zigbee/networkmap', methods=['GET'])
+def zigbee_networkmap():
+    """Get Zigbee mesh topology (nodes and links between paired devices)"""
+    zigbee = get_module('zigbee')
+    return jsonify(zigbee.get_network_map())
+
+
 @app.route('/api/zigbee/device/<device_name>', methods=['DELETE'])
 def zigbee_device_remove(device_name):
     """Remove (unpair) a Zigbee device"""

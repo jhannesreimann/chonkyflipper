@@ -134,6 +134,17 @@ class ZigbeeModule:
             'devices': devices if isinstance(devices, list) else []
         }
 
+    def get_network_map(self):
+        result, error = self._publish_and_wait(
+            f'{self.BASE_TOPIC}/bridge/request/networkmap',
+            f'{self.BASE_TOPIC}/bridge/response/networkmap',
+            {'type': 'raw', 'routes': False},
+            timeout=15
+        )
+        if error:
+            return {'success': False, 'error': error}
+        return {'success': True, 'map': result.get('data') if isinstance(result, dict) else result}
+
     def permit_join(self, enable, duration=254):
         payload = {'value': bool(enable), 'time': duration if enable else 0}
         result, error = self._publish_and_wait(
