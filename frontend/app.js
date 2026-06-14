@@ -163,8 +163,7 @@ function showModulePanel(module) {
         
         // Auto-load data for specific panels
         if (module === 'ir') {
-            irLoadSignals();
-            irLoadPayloads();
+            irShowTab('library');
         }
 
         log(`Opened ${module.toUpperCase()} panel`);
@@ -178,13 +177,19 @@ function showModulePanel(module) {
 async function wifiScan() {
     log('🔍 Scanning Wi-Fi networks...');
     setLoading('wifi-results', true);
-    
+
     try {
         const response = await fetch(`${API_URL}/wifi/scan`);
         const data = await response.json();
-        
+
         const container = document.getElementById('wifi-results');
-        
+
+        if (!data.success) {
+            container.innerHTML = `<p class="placeholder" style="color: #e94560;">${escapeHtml(data.error || 'Scan failed')}</p>`;
+            log('❌ Wi-Fi scan: ' + (data.error || 'Failed'));
+            return;
+        }
+
         if (data.networks && data.networks.length > 0) {
             const html = `
                 <table>
@@ -193,16 +198,18 @@ async function wifiScan() {
                             <th>Network</th>
                             <th>BSSID</th>
                             <th>Ch</th>
+                            <th>Sec</th>
                             <th>Signal</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${data.networks.map(net => `
                             <tr>
-                                <td>${escapeHtml(net.essid || 'Hidden')}</td>
+                                <td>${escapeHtml(net.ssid || 'Hidden')}</td>
                                 <td>${net.bssid || '-'}</td>
                                 <td>${net.channel || '-'}</td>
-                                <td>${net.signal_dbm || '-'} dBm</td>
+                                <td>${escapeHtml(net.security || 'Open')}</td>
+                                <td>${net.signal_dbm !== undefined ? net.signal_dbm + ' dBm' : '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -215,7 +222,7 @@ async function wifiScan() {
         }
     } catch (error) {
         log('❌ Wi-Fi scan failed: ' + error.message);
-        document.getElementById('wifi-results').innerHTML = 
+        document.getElementById('wifi-results').innerHTML =
             '<p class="placeholder" style="color: #e94560;">Scan failed</p>';
     } finally {
         setLoading('wifi-results', false);
@@ -330,7 +337,300 @@ async function bleBeacons() {
 // IR FUNCTIONS
 // -----------------------------------------------------------
 
-async function irRecord() {
+// Tab switching
+function irShowTab(tab) {
+    document.querySelectorAll('.ir-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.ir-tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById(`ir-tab-${tab}`).classList.add('active');
+    document.getElementById(`ir-tab-content-${tab}`).classList.add('active');
+
+    if (tab === 'library') {
+        irShowBrands();
+    } else if (tab === 'mysignals') {
+        irLoadSignals();
+    }
+}
+
+// ── Library Tab ─────────────────────────────────────────
+
+async function irShowBrands() {
+    document.getElementById('ir-breadcrumb').style.display = 'none';
+    document.getElementById('ir-devices-list').style.display = 'none';
+    document.getElementById('ir-buttons-grid').style.display = 'none';
+    document.getElementById('ir-search-results').style.display = 'none';
+    document.getElementById('ir-payloads-list').style.display = 'none';
+
+    const grid = document.getElementById('ir-brands-grid');
+    const loading = document.getElementById('ir-brands-loading');
+
+    grid.innerHTML = '';
+    loading.style.display = 'block';
+
+    try {
+        const r = await fetch(`${API_URL}/ir/library/brands`);
+        const data = await r.json();
+        loading.style.display = 'none';
+
+        if (data.brands && data.brands.length > 0) {
+            grid.innerHTML = data.brands.map(b => `
+                <div class="brand-card" onclick="irShowDevices('${escapeHtmlAttr(b.slug)}')">
+                    <div class="brand-name">${escapeHtml(b.name)}</div>
+                    <div class="brand-count">${b.device_count} devices</div>
+                </div>`).join('');
+            document.getElementById('ir-lib-stats').textContent =
+                `${data.total} brands · ${data.brands.reduce((s,b)=>s+b.device_count,0)} devices`;
+            document.getElementById('ir-payloads-list').style.display = 'none';
+        } else {
+            // No DB data — fall back to legacy JSON payloads
+            document.getElementById('ir-payloads-list').style.display = '';
+            irLoadPayloads();
+            document.getElementById('ir-lib-stats').textContent = 'JSON payloads (run sync to populate library)';
+        }
+    } catch (e) {
+        loading.style.display = 'none';
+        // Fallback
+        document.getElementById('ir-payloads-list').style.display = '';
+        irLoadPayloads();
+        document.getElementById('ir-lib-stats').textContent = 'Offline (JSON fallback)';
+    }
+}
+
+async function irShowDevices(brandSlug) {
+    document.getElementById('ir-brands-grid').style.display = 'none';
+    document.getElementById('ir-buttons-grid').style.display = 'none';
+    document.getElementById('ir-search-results').style.display = 'none';
+
+    const list = document.getElementById('ir-devices-list');
+    list.style.display = '';
+    list.innerHTML = '<p class="placeholder">Loading...</p>';
+
+    try {
+        const r = await fetch(`${API_URL}/ir/library/brands/${encodeURIComponent(brandSlug)}/devices`);
+        const data = await r.json();
+
+        if (!data.devices || data.devices.length === 0) {
+            list.innerHTML = '<p class="placeholder">No devices found.</p>';
+            return;
+        }
+
+        list.innerHTML = data.devices.map(d => `
+            <div class="device-item" onclick="irShowButtons(${d.id}, '${escapeHtmlAttr(d.name)}')">
+                <div class="device-info">
+                    <span class="device-name">${escapeHtml(d.name)}</span>
+                    <span class="device-meta">${d.button_count} buttons</span>
+                </div>
+                <span style="color:var(--text-secondary);">→</span>
+            </div>`).join('');
+
+        // Breadcrumb
+        document.getElementById('ir-breadcrumb').style.display = '';
+        document.getElementById('ir-breadcrumb').innerHTML =
+            `<span class="breadcrumb-link" onclick="irShowBrands()">All Brands</span> → <strong>${escapeHtml(data.brand.name)}</strong>`;
+    } catch (e) {
+        list.innerHTML = '<p class="placeholder">Error loading devices.</p>';
+    }
+}
+
+async function irShowButtons(deviceId, deviceName) {
+    document.getElementById('ir-devices-list').style.display = 'none';
+    document.getElementById('ir-search-results').style.display = 'none';
+
+    const grid = document.getElementById('ir-buttons-grid');
+    grid.style.display = '';
+    grid.innerHTML = '<p class="placeholder">Loading...</p>';
+
+    try {
+        const r = await fetch(`${API_URL}/ir/library/devices/${deviceId}/buttons`);
+        const data = await r.json();
+
+        if (!data.buttons || data.buttons.length === 0) {
+            grid.innerHTML = '<p class="placeholder">No buttons found.</p>';
+            return;
+        }
+
+        grid.innerHTML = `<div class="button-grid">${data.buttons.map(b => `
+            <button class="btn-ir ${b.button_id.includes('power') ? 'power-btn' : ''}"
+                    onclick="irSendLibraryButton(${deviceId}, '${escapeHtmlAttr(b.button_id)}')"
+                    title="${escapeHtmlAttr(b.protocol || b.protocol_hint || '')}">
+                ${escapeHtml(b.label)}
+            </button>`).join('')}</div>`;
+
+        // Update breadcrumb
+        const bc = document.getElementById('ir-breadcrumb');
+        const brandSlug = data.device.brand_slug || '';
+        const brandName = data.device.brand_name || '';
+        bc.innerHTML =
+            `<span class="breadcrumb-link" onclick="irShowBrands()">All Brands</span> → ` +
+            `<span class="breadcrumb-link" onclick="irShowDevices('${escapeHtmlAttr(brandSlug)}')">${escapeHtml(brandName)}</span> → ` +
+            `<strong>${escapeHtml(deviceName)}</strong>`;
+    } catch (e) {
+        grid.innerHTML = '<p class="placeholder">Error loading buttons.</p>';
+    }
+}
+
+async function irSendLibraryButton(deviceId, buttonId) {
+    log('Sending: ' + buttonId);
+    try {
+        const r = await fetch(`${API_URL}/ir/library/devices/${deviceId}/send`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({button_id: buttonId})
+        });
+        const data = await r.json();
+        if (data.success) {
+            log('IR sent: ' + buttonId + ' (' + data.pairs_sent + ' pairs)');
+        } else {
+            log('IR send failed: ' + (data.error || 'Unknown'));
+        }
+    } catch (e) {
+        log('IR send error: ' + e.message);
+    }
+}
+
+// ── Search ──────────────────────────────────────────────
+
+async function irSearch() {
+    const q = document.getElementById('ir-search-input').value.trim();
+    if (!q) return irShowBrands();
+
+    document.getElementById('ir-brands-grid').style.display = 'none';
+    document.getElementById('ir-devices-list').style.display = 'none';
+    document.getElementById('ir-buttons-grid').style.display = 'none';
+    document.getElementById('ir-payloads-list').style.display = 'none';
+
+    const results = document.getElementById('ir-search-results');
+    results.style.display = '';
+    results.innerHTML = '<p class="placeholder">Searching...</p>';
+
+    try {
+        const r = await fetch(`${API_URL}/ir/library/search?q=${encodeURIComponent(q)}`);
+        const data = await r.json();
+
+        let html = '';
+        if (data.results) {
+            if (data.results.brands && data.results.brands.length) {
+                html += '<h4 style="margin:8px 0 4px;color:var(--text-secondary);font-size:0.7rem;">BRANDS</h4>';
+                html += data.results.brands.map(b =>
+                    `<div class="device-item" onclick="irShowDevices('${escapeHtmlAttr(b.slug)}')">
+                        <span>${escapeHtml(b.name)} <span style="color:var(--text-secondary);font-size:0.65rem;">${b.count} devices</span></span>
+                        <span style="color:var(--text-secondary);">→</span></div>`
+                ).join('');
+            }
+            if (data.results.devices && data.results.devices.length) {
+                html += '<h4 style="margin:8px 0 4px;color:var(--text-secondary);font-size:0.7rem;">DEVICES</h4>';
+                html += data.results.devices.map(d =>
+                    `<div class="device-item" onclick="irShowButtons(${d.id},'${escapeHtmlAttr(d.name)}')">
+                        <span>${escapeHtml(d.name)} <span style="color:var(--text-secondary);font-size:0.65rem;">${escapeHtml(d.brand_name)}</span></span>
+                        <span style="color:var(--text-secondary);">→</span></div>`
+                ).join('');
+            }
+            if (data.results.buttons && data.results.buttons.length) {
+                html += '<h4 style="margin:8px 0 4px;color:var(--text-secondary);font-size:0.7rem;">BUTTONS</h4>';
+                html += '<div class="button-grid">' + data.results.buttons.slice(0, 20).map(b =>
+                    `<button class="btn-ir ${b.slug && b.slug.includes('power') ? 'power-btn' : ''}"
+                             onclick="irSendSearchButton('${escapeHtmlAttr(b.id)}')">${escapeHtml(b.name)}<br>
+                             <span style="font-size:0.6rem;color:var(--text-secondary);">${escapeHtml(b.brand_name||'')} ${escapeHtml(b.device_name||'')}</span></button>`
+                ).join('') + '</div>';
+            }
+        }
+        results.innerHTML = html || '<p class="placeholder">No results for "' + escapeHtml(q) + '"</p>';
+    } catch (e) {
+        results.innerHTML = '<p class="placeholder">Search error.</p>';
+    }
+}
+
+// ── Sync ────────────────────────────────────────────────
+
+async function irSyncCheck() {
+    const status = document.getElementById('ir-sync-status');
+    const btn = document.getElementById('ir-sync-btn');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Checking for updates...';
+    btn.disabled = true;
+
+    try {
+        // First check
+        const cr = await fetch(`${API_URL}/ir/sync/check`, {method:'POST'});
+        const cdata = await cr.json();
+
+        if (cdata.error) {
+            status.className = 'status-msg error';
+            status.textContent = cdata.error;
+            btn.disabled = false;
+            return;
+        }
+
+        if (!cdata.has_updates) {
+            status.className = 'status-msg success';
+            status.textContent = '✅ Library is up to date.';
+            btn.disabled = false;
+            return;
+        }
+
+        // Start sync
+        status.textContent = `Syncing ${cdata.new_commits} new commits...`;
+        const sr = await fetch(`${API_URL}/ir/sync/start`, {method:'POST'});
+        const sdata = await sr.json();
+
+        if (!sdata.success) {
+            status.className = 'status-msg error';
+            status.textContent = sdata.error || 'Sync failed';
+            btn.disabled = false;
+            return;
+        }
+
+        // Poll for completion
+        await irPollSync();
+    } catch (e) {
+        status.className = 'status-msg error';
+        status.textContent = 'Sync check failed. Ensure internet is connected (try Maintenance Mode).';
+        btn.disabled = false;
+    }
+}
+
+async function irPollSync() {
+    const status = document.getElementById('ir-sync-status');
+    const btn = document.getElementById('ir-sync-btn');
+
+    try {
+        const r = await fetch(`${API_URL}/ir/sync/status`);
+        const data = await r.json();
+
+        if (data.running) {
+            status.textContent = `Syncing... ${data.progress}/${data.total} ${data.current||''}`;
+            setTimeout(irPollSync, 1000);
+            return;
+        }
+
+        if (data.result && data.result.success) {
+            status.className = 'status-msg success';
+            status.textContent = `✅ Synced! ${data.result.files_added} new, ${data.result.files_updated} updated.`;
+            irShowBrands(); // Refresh display
+        } else if (data.error) {
+            status.className = 'status-msg error';
+            status.textContent = 'Sync error: ' + data.error;
+        } else {
+            status.className = 'status-msg success';
+            status.textContent = '✅ Sync complete.';
+            irShowBrands();
+        }
+    } catch (e) {
+        status.className = 'status-msg error';
+        status.textContent = 'Lost sync status.';
+    }
+    btn.disabled = false;
+}
+
+// ── Record & My Signals ─────────────────────────────────
+
+function irRecord() {
+    // Switch to My Signals tab so user sees the result
+    irShowTab('mysignals');
+    _doIrRecord();
+}
+
+async function _doIrRecord() {
     const status = document.getElementById('ir-record-status');
     status.style.display = 'block';
     status.className = 'status-msg info';
@@ -716,7 +1016,7 @@ async function scanWifiNetworks() {
     status.textContent = 'Scanning for networks...';
 
     try {
-        const response = await fetch(`${API_URL}/network/wifi-scan`);
+        const response = await fetch(`${API_URL}/wifi/scan`);
         const data = await response.json();
 
         if (!data.success) {

@@ -546,16 +546,186 @@ body {
 .net-value.offline { color: #dc2626; }
 .net-value.warning { color: var(--accent-warning); }
 
-/* Payload items */
-.payload-item {
+/* IR module — tabs, library browser, brand grid */
+
+.ir-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--bg-hover);
+}
+.ir-tab {
+    flex: 1;
+    padding: 10px 8px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+.ir-tab.active {
+    color: var(--accent-secondary);
+    border-bottom-color: var(--accent-secondary);
+}
+.ir-tab:hover { color: var(--text-primary); }
+
+.ir-tab-content { display: none; }
+.ir-tab-content.active { display: block; }
+
+/* Search bar */
+.ir-search-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.ir-search-bar input {
+    flex: 1;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-hover);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-family: inherit;
+}
+.ir-search-bar input:focus {
+    outline: none;
+    border-color: var(--accent-secondary);
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    font-size: 0.75rem;
+    padding: 6px 0;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+.breadcrumb-link {
+    cursor: pointer;
+    color: var(--accent-secondary);
+    text-decoration: none;
+}
+.breadcrumb-link:hover { text-decoration: underline; }
+
+/* Brand Grid */
+.brand-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.brand-card {
+    background: var(--bg-dark);
+    border-radius: 10px;
+    padding: 14px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+.brand-card:hover {
+    border-color: var(--accent-secondary);
+    transform: translateY(-1px);
+    background: var(--bg-hover);
+}
+.brand-card .brand-name {
+    font-weight: 600;
+    font-size: 0.8rem;
+    line-height: 1.2;
+}
+.brand-card .brand-count {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin-top: 3px;
+}
+
+/* Device items */
+.device-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 12px 14px;
     background: var(--bg-dark);
-    border-radius: 6px;
+    border-radius: 10px;
     margin-bottom: 6px;
-    gap: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+}
+.device-item:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-secondary);
+}
+.device-item .device-info {
+    display: flex;
+    flex-direction: column;
+}
+.device-item .device-name {
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+.device-item .device-meta {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+}
+
+/* Button Grid */
+.button-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+.btn-ir {
+    padding: 14px 8px;
+    border: 1px solid var(--bg-hover);
+    border-radius: 10px;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: inherit;
+    font-weight: 500;
+    text-align: center;
+    transition: all 0.15s;
+    min-height: 44px;
+    word-break: break-word;
+}
+.btn-ir:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #fff;
+}
+.btn-ir.power-btn {
+    border-color: var(--accent-primary);
+    background: rgba(14, 165, 233, 0.1);
+}
+.btn-ir.power-btn:hover {
+    background: var(--accent-primary);
+    color: #fff;
+}
+
+/* IR footer */
+.ir-lib-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    margin-top: 12px;
+    border-top: 1px solid var(--bg-hover);
+    font-size: 0.7rem;
+}
+.ir-stat {
+    color: var(--text-secondary);
 }
 
 /* Status message (for scan progress etc) */

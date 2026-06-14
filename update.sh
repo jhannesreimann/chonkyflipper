@@ -107,6 +107,11 @@ if [ -f "$REPO_DIR/update.sh" ]; then
     echo "  ✓ update.sh (self-updated)"
 fi
 
+# -- Create data directory for databases --
+mkdir -p "$INSTALL_DIR/data"
+chown chonky:chonky "$INSTALL_DIR/data"
+echo "  ✓ data directory"
+
 # -- Update frontend --
 echo "Updating frontend..."
 if [ -d "$REPO_DIR/frontend" ]; then

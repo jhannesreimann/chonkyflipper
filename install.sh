@@ -146,6 +146,7 @@ mkdir -p "$INSTALL_DIR/signals/subghz"
 mkdir -p "$INSTALL_DIR/cards"
 mkdir -p "$INSTALL_DIR/payloads"
 mkdir -p "$INSTALL_DIR/logs"
+mkdir -p "$INSTALL_DIR/data"
 
 # Copy backend files
 echo ""
@@ -201,7 +202,19 @@ fi
 
 # Configure hostapd and dnsmasq for AP mode
 echo ""
-echo "Step 11: Configuring Wi-Fi Access Point (Chonky_Control)..."
+echo "Step 11: Pinning WiFi interface names..."
+# Without this udev rule, USB vs SDIO driver probe order at boot can swap
+# wlan0/wlan1 assignments. The Alfa adapter might claim wlan0, leaving the
+# internal WiFi as wlan1 — hostapd (configured for wlan0) then fails.
+cat > /etc/udev/rules.d/70-persistent-wifi.rules << 'UDEVEOF'
+# Pin internal Pi WiFi as wlan0 (Broadcom brcmfmac)
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="brcmfmac", NAME="wlan0"
+
+# Pin Alfa USB adapter as wlan1 (Realtek rtl8821au)
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="rtl8821au", NAME="wlan1"
+UDEVEOF
+
+echo "Step 12: Configuring Wi-Fi Access Point (Chonky_Control)..."
 
 # Create hostapd configuration
 cat > /etc/hostapd/hostapd.conf << 'EOF'
@@ -258,7 +271,7 @@ systemctl enable wlan0-static-ip
 
 # Install systemd service
 echo ""
-echo "Step 12: Installing systemd service..."
+echo "Step 13: Installing systemd service..."
 cat > /etc/systemd/system/chonkyflipper.service << 'EOF'
 [Unit]
 Description=ChonkyFlipper IoT Pentesting Backend
@@ -328,7 +341,7 @@ systemctl enable dnsmasq
 
 # Deploy frontend via nginx
 echo ""
-echo "Step 13: Deploying frontend..."
+echo "Step 14: Deploying frontend..."
 mkdir -p /var/www/html
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
 cp -r "$SCRIPT_DIR/frontend/"* /var/www/html/

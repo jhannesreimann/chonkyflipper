@@ -106,36 +106,79 @@
         <section class="card module-panel" id="panel-ir">
             <h2>📺 Infrared</h2>
 
-            <!-- Record & Signals -->
-            <div class="settings-section">
-                <h3>Capture</h3>
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="irRecord()">🔴 Record (5s)</button>
-                    <button class="btn btn-secondary" onclick="irLoadSignals()">🔄 Refresh</button>
-                </div>
-                <div id="ir-record-status" class="status-msg" style="display:none;"></div>
-                <div class="table-container" id="ir-signals-table" style="display:none;">
-                    <table>
-                        <thead>
-                            <tr><th>Signal</th><th>Protocol</th><th>Pulses</th><th></th></tr>
-                        </thead>
-                        <tbody id="ir-signals-body"></tbody>
-                    </table>
-                </div>
-                <div id="ir-signals-empty" class="placeholder">No signals recorded yet.</div>
+            <!-- Library / My Signals Tabs -->
+            <div class="ir-tabs">
+                <button class="ir-tab active" onclick="irShowTab('library')" id="ir-tab-library">📚 Library</button>
+                <button class="ir-tab" onclick="irShowTab('mysignals')" id="ir-tab-mysignals">📡 My Signals</button>
             </div>
 
-            <!-- Built-in Payloads -->
-            <div class="settings-section">
-                <h3>Payload Library</h3>
-                <div id="ir-payloads-list"></div>
+            <!-- LIBRARY TAB -->
+            <div id="ir-tab-content-library" class="ir-tab-content active">
+                <!-- Search -->
+                <div class="ir-search-bar">
+                    <input type="text" id="ir-search-input" placeholder="Search brands, devices, buttons..."
+                           onkeyup="if(event.key==='Enter')irSearch()">
+                    <button class="btn btn-secondary btn-sm" onclick="irSearch()">🔍</button>
+                </div>
+
+                <!-- Breadcrumb -->
+                <div id="ir-breadcrumb" class="breadcrumb" style="display:none;"></div>
+
+                <!-- Brand Grid (level 1) -->
+                <div id="ir-brands-grid" class="brand-grid"></div>
+                <div id="ir-brands-loading" class="placeholder" style="display:none;">Loading library...</div>
+
+                <!-- Device List (level 2) -->
+                <div id="ir-devices-list" style="display:none;"></div>
+
+                <!-- Button Grid (level 3) -->
+                <div id="ir-buttons-grid" style="display:none;"></div>
+
+                <!-- Search Results -->
+                <div id="ir-search-results" style="display:none;"></div>
+
+                <!-- Legacy fallback (flat list from JSON files) -->
+                <div id="ir-payloads-list" style="display:none;"></div>
+
+                <!-- DB Stats + Sync -->
+                <div class="ir-lib-footer">
+                    <span id="ir-lib-stats" class="ir-stat"></span>
+                    <button class="btn btn-secondary btn-sm" onclick="irSyncCheck()" id="ir-sync-btn">🔄 Check Updates</button>
+                </div>
+                <div id="ir-sync-status" class="status-msg" style="display:none;"></div>
             </div>
 
-            <!-- Brute Force -->
+            <!-- MY SIGNALS TAB -->
+            <div id="ir-tab-content-mysignals" class="ir-tab-content" style="display:none;">
+                <div class="settings-section">
+                    <h3>Record New Signal</h3>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="irRecord()">🔴 Record (5s)</button>
+                        <button class="btn btn-secondary" onclick="irLoadSignals()">🔄 Refresh</button>
+                    </div>
+                    <div id="ir-record-status" class="status-msg" style="display:none;"></div>
+                </div>
+                <div class="settings-section">
+                    <h3>Recorded Signals</h3>
+                    <div class="table-container" id="ir-signals-table" style="display:none;">
+                        <table>
+                            <thead>
+                                <tr><th>Signal</th><th>Protocol</th><th>Pulses</th><th></th></tr>
+                            </thead>
+                            <tbody id="ir-signals-body"></tbody>
+                        </table>
+                    </div>
+                    <div id="ir-signals-empty" class="placeholder">No signals recorded yet.</div>
+                </div>
+            </div>
+
+            <!-- Device Discovery (shared) -->
             <div class="settings-section">
                 <h3>Device Discovery</h3>
-                <p class="hint">Send power toggle codes for common TV brands. Watch the target device.</p>
-                <button class="btn btn-secondary" onclick="irBruteforce()">⚡ Brute Force Power</button>
+                <p class="hint">Send power toggle codes for common brands. Watch the target device.</p>
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="irBruteforce()">⚡ Brute Force Power</button>
+                </div>
                 <div id="ir-bruteforce-status" class="status-msg" style="display:none;"></div>
             </div>
         </section>

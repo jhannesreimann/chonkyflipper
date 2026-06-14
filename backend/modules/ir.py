@@ -24,6 +24,11 @@ class IRModule:
         os.makedirs(self.signals_dir, exist_ok=True)
         os.makedirs(self.payloads_dir, exist_ok=True)
 
+        # Payload cache to avoid re-parsing JSON every request
+        self._payload_cache = {}
+        self._payload_cache_time = 0
+        self._payload_cache_ttl = 30  # seconds
+
         # Detect which lirc device is TX and which is RX
         self.tx_dev, self.rx_dev = self._detect_devices()
 
@@ -281,175 +286,25 @@ class IRModule:
     # -------------------------------------------------
 
     def detect_protocol(self, pulses, spaces=None):
-        """
-        Detect IR protocol from pulse/space timing data.
-        Returns dict with protocol name, confidence, address, command.
-        """
-        if not pulses or len(pulses) < 4:
-            return {'name': 'unknown', 'confidence': 0}
+        """Detect IR protocol from pulse/space timing data."""
+        from modules.ir_protocols import detect_protocol as _detect
+        return _detect(pulses, spaces)
 
-        # NEC protocol: 9000us header pulse, 4500us header space
-        # Logical 0: 560us pulse + 560us space
-        # Logical 1: 560us pulse + 1690us space
-        # 32 bits: 8-bit address + 8-bit inverse + 8-bit command + 8-bit inverse
-        if 8500 < pulses[0] < 9500 and spaces and 4000 < spaces[0] < 5000:
-            result = self._decode_nec(pulses, spaces)
-            if result['confidence'] > 0.5:
-                return result
-
-        # Sony SIRC: 2400us header pulse, 600us header space
-        # Logical 0: 600us pulse + 600us space, Logical 1: 600us pulse + 1200us space
-        if 2000 < pulses[0] < 2800 and spaces and 500 < spaces[0] < 700:
-            result = self._decode_sony(pulses, spaces)
-            if result['confidence'] > 0.5:
-                return result
-
-        # RC5: ~889us per half-bit, Manchester encoding, 13-14 bits
-        if 800 < pulses[0] < 1000:
-            return {'name': 'RC5 (likely)', 'confidence': 0.5}
-
-        # Generic: just classify based on header
-        if pulses[0] > 8000:
-            return {'name': 'NEC-like', 'confidence': 0.3}
-        elif pulses[0] > 2000:
-            return {'name': 'Sony-like', 'confidence': 0.3}
-
-        return {'name': 'raw', 'confidence': 0.1}
-
-    def _decode_nec(self, pulses, spaces):
-        """Decode NEC protocol from pulse/space timings"""
-        result = {'name': 'NEC', 'confidence': 0}
-
-        if len(pulses) < 34 or len(spaces) < 33:
-            return {'name': 'NEC (incomplete)', 'confidence': 0.3}
-
-        # Skip header (index 0 of both)
-        bits = []
-        for i in range(1, min(34, min(len(pulses), len(spaces) + 1))):
-            p = pulses[i] if i < len(pulses) else 0
-            s = spaces[i] if i < len(spaces) else 0
-
-            if 400 < p < 700 and 400 < s < 700:
-                bits.append(0)
-            elif 400 < p < 700 and 1400 < s < 2000:
-                bits.append(1)
-            else:
-                bits.append(None)
-
-        valid = sum(1 for b in bits if b is not None)
-        if valid < 16:
-            return {'name': 'NEC (noisy)', 'confidence': 0.3}
-
-        confidence = valid / len(bits) if bits else 0
-
-        # Extract address and command from first 32 bits
-        if len(bits) >= 32:
-            addr = 0
-            cmd = 0
-            for i in range(8):
-                if bits[i] is not None:
-                    addr |= bits[i] << i
-            for i in range(16, 24):
-                if bits[i] is not None:
-                    cmd |= bits[i] << (i - 16)
-            result['address'] = addr
-            result['command'] = cmd
-            result['address_hex'] = f'0x{addr:02X}'
-            result['command_hex'] = f'0x{cmd:02X}'
-
-        result['confidence'] = confidence
-        return result
-
-    def _decode_sony(self, pulses, spaces):
-        """Decode Sony SIRC protocol"""
-        result = {'name': 'Sony SIRC', 'confidence': 0}
-
-        bits = []
-        for i in range(1, min(len(pulses), len(spaces) + 1)):
-            p = pulses[i] if i < len(pulses) else 0
-            s = spaces[i] if i < len(spaces) else 0
-
-            if 400 < p < 800 and 400 < s < 800:
-                bits.append(0)
-            elif 400 < p < 800 and 1000 < s < 1400:
-                bits.append(1)
-            else:
-                bits.append(None)
-
-        valid = sum(1 for b in bits if b is not None)
-        if valid < 8:
-            return {'name': 'Sony (noisy)', 'confidence': 0.3}
-
-        confidence = valid / len(bits) if bits else 0
-        result['confidence'] = confidence
-
-        if len(bits) >= 12:
-            cmd = 0
-            addr = 0
-            for i in range(7):
-                if bits[i] is not None:
-                    cmd |= bits[i] << i
-            for i in range(7, min(12, len(bits))):
-                if bits[i] is not None:
-                    addr |= bits[i] << (i - 7)
-            result['command'] = cmd
-            result['address'] = addr
-
-        return result
-
-    # -----------------------------------------------------------
-    # NEC encoder / Payload library
-    # -----------------------------------------------------------
-
+    # Legacy encoder wrapper — delegates to ir_protocols
     @staticmethod
     def _encode_nec(address, command, header_pulse=9000, header_space=4500,
                     unit_pulse=560, unit_space_0=560, unit_space_1=1690,
                     samsung32=False):
-        """
-        Build NEC protocol pulse and space arrays from address and command.
-        Returns (pulses, spaces) lists in microseconds.
-        Standard NEC: 9000us header, 32 bits (addr + ~addr + cmd + ~cmd).
-        Samsung variant: 4500us header, 32 bits (addr + addr + cmd + ~cmd).
-        """
-        pulses = [header_pulse]
-        spaces = [header_space]
-
-        # Build 32-bit payload
-        if samsung32:
-            # Samsung32: address repeated, command inverted
-            data = [
-                address & 0xFF,
-                address & 0xFF,        # repeated, not inverted
-                command & 0xFF,
-                (~command) & 0xFF
-            ]
-        else:
-            # Standard NEC: both inverted
-            data = [
-                address & 0xFF,
-                (~address) & 0xFF,
-                command & 0xFF,
-                (~command) & 0xFF
-            ]
-
-        for byte in data:
-            for bit_pos in range(8):
-                pulses.append(unit_pulse)
-                if byte & (1 << bit_pos):
-                    spaces.append(unit_space_1)
-                else:
-                    spaces.append(unit_space_0)
-
-        pulses.append(unit_pulse)  # trailing pulse
-        return pulses, spaces
+        from modules.ir_protocols import encode_nec
+        return encode_nec(address, command,
+                          header_pulse=header_pulse, header_space=header_space,
+                          unit_pulse=unit_pulse, unit_space_0=unit_space_0,
+                          unit_space_1=unit_space_1, samsung32=samsung32)
 
     def _load_payload_files(self):
         """Load IR payload definitions from JSON files."""
         payloads = {}
-        payload_dir = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            'payloads', 'ir'
-        )
+        payload_dir = os.path.join(self.payloads_dir, 'ir')
         if not os.path.isdir(payload_dir):
             return payloads
 
@@ -487,9 +342,17 @@ class IRModule:
 
         return payloads
 
+    def _get_payloads(self):
+        """Return cached payloads, refreshing from files if TTL expired."""
+        now = time.time()
+        if now - self._payload_cache_time > self._payload_cache_ttl:
+            self._payload_cache = self._load_payload_files()
+            self._payload_cache_time = now
+        return self._payload_cache
+
     def list_payloads(self):
         """List all loaded IR payloads grouped by brand."""
-        payloads = self._load_payload_files()
+        payloads = self._get_payloads()
         result = []
         for pid, p in payloads.items():
             result.append({
@@ -502,7 +365,7 @@ class IRModule:
 
     def execute_payload(self, payload_id):
         """Load and transmit a payload by ID."""
-        payloads = self._load_payload_files()
+        payloads = self._get_payloads()
         if payload_id not in payloads:
             return {'success': False, 'error': f'Payload {payload_id} not found'}
 
@@ -519,7 +382,7 @@ class IRModule:
         """
         Send power toggle codes for multiple brands to find which one works.
         """
-        payloads = self._load_payload_files()
+        payloads = self._get_payloads()
         power_ids = [pid for pid in payloads if pid.endswith('power_toggle')]
 
         if brands:

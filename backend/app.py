@@ -132,12 +132,118 @@ def get_system_info():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def _do_wifi_scan():
+    """Shared wpa_cli-based WiFi scan (uses Alfa wlan1). Returns network list."""
+    if not os.path.exists('/sys/class/net/wlan1'):
+        return None  # caller decides how to report the error
+
+    # Ensure wlan1 is up
+    subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
+                   capture_output=True)
+
+    # Keep wpa_supplicant running on wlan1 (start if not active)
+    wpa_active = subprocess.run(
+        ['systemctl', 'is-active', '--quiet', 'wpa_supplicant@wlan1']
+    ).returncode == 0
+    if not wpa_active:
+        subprocess.run(
+            ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
+            capture_output=True
+        )
+        time.sleep(2)
+
+    networks = []
+    try:
+        # Trigger a fresh scan, retry if busy
+        for attempt in range(3):
+            result = subprocess.run(
+                ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan'],
+                capture_output=True, text=True, timeout=5
+            )
+            if 'OK' in result.stdout:
+                time.sleep(3)
+                break
+            if 'FAIL-BUSY' in result.stdout:
+                time.sleep(1)
+                continue
+            time.sleep(1)
+
+        output = subprocess.check_output(
+            ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan_results'],
+            text=True, stderr=subprocess.DEVNULL, timeout=10
+        )
+
+        # Parse tab-separated output (skip header line)
+        for line in output.split('\n'):
+            parts = line.split('\t')
+            if len(parts) < 5:
+                continue
+            bssid = parts[0].strip()
+            if not re.match(r'^[0-9a-fA-F:]{17}$', bssid):
+                continue
+
+            try:
+                freq = int(parts[1].strip())
+                signal = int(parts[2].strip())
+            except ValueError:
+                continue
+
+            flags = parts[3].strip()
+            ssid = parts[4].strip() if len(parts) > 4 else '(hidden)'
+
+            # Determine security from flags
+            security = None
+            if 'WPA2' in flags:
+                security = 'WPA2'
+            elif 'WPA-' in flags:
+                security = 'WPA'
+
+            # Convert frequency to channel
+            channel = None
+            if 2412 <= freq <= 2484:
+                channel = (freq - 2412) // 5 + 1
+            elif 5180 <= freq <= 5885:
+                channel = (freq - 5180) // 5 + 36
+
+            networks.append({
+                'bssid': bssid.upper(),
+                'ssid': ssid,
+                'signal_dbm': signal,
+                'channel': channel,
+                'security': security
+            })
+
+    except Exception:
+        pass
+
+    # Deduplicate by SSID, keep strongest signal
+    seen = {}
+    for net in networks:
+        ssid = net.get('ssid', '')
+        if not ssid:
+            continue
+        if ssid not in seen or net.get('signal_dbm', -100) > seen[ssid].get('signal_dbm', -100):
+            if ssid in seen and not seen[ssid].get('security') and net.get('security'):
+                seen[ssid]['security'] = net['security']
+            else:
+                seen[ssid] = net
+
+    return sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
+
+
 @app.route('/api/wifi/scan', methods=['GET'])
 def wifi_scan():
-    """Scan for Wi-Fi networks"""
-    wifi = get_module('wifi')
-    networks = wifi.scan()
-    return jsonify({'networks': networks})
+    """Scan for Wi-Fi networks using the Alfa adapter"""
+    networks = _do_wifi_scan()
+    if networks is None:
+        return jsonify({
+            'success': False,
+            'error': 'Alfa WiFi adapter not connected'
+        }), 400
+    return jsonify({
+        'success': True,
+        'networks': networks
+    })
 
 @app.route('/api/wifi/start_monitor', methods=['POST'])
 def wifi_start_monitor():
@@ -227,6 +333,136 @@ def ir_bruteforce():
     data = request.json or {}
     brands = data.get('brands', None)
     return jsonify(ir.brute_force_power(brands))
+
+# ── IR Library v2 (hierarchical browsing) ──────────────────
+
+def _get_ir_db():
+    """Lazy-init the IR payload database with auto-seed on first run."""
+    from modules.ir_db import IRPayloadDB
+    db = IRPayloadDB()
+    db.init_db()
+    # Auto-seed from JSON payloads if DB is empty
+    if db.get_stats().get('brands', 0) == 0:
+        db.seed_from_json('/opt/chonkyflipper/payloads')
+    return db
+
+@app.route('/api/ir/library/brands', methods=['GET'])
+def ir_library_brands():
+    """List all brands in the IR payload library."""
+    db = _get_ir_db()
+    brands = db.get_brands()
+    return jsonify({'brands': brands, 'total': len(brands)})
+
+@app.route('/api/ir/library/brands/<slug>/devices', methods=['GET'])
+def ir_library_devices(slug):
+    """List devices for a brand."""
+    db = _get_ir_db()
+    brand = db.get_brand_by_slug(slug)
+    if not brand:
+        return jsonify({'success': False, 'error': 'Brand not found'}), 404
+    devices = db.get_devices(slug)
+    return jsonify({'brand': brand, 'devices': devices})
+
+@app.route('/api/ir/library/devices/<int:device_id>/buttons', methods=['GET'])
+def ir_library_buttons(device_id):
+    """List buttons for a device."""
+    db = _get_ir_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    buttons = db.get_buttons(device_id)
+    return jsonify({'device': device, 'buttons': buttons})
+
+@app.route('/api/ir/library/devices/<int:device_id>/send', methods=['POST'])
+def ir_library_send(device_id):
+    """Send an IR signal from the library."""
+    data = request.json or {}
+    button_id = data.get('button_id')
+    if not button_id:
+        return jsonify({'success': False, 'error': 'button_id required'}), 400
+
+    db = _get_ir_db()
+    btn = db.get_button_by_device_and_id(device_id, button_id)
+    if not btn:
+        return jsonify({'success': False, 'error': 'Button not found'}), 404
+
+    ir = get_module('ir')
+    pulses = btn.get('raw_pulses', [])
+    spaces = btn.get('raw_spaces', [])
+    frequency = btn.get('frequency', 38000)
+
+    pairs = []
+    for i, pulse in enumerate(pulses):
+        pairs.append({'type': 'pulse', 'duration_us': pulse})
+        if i < len(spaces):
+            pairs.append({'type': 'space', 'duration_us': spaces[i]})
+
+    return jsonify(ir._transmit_pairs(pairs, f'{btn.get("brand_name","")}_{button_id}'))
+
+@app.route('/api/ir/library/search', methods=['GET'])
+def ir_library_search():
+    """Search IR library across brands, devices, and buttons."""
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'results': [], 'total': 0})
+    db = _get_ir_db()
+    results = db.search(query)
+    total = len(results['brands']) + len(results['devices']) + len(results['buttons'])
+    return jsonify({'results': results, 'total': total, 'query': query})
+
+@app.route('/api/ir/library/stats', methods=['GET'])
+def ir_library_stats():
+    """Get IR library statistics."""
+    db = _get_ir_db()
+    return jsonify(db.get_stats())
+
+# ── IR Database Sync ───────────────────────────────────────
+
+_sync_task = {'running': False, 'progress': 0, 'total': 0, 'current': ''}
+
+@app.route('/api/ir/sync/check', methods=['POST'])
+def ir_sync_check():
+    """Check if IR database updates are available."""
+    from modules.ir_sync import IRDBSync
+    db = _get_ir_db()
+    syncer = IRDBSync(db)
+    result = syncer.check_for_updates()
+    return jsonify(result)
+
+@app.route('/api/ir/sync/start', methods=['POST'])
+def ir_sync_start():
+    """Start syncing IR database with Flipper-IRDB."""
+    global _sync_task
+    if _sync_task['running']:
+        return jsonify({'success': False, 'error': 'Sync already in progress'})
+
+    _sync_task = {'running': True, 'progress': 0, 'total': 0, 'current': ''}
+
+    def _do_sync():
+        global _sync_task
+        try:
+            from modules.ir_sync import IRDBSync
+            from modules.ir_db import IRPayloadDB
+            db = IRPayloadDB()
+            db.init_db()
+            syncer = IRDBSync(db)
+            result = syncer.sync(
+                progress_callback=lambda p, t, f: _sync_task.update(
+                    {'progress': p, 'total': t, 'current': f})
+            )
+            _sync_task.update({'running': False, 'result': result})
+        except Exception as e:
+            _sync_task.update({'running': False, 'error': str(e)})
+
+    import threading
+    t = threading.Thread(target=_do_sync, daemon=True)
+    t.start()
+    return jsonify({'success': True, 'status': 'started'})
+
+@app.route('/api/ir/sync/status', methods=['GET'])
+def ir_sync_status():
+    """Check IR database sync progress."""
+    return jsonify(dict(_sync_task))
 
 @app.route('/api/subghz/record', methods=['POST'])
 def subghz_record():
@@ -445,115 +681,6 @@ def enable_ap_mode():
             
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/network/wifi-scan', methods=['GET'])
-def wifi_scan_networks():
-    """Scan for WiFi networks using the Alfa adapter (wlan1)"""
-    if not os.path.exists('/sys/class/net/wlan1'):
-        return jsonify({
-            'success': False,
-            'error': 'Alfa WiFi adapter not connected'
-        }), 400
-
-    # Ensure wlan1 is up
-    subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
-                   capture_output=True)
-
-    # Keep wpa_supplicant running on wlan1 (start if not active)
-    wpa_active = subprocess.run(
-        ['systemctl', 'is-active', '--quiet', 'wpa_supplicant@wlan1']
-    ).returncode == 0
-    if not wpa_active:
-        subprocess.run(
-            ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
-            capture_output=True
-        )
-        time.sleep(2)
-
-    networks = []
-    try:
-        # Trigger a fresh scan, retry if busy
-        for attempt in range(3):
-            result = subprocess.run(
-                ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan'],
-                capture_output=True, text=True, timeout=5
-            )
-            if 'OK' in result.stdout:
-                time.sleep(3)
-                break
-            if 'FAIL-BUSY' in result.stdout:
-                time.sleep(1)
-                continue
-            time.sleep(1)
-
-        output = subprocess.check_output(
-            ['sudo', '-n', 'wpa_cli', '-i', 'wlan1', 'scan_results'],
-            text=True, stderr=subprocess.DEVNULL, timeout=10
-        )
-
-        # Parse tab-separated output (skip header line)
-        for line in output.split('\n'):
-            parts = line.split('\t')
-            if len(parts) < 5:
-                continue
-            bssid = parts[0].strip()
-            if not re.match(r'^[0-9a-fA-F:]{17}$', bssid):
-                continue
-
-            try:
-                freq = int(parts[1].strip())
-                signal = int(parts[2].strip())
-            except ValueError:
-                continue
-
-            flags = parts[3].strip()
-            ssid = parts[4].strip() if len(parts) > 4 else '(hidden)'
-
-            # Determine security from flags
-            security = None
-            if 'WPA2' in flags:
-                security = 'WPA2'
-            elif 'WPA-' in flags:
-                security = 'WPA'
-
-            # Convert frequency to channel
-            channel = None
-            if 2412 <= freq <= 2484:
-                channel = (freq - 2412) // 5 + 1
-            elif 5180 <= freq <= 5885:
-                channel = (freq - 5180) // 5 + 36
-
-            networks.append({
-                'bssid': bssid.upper(),
-                'ssid': ssid,
-                'signal_dbm': signal,
-                'channel': channel,
-                'security': security
-            })
-
-    except Exception:
-        pass
-
-    # Deduplicate by SSID, keep strongest signal
-    seen = {}
-    for net in networks:
-        ssid = net.get('ssid', '')
-        if not ssid:
-            continue
-        if ssid not in seen or net.get('signal_dbm', -100) > seen[ssid].get('signal_dbm', -100):
-            # Keep security from any entry if the winner lacks it
-            if ssid in seen and not seen[ssid].get('security') and net.get('security'):
-                seen[ssid]['security'] = net['security']
-            else:
-                seen[ssid] = net
-
-    result = sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
-
-    return jsonify({
-        'success': True,
-        'networks': result
-    })
-
 
 @app.route('/api/network/wifi-connect', methods=['POST'])
 def wifi_connect():
