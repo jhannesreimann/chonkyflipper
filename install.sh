@@ -14,6 +14,7 @@ echo "==================================================="
 # Configuration
 INSTALL_DIR="/opt/chonkyflipper"
 SERVICE_USER="chonky"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
@@ -131,9 +132,9 @@ fi
 echo ""
 echo "Step 6: Creating service user..."
 if ! id "$SERVICE_USER" &>/dev/null; then
-    useradd -r -s /bin/false -G gpio,i2c,spi,bluetooth,video "$SERVICE_USER"
+    useradd -r -s /bin/false -G gpio,i2c,spi,bluetooth,video,netdev,dialout "$SERVICE_USER"
 else
-    usermod -aG video "$SERVICE_USER" || true
+    usermod -aG video,netdev,dialout "$SERVICE_USER" || true
 fi
 
 # Create directories
@@ -160,7 +161,11 @@ if [ -f "$SCRIPT_DIR/update.sh" ]; then
     chmod +x "$INSTALL_DIR/update.sh"
 fi
 
-# Seed sample BadUSB payloads (never overwrites existing files)
+# Seed IR and BadUSB payloads (never overwrites existing files)
+if [ -d "$SCRIPT_DIR/payloads/ir" ]; then
+    mkdir -p "$INSTALL_DIR/payloads/ir"
+    cp -n "$SCRIPT_DIR/payloads/ir/"*.json "$INSTALL_DIR/payloads/ir/" 2>/dev/null || true
+fi
 if [ -d "$SCRIPT_DIR/payloads/badusb" ]; then
     mkdir -p "$INSTALL_DIR/payloads/badusb"
     cp -n "$SCRIPT_DIR/payloads/badusb/"*.txt "$INSTALL_DIR/payloads/badusb/" 2>/dev/null || true
@@ -343,7 +348,6 @@ systemctl enable dnsmasq
 echo ""
 echo "Step 14: Deploying frontend..."
 mkdir -p /var/www/html
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
 cp -r "$SCRIPT_DIR/frontend/"* /var/www/html/
 cat > /etc/nginx/sites-available/chonky << 'EOF'
 server {
@@ -390,32 +394,37 @@ chmod 600 "$INSTALL_DIR/config/maintenance-network.conf"
 
 # Install MQTT broker (mosquitto) for Zigbee2MQTT
 echo ""
-echo "Step 14: Installing MQTT broker (mosquitto)..."
+echo "Step 15: Installing MQTT broker (mosquitto)..."
 apt-get install -y mosquitto mosquitto-clients
 systemctl enable mosquitto
 systemctl start mosquitto
 
-# Install Node.js (required by Zigbee2MQTT, minimum version 18)
+# Install Node.js (required by Zigbee2MQTT, minimum version 22)
 echo ""
-echo "Step 15: Installing Node.js..."
+echo "Step 16: Installing Node.js..."
 if command -v node &>/dev/null; then
     NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
 else
     NODE_MAJOR=0
 fi
-if [ "$NODE_MAJOR" -lt 18 ]; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
 fi
 
 # Install Zigbee2MQTT
 echo ""
-echo "Step 16: Installing Zigbee2MQTT..."
+echo "Step 17: Installing Zigbee2MQTT..."
 if [ ! -d "/opt/zigbee2mqtt" ]; then
     git clone --depth 1 https://github.com/Koenkk/zigbee2mqtt.git /opt/zigbee2mqtt
 fi
 cd /opt/zigbee2mqtt
-npm ci
+
+# Install pnpm (Zigbee2MQTT 2.x uses pnpm, not npm)
+if ! command -v pnpm &>/dev/null; then
+    npm install -g pnpm 2>&1 | tail -3
+fi
+pnpm install --frozen-lockfile 2>&1 | tail -5
 cd "$INSTALL_DIR"
 
 # Create Zigbee2MQTT data dir and default config (only if not already configured)
@@ -429,7 +438,7 @@ mqtt:
   server: mqtt://localhost:1883
 serial:
   port: /dev/ttyUSB0
-  adapter: auto
+  adapter: ember
 advanced:
   log_level: warn
   pan_id: GENERATE
@@ -439,8 +448,9 @@ EOF
 fi
 
 # Dedicated service user with dialout access (needed for /dev/ttyUSB0)
+# Home dir set to /opt/zigbee2mqtt so pnpm has a writable cache location
 if ! id zigbee2mqtt &>/dev/null; then
-    useradd -r -s /bin/false -G dialout zigbee2mqtt
+    useradd -r -s /bin/false -d /opt/zigbee2mqtt -G dialout zigbee2mqtt
 fi
 chown -R zigbee2mqtt:zigbee2mqtt /opt/zigbee2mqtt
 
@@ -461,6 +471,7 @@ Wants=mosquitto.service
 
 [Service]
 Environment=NODE_ENV=production
+Environment=HOME=/opt/zigbee2mqtt
 ExecStart=/usr/bin/node index.js
 WorkingDirectory=/opt/zigbee2mqtt
 Restart=on-failure

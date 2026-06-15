@@ -17,6 +17,15 @@ INSTALL_DIR="/opt/chonkyflipper"
 REPO_DIR="/home/kali/chonkyflipper"
 FRONTEND_DIR="/var/www/html"
 
+# -- Run git commands as kali user to avoid mixed root/kali ownership in .git --
+run_git() {
+    if [ "$(id -u)" = "0" ] && id kali &>/dev/null; then
+        sudo -u kali git "$@"
+    else
+        git "$@"
+    fi
+}
+
 # -- Ensure git can use SSH keys (needed when running as root via sudo) --
 if [ -z "$GIT_SSH_COMMAND" ] && [ -f /home/kali/.ssh/id_ed25519 ]; then
     export GIT_SSH_COMMAND="ssh -i /home/kali/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new"
@@ -50,11 +59,11 @@ fi
 
 # -- Git pull --
 cd "$REPO_DIR"
-OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+OLD_COMMIT=$(run_git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 echo "Current version: $OLD_COMMIT"
 
 echo "Pulling updates from GitHub..."
-GIT_TERMINAL_PROMPT=0 git pull origin main 2>&1 || {
+GIT_TERMINAL_PROMPT=0 run_git pull origin main 2>&1 || {
     echo ""
     echo "❌ Git pull failed."
     echo "   If this is a private repo, set up a GitHub token:"
@@ -62,7 +71,7 @@ GIT_TERMINAL_PROMPT=0 git pull origin main 2>&1 || {
     exit 1
 }
 
-NEW_COMMIT=$(git rev-parse --short HEAD)
+NEW_COMMIT=$(run_git rev-parse --short HEAD)
 echo "New version:      $NEW_COMMIT"
 echo ""
 
@@ -77,7 +86,7 @@ fi
 
 # Show what changed
 echo "Changes:"
-git --no-pager log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "  (detailed log unavailable)"
+run_git --no-pager log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "  (detailed log unavailable)"
 echo ""
 
 # -- Update backend files --
