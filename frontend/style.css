@@ -179,6 +179,8 @@ body {
 .module-panel.active {
     display: block;
     animation: slideIn 0.3s ease;
+    max-height: 70vh;
+    overflow-y: auto;
 }
 
 @keyframes slideIn {
@@ -706,11 +708,11 @@ body {
     color: #fff;
 }
 .btn-ir.power-btn {
-    border-color: var(--accent-primary);
-    background: rgba(14, 165, 233, 0.1);
+    border-color: var(--accent-warning);
 }
 .btn-ir.power-btn:hover {
-    background: var(--accent-primary);
+    background: var(--accent-warning);
+    border-color: var(--accent-warning);
     color: #fff;
 }
 
@@ -719,13 +721,21 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
     padding-top: 12px;
     margin-top: 12px;
     border-top: 1px solid var(--bg-hover);
     font-size: 0.7rem;
+    flex-wrap: wrap;
 }
 .ir-stat {
     color: var(--text-secondary);
+    min-width: 0;
+    flex: 1;
+}
+#ir-sync-status {
+    margin-top: 8px;
+    clear: both;
 }
 
 /* Status message (for scan progress etc) */
@@ -761,22 +771,17 @@ body {
     gap: 8px;
 }
 
+/* Responsive adjustments */
 @media (max-width: 360px) {
     .info-grid {
         grid-template-columns: 1fr;
     }
-}
-
-/* Responsive adjustments */
-@media (max-width: 360px) {
     .module-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-    
     .system-grid {
         grid-template-columns: 1fr;
     }
-    
     .btn {
         padding: 12px;
         font-size: 0.8rem;

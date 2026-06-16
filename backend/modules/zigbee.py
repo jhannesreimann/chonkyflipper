@@ -22,6 +22,7 @@ class ZigbeeModule:
         self._response_events = {}
         self._lock = threading.Lock()
         self._connected = False
+        self._connect_event = threading.Event()
 
     # ------------------------------------------------------------------
     # Internal MQTT plumbing
@@ -39,14 +40,13 @@ class ZigbeeModule:
         client.on_message = self._on_message
 
         try:
+            self._connect_event.clear()
             client.connect(self.broker, self.port, keepalive=30)
             client.loop_start()
             self._client = client
-            for _ in range(30):
-                if self._connected:
-                    return True
-                time.sleep(0.1)
-            return False
+            if not self._connect_event.wait(timeout=3):
+                return False
+            return True
         except Exception:
             return False
 
@@ -54,9 +54,11 @@ class ZigbeeModule:
         if rc == 0:
             self._connected = True
             client.subscribe(f'{self.BASE_TOPIC}/#')
+            self._connect_event.set()
 
     def _on_disconnect(self, client, userdata, rc):
         self._connected = False
+        self._connect_event.clear()
 
     def _on_message(self, client, userdata, msg):
         topic = msg.topic
@@ -75,17 +77,16 @@ class ZigbeeModule:
             return True
         if self._client is not None:
             try:
+                self._connect_event.clear()
                 self._client.reconnect()
-                for _ in range(20):
-                    if self._connected:
-                        return True
-                    time.sleep(0.1)
+                if not self._connect_event.wait(timeout=2):
+                    return False
+                return True
             except Exception:
                 pass
         return self._connect()
 
     def _publish_and_wait(self, req_topic, res_topic, payload, timeout=5):
-        """Publish a bridge request and block until the paired response arrives."""
         if not self._ensure_connected():
             return None, 'MQTT broker not available'
 
@@ -112,14 +113,14 @@ class ZigbeeModule:
     def get_bridge_info(self):
         if not self._ensure_connected():
             return {'success': False, 'error': 'MQTT broker not available'}
-        time.sleep(0.5)  # allow retained messages to arrive
+        time.sleep(0.5)
         with self._lock:
             info = self._cache.get(f'{self.BASE_TOPIC}/bridge/info')
             state = self._cache.get(f'{self.BASE_TOPIC}/bridge/state')
         if info is None and state is None:
             return {
                 'success': False,
-                'error': 'Zigbee2MQTT not responding — is the service running?'
+                'error': 'Zigbee2MQTT not responding - is the service running?',
             }
         return {'success': True, 'state': state, 'info': info}
 
@@ -131,15 +132,14 @@ class ZigbeeModule:
             devices = self._cache.get(f'{self.BASE_TOPIC}/bridge/devices', [])
         return {
             'success': True,
-            'devices': devices if isinstance(devices, list) else []
+            'devices': devices if isinstance(devices, list) else [],
         }
 
     def get_network_map(self):
         result, error = self._publish_and_wait(
             f'{self.BASE_TOPIC}/bridge/request/networkmap',
             f'{self.BASE_TOPIC}/bridge/response/networkmap',
-            {'type': 'raw', 'routes': False},
-            timeout=15
+            {'type': 'raw', 'routes': False}, timeout=15,
         )
         if error:
             return {'success': False, 'error': error}
@@ -150,7 +150,7 @@ class ZigbeeModule:
         result, error = self._publish_and_wait(
             f'{self.BASE_TOPIC}/bridge/request/permit_join',
             f'{self.BASE_TOPIC}/bridge/response/permit_join',
-            payload
+            payload,
         )
         if error:
             return {'success': False, 'error': error}
@@ -159,9 +159,7 @@ class ZigbeeModule:
     def get_device_state(self, device_name):
         if not self._ensure_connected():
             return {'success': False, 'error': 'MQTT broker not available'}
-        self._client.publish(
-            f'{self.BASE_TOPIC}/{device_name}/get', json.dumps({'state': ''})
-        )
+        self._client.publish(f'{self.BASE_TOPIC}/{device_name}/get', json.dumps({'state': ''}))
         time.sleep(0.5)
         with self._lock:
             state = self._cache.get(f'{self.BASE_TOPIC}/{device_name}')
@@ -170,9 +168,7 @@ class ZigbeeModule:
     def set_device_state(self, device_name, payload):
         if not self._ensure_connected():
             return {'success': False, 'error': 'MQTT broker not available'}
-        self._client.publish(
-            f'{self.BASE_TOPIC}/{device_name}/set', json.dumps(payload)
-        )
+        self._client.publish(f'{self.BASE_TOPIC}/{device_name}/set', json.dumps(payload))
         time.sleep(0.3)
         with self._lock:
             state = self._cache.get(f'{self.BASE_TOPIC}/{device_name}')
@@ -183,7 +179,7 @@ class ZigbeeModule:
         result, error = self._publish_and_wait(
             f'{self.BASE_TOPIC}/bridge/request/device/remove',
             f'{self.BASE_TOPIC}/bridge/response/device/remove',
-            payload
+            payload,
         )
         if error:
             return {'success': False, 'error': error}

@@ -91,7 +91,7 @@ echo ""
 
 # -- Update backend files --
 echo "Updating backend..."
-for item in app.py requirements.txt setup-gadget.sh maintenance-mode.sh modules; do
+for item in app.py config.py utils.py requirements.txt setup-gadget.sh maintenance-mode.sh modules routes; do
     src="$REPO_DIR/backend/$item"
     if [ -e "$src" ]; then
         cp -r "$src" "$INSTALL_DIR/"

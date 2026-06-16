@@ -123,7 +123,7 @@ class IRPayloadDB:
 
         return {'success': True, 'db_path': self.db_path}
 
-    # ── Brands ──────────────────────────────────────────────
+    # --- Brands ----------------------------------------------
 
     def get_brands(self, device_type=None):
         """Return all brands with device counts."""
@@ -168,7 +168,7 @@ class IRPayloadDB:
         row = conn.execute('SELECT id FROM brands WHERE slug = ?', (slug,)).fetchone()
         return row['id'] if row else None
 
-    # ── Devices ─────────────────────────────────────────────
+    # --- Devices ---------------------------------------------
 
     def get_devices(self, brand_slug):
         """Return all devices for a brand with button counts."""
@@ -213,7 +213,7 @@ class IRPayloadDB:
         ).fetchone()
         return row['id'] if row else None
 
-    # ── Buttons ─────────────────────────────────────────────
+    # --- Buttons ---------------------------------------------
 
     def get_buttons(self, device_id):
         """Return all buttons for a device (metadata only, no raw data)."""
@@ -305,7 +305,7 @@ class IRPayloadDB:
         ).fetchone()
         return row['id'] if row else None
 
-    # ── Search ──────────────────────────────────────────────
+    # --- Search ----------------------------------------------
 
     def search(self, query):
         """Search across brands, devices, and button labels."""
@@ -346,7 +346,7 @@ class IRPayloadDB:
             'buttons': [dict(r) for r in button_rows]
         }
 
-    # ── Stats ───────────────────────────────────────────────
+    # --- Stats -----------------------------------------------
 
     def get_stats(self):
         """Return database statistics."""
@@ -368,7 +368,7 @@ class IRPayloadDB:
             'protocols': {r['protocol']: r['cnt'] for r in proto_rows}
         }
 
-    # ── Sync State ──────────────────────────────────────────
+    # --- Sync State ------------------------------------------
 
     def get_sync_state(self, key):
         """Get a sync state value."""
@@ -387,7 +387,7 @@ class IRPayloadDB:
         ''', (key, value))
         conn.commit()
 
-    # ── Seed from legacy JSON payloads ──────────────────────
+    # --- Seed from legacy JSON payloads ----------------------
 
     def seed_from_json(self, payloads_dir):
         """Import existing JSON payload files into the database (idempotent)."""

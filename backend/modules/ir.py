@@ -4,13 +4,13 @@ IR Module - Controls KY-005 transmitter (GPIO 17) and KY-022 receiver (GPIO 27)
 Uses kernel gpio-ir-tx / gpio-ir LIRC drivers via /dev/lirc0 and /dev/lirc1
 """
 
-import subprocess
 import os
 import json
 import time
 import struct
-import re
+import tempfile
 from datetime import datetime
+from config import SIGNALS_IR
 
 
 class IRModule:
@@ -19,17 +19,8 @@ class IRModule:
     def __init__(self, tx_pin=17, rx_pin=27):
         self.tx_pin = tx_pin
         self.rx_pin = rx_pin
-        self.signals_dir = '/opt/chonkyflipper/signals/ir'
-        self.payloads_dir = '/opt/chonkyflipper/payloads'
+        self.signals_dir = SIGNALS_IR
         os.makedirs(self.signals_dir, exist_ok=True)
-        os.makedirs(self.payloads_dir, exist_ok=True)
-
-        # Payload cache to avoid re-parsing JSON every request
-        self._payload_cache = {}
-        self._payload_cache_time = 0
-        self._payload_cache_ttl = 30  # seconds
-
-        # Detect which lirc device is TX and which is RX
         self.tx_dev, self.rx_dev = self._detect_devices()
 
     def _detect_devices(self):
@@ -40,7 +31,6 @@ class IRModule:
             dev = f'/dev/lirc{i}'
             if not os.path.exists(dev):
                 continue
-            # Check the rc device name
             rc_path = f'/sys/class/rc/rc{i}'
             try:
                 with open(f'{rc_path}/name') as f:
@@ -54,29 +44,25 @@ class IRModule:
         return tx_dev, rx_dev
 
     def _run(self, cmd, timeout=10):
+        import subprocess
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired:
             return '', 'Command timed out', 1
 
+    # ------------------------------------------------------------------
+    # Recording
+    # ------------------------------------------------------------------
+
     def record_signal(self, duration=5, name=None):
-        """
-        Record IR signal from the receiver.
-        Uses blocking LIRC reads to capture all pulses reliably.
-        """
         if name is None:
             name = f'ir_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
 
         filepath = os.path.join(self.signals_dir, f'{name}.json')
 
         if not os.path.exists(self.rx_dev):
-            return {
-                'success': False,
-                'error': f'IR receiver {self.rx_dev} not found.'
-            }
+            return {'success': False, 'error': f'IR receiver {self.rx_dev} not found.'}
 
         pulses = []
         spaces = []
@@ -90,18 +76,12 @@ class IRModule:
                         val = struct.unpack('I', data)[0]
                         length = val & 0x00FFFFFF
                         p_type = (val >> 24) & 0xFF
-
-                        # Filter LIRC timeout markers (0x00FFFFFF = 16777215)
                         if length >= 0x00FFFF00:
-                            # Timeout/overflow — skip, end of signal
                             continue
-
-                        if p_type == 0:  # space
-                            # Also filter unreasonably long spaces (>1 second)
+                        if p_type == 0:
                             if length < 1000000:
                                 spaces.append(length)
-                        elif p_type == 1:  # pulse
-                            # Filter unreasonably long pulses
+                        elif p_type == 1:
                             if length < 100000:
                                 pulses.append(length)
                 except BlockingIOError:
@@ -109,104 +89,62 @@ class IRModule:
                 except OSError:
                     break
             os.close(fd)
-
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Recording error: {str(e)}'
-            }
+            return {'success': False, 'error': f'Recording error: {str(e)}'}
 
         if not pulses:
-            return {
-                'success': False,
-                'error': 'No IR signal detected. Point a remote at the receiver and press a button.'
-            }
+            return {'success': False, 'error': 'No IR signal detected. Point a remote at the receiver and press a button.'}
 
-        # Build pulse-space pairs
         pairs = []
         for i in range(min(len(pulses), len(spaces))):
-            pairs.append({
-                'type': 'pulse',
-                'duration_us': pulses[i]
-            })
-            pairs.append({
-                'type': 'space',
-                'duration_us': spaces[i]
-            })
+            pairs.append({'type': 'pulse', 'duration_us': pulses[i]})
+            pairs.append({'type': 'space', 'duration_us': spaces[i]})
         if len(pulses) > len(spaces):
-            pairs.append({
-                'type': 'pulse',
-                'duration_us': pulses[-1]
-            })
+            pairs.append({'type': 'pulse', 'duration_us': pulses[-1]})
 
         protocol = self.detect_protocol(pulses, spaces)
 
         signal_data = {
-            'name': name,
-            'timestamp': datetime.now().isoformat(),
+            'name': name, 'timestamp': datetime.now().isoformat(),
             'duration_recorded': duration,
-            'protocol': protocol['name'],
-            'protocol_confidence': protocol['confidence'],
-            'address': protocol.get('address'),
-            'command': protocol.get('command'),
-            'pulse_count': len(pulses),
-            'pulses': pulses,
-            'spaces': spaces,
-            'pairs': pairs
+            'protocol': protocol['name'], 'protocol_confidence': protocol['confidence'],
+            'address': protocol.get('address'), 'command': protocol.get('command'),
+            'pulse_count': len(pulses), 'pulses': pulses, 'spaces': spaces, 'pairs': pairs,
         }
 
         with open(filepath, 'w') as f:
             json.dump(signal_data, f, indent=2)
 
         return {
-            'success': True,
-            'name': name,
-            'filepath': filepath,
-            'protocol': protocol['name'],
-            'pulses_captured': len(pulses),
-            'preview': f'{protocol["name"]} signal, {len(pulses)} pulses'
+            'success': True, 'name': name, 'filepath': filepath,
+            'protocol': protocol['name'], 'pulses_captured': len(pulses),
+            'preview': f'{protocol["name"]} signal, {len(pulses)} pulses',
         }
 
+    # ------------------------------------------------------------------
+    # Transmission
+    # ------------------------------------------------------------------
+
     def transmit_signal(self, signal_id):
-        """
-        Transmit a recorded IR signal via ir-ctl.
-        """
         filepath = os.path.join(self.signals_dir, f'{signal_id}.json')
         if not os.path.exists(filepath):
-            return {
-                'success': False,
-                'error': f'Signal {signal_id} not found'
-            }
+            return {'success': False, 'error': f'Signal {signal_id} not found'}
 
         if not os.path.exists(self.tx_dev):
-            return {
-                'success': False,
-                'error': f'IR transmitter {self.tx_dev} not found.'
-            }
+            return {'success': False, 'error': f'IR transmitter {self.tx_dev} not found.'}
 
         with open(filepath, 'r') as f:
             signal_data = json.load(f)
 
         pairs = signal_data.get('pairs', [])
         if not pairs:
-            return {
-                'success': False,
-                'error': 'No pulse data in signal file'
-            }
+            return {'success': False, 'error': 'No pulse data in signal file'}
 
         return self._transmit_pairs(pairs, signal_id)
 
     def transmit_raw(self, pulses, spaces=None):
-        """
-        Transmit raw pulse/space timing data.
-        pulses: list of pulse widths in microseconds
-        spaces: list of space widths (defaults to alternating even pattern)
-        """
         if not os.path.exists(self.tx_dev):
-            return {
-                'success': False,
-                'error': f'IR transmitter {self.tx_dev} not found.'
-            }
+            return {'success': False, 'error': f'IR transmitter {self.tx_dev} not found.'}
 
         pairs = []
         for i, pulse in enumerate(pulses):
@@ -217,43 +155,36 @@ class IRModule:
         return self._transmit_pairs(pairs)
 
     def _transmit_pairs(self, pairs, label='raw'):
-        """Write pulse-space file and transmit via ir-ctl"""
-        # Build ir-ctl pulse file, filtering any unreasonable values
+        """Write pulse-space file and transmit via ir-ctl. Uses tempfile to avoid PID races."""
         lines = []
         for p in pairs:
             dur = p['duration_us']
-            # Skip timeout markers and unreasonably long values
-            if dur >= 1000000:  # >1 second is a LIRC timeout, not a real signal
+            if dur >= 1000000:
                 continue
             if p['type'] == 'pulse' and dur > 100000:
                 continue
-            t = p['type']
-            lines.append(f'{t} {dur}')
+            lines.append(f"{p['type']} {dur}")
 
-        tmpfile = f'/tmp/ir-tx-{os.getpid()}.txt'
-        with open(tmpfile, 'w') as f:
-            f.write('\n'.join(lines))
+        fd, tmpfile = tempfile.mkstemp(prefix='ir-tx-', suffix='.txt')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write('\n'.join(lines))
 
-        stdout, stderr, rc = self._run(
-            ['ir-ctl', '-d', self.tx_dev, f'--send={tmpfile}'],
-            timeout=5
-        )
-        os.remove(tmpfile)
+            stdout, stderr, rc = self._run(
+                ['ir-ctl', '-d', self.tx_dev, f'--send={tmpfile}'], timeout=5,
+            )
 
-        if rc == 0:
-            return {
-                'success': True,
-                'signal': label,
-                'pairs_sent': len(pairs)
-            }
-        else:
-            return {
-                'success': False,
-                'error': f'ir-ctl failed: {stderr}'
-            }
+            if rc == 0:
+                return {'success': True, 'signal': label, 'pairs_sent': len(pairs)}
+            return {'success': False, 'error': f'ir-ctl failed: {stderr}'}
+        finally:
+            os.remove(tmpfile)
+
+    # ------------------------------------------------------------------
+    # Signal management
+    # ------------------------------------------------------------------
 
     def list_signals(self):
-        """List all recorded IR signals"""
         signals = []
         try:
             for filename in sorted(os.listdir(self.signals_dir)):
@@ -266,7 +197,7 @@ class IRModule:
                         'name': data.get('name', filename.replace('.json', '')),
                         'timestamp': data.get('timestamp'),
                         'protocol': data.get('protocol', 'unknown'),
-                        'pulses': data.get('pulse_count', len(data.get('pulses', [])))
+                        'pulses': data.get('pulse_count', len(data.get('pulses', []))),
                     })
         except Exception as e:
             return {'signals': [], 'error': str(e)}
@@ -274,131 +205,16 @@ class IRModule:
         return {'signals': sorted(signals, key=lambda s: s.get('timestamp', ''), reverse=True)}
 
     def delete_signal(self, signal_id):
-        """Delete a recorded signal"""
         filepath = os.path.join(self.signals_dir, f'{signal_id}.json')
         if os.path.exists(filepath):
             os.remove(filepath)
             return {'success': True, 'deleted': signal_id}
         return {'success': False, 'error': 'Signal not found'}
 
-    # -------------------------------------------------
-    # Protocol detection (issue #24)
-    # -------------------------------------------------
+    # ------------------------------------------------------------------
+    # Protocol detection
+    # ------------------------------------------------------------------
 
     def detect_protocol(self, pulses, spaces=None):
-        """Detect IR protocol from pulse/space timing data."""
         from modules.ir_protocols import detect_protocol as _detect
         return _detect(pulses, spaces)
-
-    # Legacy encoder wrapper — delegates to ir_protocols
-    @staticmethod
-    def _encode_nec(address, command, header_pulse=9000, header_space=4500,
-                    unit_pulse=560, unit_space_0=560, unit_space_1=1690,
-                    samsung32=False):
-        from modules.ir_protocols import encode_nec
-        return encode_nec(address, command,
-                          header_pulse=header_pulse, header_space=header_space,
-                          unit_pulse=unit_pulse, unit_space_0=unit_space_0,
-                          unit_space_1=unit_space_1, samsung32=samsung32)
-
-    def _load_payload_files(self):
-        """Load IR payload definitions from JSON files."""
-        payloads = {}
-        payload_dir = os.path.join(self.payloads_dir, 'ir')
-        if not os.path.isdir(payload_dir):
-            return payloads
-
-        for filename in sorted(os.listdir(payload_dir)):
-            if not filename.endswith('.json'):
-                continue
-            filepath = os.path.join(payload_dir, filename)
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-
-                brand = data.get('brand', 'Unknown')
-                device = data.get('device', '')
-                for btn_id, btn in data.get('buttons', {}).items():
-                    proto = data.get('protocol', 'NEC')
-                    if proto == 'NEC':
-                        hp = data.get('header_pulse', 9000)
-                        hs = data.get('header_space', 4500)
-                        s32 = data.get('samsung32', False)
-                        p, s = self._encode_nec(
-                            btn['address'], btn['command'],
-                            header_pulse=hp, header_space=hs,
-                            samsung32=s32
-                        )
-                        payloads[f'{brand.lower()}_{btn_id}'] = {
-                            'name': f'{brand} {btn["label"]}',
-                            'brand': brand,
-                            'device': device,
-                            'protocol': proto,
-                            'pulses': p,
-                            'spaces': s
-                        }
-            except Exception:
-                continue
-
-        return payloads
-
-    def _get_payloads(self):
-        """Return cached payloads, refreshing from files if TTL expired."""
-        now = time.time()
-        if now - self._payload_cache_time > self._payload_cache_ttl:
-            self._payload_cache = self._load_payload_files()
-            self._payload_cache_time = now
-        return self._payload_cache
-
-    def list_payloads(self):
-        """List all loaded IR payloads grouped by brand."""
-        payloads = self._get_payloads()
-        result = []
-        for pid, p in payloads.items():
-            result.append({
-                'id': pid,
-                'name': p['name'],
-                'brand': p.get('brand', ''),
-                'protocol': p['protocol']
-            })
-        return {'payloads': sorted(result, key=lambda x: x['name'])}
-
-    def execute_payload(self, payload_id):
-        """Load and transmit a payload by ID."""
-        payloads = self._get_payloads()
-        if payload_id not in payloads:
-            return {'success': False, 'error': f'Payload {payload_id} not found'}
-
-        p = payloads[payload_id]
-        pairs = []
-        for i, pulse in enumerate(p['pulses']):
-            pairs.append({'type': 'pulse', 'duration_us': pulse})
-            if i < len(p['spaces']):
-                pairs.append({'type': 'space', 'duration_us': p['spaces'][i]})
-
-        return self._transmit_pairs(pairs, payload_id)
-
-    def brute_force_power(self, brands=None):
-        """
-        Send power toggle codes for multiple brands to find which one works.
-        """
-        payloads = self._get_payloads()
-        power_ids = [pid for pid in payloads if pid.endswith('power_toggle')]
-
-        if brands:
-            power_ids = [pid for pid in power_ids
-                         if any(pid.startswith(b.lower()) for b in brands)]
-
-        results = []
-        for pid in power_ids[:10]:  # limit to 10 codes
-            p = payloads[pid]
-            result = self.execute_payload(pid)
-            result['label'] = p['name']
-            results.append(result)
-            time.sleep(0.5)
-
-        return {
-            'success': True,
-            'sent': len(results),
-            'results': results
-        }

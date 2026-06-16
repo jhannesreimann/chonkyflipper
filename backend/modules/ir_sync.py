@@ -80,7 +80,7 @@ class IRDBSync:
                     break
         self.repo_dir = repo_dir
 
-    # ── Repo Management ─────────────────────────────────
+    # --- Repo Management ---------------------------------
 
     def _run(self, cmd, cwd=None, timeout=120):
         try:
@@ -142,10 +142,15 @@ class IRDBSync:
             return []
         return [f for f in stdout.split('\n') if f.endswith('.ir')]
 
-    # ── Check for Updates ──────────────────────────────
+    # --- Check for Updates ------------------------------
 
     def check_for_updates(self):
         """Check if upstream has new commits. Returns {has_updates, ...}."""
+        # If repo doesn't exist at all, signal that a full clone is needed
+        if not os.path.isdir(os.path.join(self.repo_dir, '.git')):
+            return {'has_updates': True, 'new_commits': -1, 'needs_clone': True,
+                    'local_sha': None, 'remote_sha': None}
+
         stdout, stderr, rc = self._run(['git', 'fetch', 'origin', 'main'])
         if rc != 0:
             return {'has_updates': False, 'error': f'Fetch failed: {stderr}'}
@@ -176,7 +181,7 @@ class IRDBSync:
             'remote_sha': remote_sha
         }
 
-    # ── Sync ───────────────────────────────────────────
+    # --- Sync -------------------------------------------
 
     def sync(self, progress_callback=None):
         """
@@ -190,7 +195,9 @@ class IRDBSync:
 
         action = status.get('action', 'up_to_date')
 
-        if action == 'up_to_date':
+        # If the DB was reset (no sync state) but repo exists, force a full import
+        stored_sha = self.db.get_sync_state('last_commit_sha')
+        if action == 'up_to_date' and stored_sha:
             return {
                 'success': True,
                 'action': 'up_to_date',
@@ -199,6 +206,8 @@ class IRDBSync:
                 'errors': 0,
                 'sha': status.get('sha', '')
             }
+        if action == 'up_to_date' and not stored_sha:
+            action = 'reimport'  # DB was reset, re-import everything
 
         # Get changed files
         old_sha = status.get('old_sha', '')
@@ -327,7 +336,7 @@ class IRDBSync:
         """Convert a signal name to a safe button_id string."""
         return re.sub(r'[^a-z0-9_]', '_', name.lower().replace(' ', '_'))
 
-    # ── .ir File Parser ────────────────────────────────
+    # --- .ir File Parser --------------------------------
 
     def parse_ir_file(self, filepath):
         """
@@ -354,8 +363,10 @@ class IRDBSync:
 
             # New signal block
             if line.startswith('name:'):
-                if current and data_values:
-                    self._finalize_signal(current, data_values)
+                if current:
+                    if data_values:
+                        self._finalize_signal(current, data_values)
+                    signals.append(current)
                 current = {'name': line.split(':', 1)[1].strip()}
                 in_data = False
                 data_values = []

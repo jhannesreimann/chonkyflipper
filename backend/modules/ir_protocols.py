@@ -5,7 +5,7 @@ Encodes address/command pairs into pulse/space timing arrays for transmission.
 """
 
 
-# ── Protocol Registry ──────────────────────────────────────
+# --- Protocol Registry --------------------------------------
 
 PROTOCOL_REGISTRY = {}
 
@@ -33,7 +33,7 @@ def list_protocols():
     return sorted(PROTOCOL_REGISTRY.keys())
 
 
-# ── NEC Protocol ───────────────────────────────────────────
+# --- NEC Protocol -------------------------------------------
 
 @register('NEC', carrier=38000)
 def encode_nec(address, command, header_pulse=9000, header_space=4500,
@@ -75,7 +75,7 @@ def encode_nec(address, command, header_pulse=9000, header_space=4500,
     return pulses, spaces
 
 
-# ── Panasonic Kaseikyo Protocol ─────────────────────────────
+# --- Panasonic Kaseikyo Protocol -----------------------------
 
 # Standard Panasonic projector timings (from Flipper-IRDB captures):
 #   Carrier: 38 kHz (though some docs say 37 kHz)
@@ -122,7 +122,7 @@ def encode_panasonic(address=PANASONIC_ADDRESS, command=0,
     return pulses, spaces
 
 
-# ── Sony SIRC Protocol ─────────────────────────────────────
+# --- Sony SIRC Protocol -------------------------------------
 
 # Carrier: 40 kHz
 # Header:  2400 us pulse, 600 us space
@@ -171,7 +171,7 @@ def _encode_sony(command, address, bits,
     return pulses, spaces
 
 
-# ── RC5 Protocol ───────────────────────────────────────────
+# --- RC5 Protocol -------------------------------------------
 
 # Carrier: 36 kHz
 # Manchester encoding at 889 us per half-bit (1778 us per bit)
@@ -212,7 +212,7 @@ def encode_rc5(address, command, toggle=0,
     return pulses, spaces
 
 
-# ── Raw Passthrough ────────────────────────────────────────
+# --- Raw Passthrough ----------------------------------------
 
 @register('raw', carrier=38000)
 def encode_raw(pulses, spaces=None, frequency=38000):
@@ -220,7 +220,7 @@ def encode_raw(pulses, spaces=None, frequency=38000):
     return list(pulses), list(spaces) if spaces else []
 
 
-# ── Protocol Detection (for recorded signals) ─────────────
+# --- Protocol Detection (for recorded signals) -------------
 
 def detect_protocol(pulses, spaces=None):
     """

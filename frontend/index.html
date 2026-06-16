@@ -172,15 +172,6 @@
                 </div>
             </div>
 
-            <!-- Device Discovery (shared) -->
-            <div class="settings-section">
-                <h3>Device Discovery</h3>
-                <p class="hint">Send power toggle codes for common brands. Watch the target device.</p>
-                <div class="button-group">
-                    <button class="btn btn-secondary" onclick="irBruteforce()">⚡ Brute Force Power</button>
-                </div>
-                <div id="ir-bruteforce-status" class="status-msg" style="display:none;"></div>
-            </div>
         </section>
 
         <!-- Sub-1GHz -->
@@ -221,10 +212,8 @@
             <div class="warning-box">
                 ⚠️ USB-C port must be connected to target PC
             </div>
-            <div class="button-group">
-                <button class="btn btn-danger" onclick="badusbExecute('rickroll')">🎵 Rickroll</button>
-                <button class="btn btn-danger" onclick="badusbExecute('reverse_shell')">🐚 Reverse Shell</button>
-                <button class="btn btn-danger" onclick="badusbExecute('wifi_grab')">📶 WiFi Grab</button>
+            <div class="button-group" id="badusb-buttons">
+                <p class="placeholder">Loading payloads...</p>
             </div>
         </section>
 
@@ -341,6 +330,10 @@
 
     </div>
 
-    <script src="app.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/modules.js"></script>
+    <script src="js/settings.js"></script>
 </body>
 </html>

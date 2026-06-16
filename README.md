@@ -79,21 +79,40 @@ I2C and SPI are enabled automatically by `install.sh` via `/boot/firmware/config
 
 ```
 backend/
-    app.py              Main Flask application
+    app.py              Flask application entrypoint
+    config.py           Centralized paths and constants
+    utils.py            API response helpers (api_success / api_error)
+    routes/             Flask blueprints (status, wifi, bluetooth, ir,
+    |                     subghz, nfc, badusb, zigbee, network)
     modules/
-        wifi.py         Alfa adapter controller
+        wifi.py         Alfa adapter + WiFi scanning
         bluetooth.py    BLE scanner
-        ir.py           Infrared operations
-        cc1101.py       Sub-1GHz transceiver
-        pn532.py        NFC/RFID interface
+        ir.py           IR record + transmit (LIRC kernel drivers)
+        ir_protocols.py Protocol encoders (NEC, Samsung, Sony, RC5, etc.)
+        ir_db.py        SQLite IR payload database (brands/devices/buttons)
+        ir_sync.py      Flipper-IRDB incremental git sync
+        cc1101.py       Sub-1GHz transceiver (SPI)
+        pn532.py        NFC/RFID reader/writer (I2C)
+        zigbee.py       Zigbee2MQTT bridge (MQTT)
+        badusb.py       USB HID DuckyScript emulation
     requirements.txt
 
 frontend/
     index.html          Mobile dashboard
     style.css           Dark theme UI
-    app.js              API client
+    js/
+        api.js          Fetch wrappers (apiGet / apiPost)
+        utils.js        Escape helpers, log, spinner
+        main.js         Init, status polling, module panel switching
+        modules.js      Module panels (WiFi, BLE, IR, SubGHz, NFC, BadUSB)
+        settings.js     Network status, WiFi connect, power, updates
 
-install.sh              System setup script
+payloads/
+    ir/                 Bootstrap IR JSON payloads (seed DB offline)
+    badusb/             DuckyScript payloads for BadUSB
+
+install.sh              Full system setup (run once on fresh Pi)
+update.sh               Git pull + deploy (run via dashboard or CLI)
 ```
 
 ## API Reference
