@@ -49,7 +49,7 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 ```
 Phone browser ---WiFi---> wlan0 AP (Chonky_Control, 192.168.4.1)
                            |
-                       nginx :80  --> static frontend (index.html, app.js, style.css)
+                       nginx :80  --> static frontend (index.html, style.css, js/*.js)
                            |
                        /api/* proxy --> gunicorn :5000 (Flask app.py, user: chonky)
 
@@ -62,28 +62,34 @@ Internet <---WiFi--> wlan1 (192.168.178.89, Alfa AWUS036ACS, client mode via wpa
 ### Module Pattern
 Every hardware module follows the same lazy-init pattern in `app.py`:
 ```python
-modules = {}
+_modules = {}
 def get_module(name):
-    if name not in modules:
+    if name not in _modules:
         module_map = {
-            'wifi': WiFiModule, 'bluetooth': BluetoothModule, 'ir': IRModule,
-            'cc1101': CC1101Module, 'pn532': PN532Module, 'badusb': BadUSBModule,
-            'zigbee': ZigbeeModule
+            'wifi': 'modules.wifi.WiFiModule',
+            'bluetooth': 'modules.bluetooth.BluetoothModule',
+            'ir': 'modules.ir.IRModule',
+            'cc1101': 'modules.cc1101.CC1101Module',
+            'pn532': 'modules.pn532.PN532Module',
+            'badusb': 'modules.badusb.BadUSBModule',
+            'zigbee': 'modules.zigbee.ZigbeeModule',
         }
-        modules[name] = module_map[name]()
-    return modules[name]
+        mod_path, cls_name = module_map[name].rsplit('.', 1)
+        mod = __import__(mod_path, fromlist=[cls_name])
+        _modules[name] = getattr(mod, cls_name)()
+    return _modules[name]
 ```
-Modules are instantiated on first use. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
+Modules are instantiated on first use via `__import__`. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
 
-**Important**: `backend/modules/__init__.py` imports all modules including `cc1101` which imports `spidev`. This means you cannot import any module with system Python (spidev is only in the venv). Always use the venv Python when testing modules directly.
+The `__init__.py` only lists `__all__` — no eager imports. Use `from modules.ir import IRModule` inside the venv to import specific modules directly when testing.
 
 ### IR Library System (multi-file subsystem)
 The IR functionality spans four files:
-- **`ir.py`** -- Low-level IR: records from `/dev/lirc1` (RX), transmits via `ir-ctl` to `/dev/lirc0` (TX). Also provides legacy JSON-payload execution and a `brute_force_power()` method that sends power toggles across brands.
+- **`ir.py`** -- Low-level IR: records from `/dev/lirc1` (RX), transmits via `ir-ctl` to `/dev/lirc0` (TX). Also provides `transmit_raw()`, `detect_protocol()`, and signal management (list/delete). Tempfiles use `tempfile.mkstemp` to avoid PID races.
 - **`ir_protocols.py`** -- Protocol encoder registry. `@register('NEC')` decorator pattern adds encoders to `PROTOCOL_REGISTRY`. Protocols: NEC, Samsung32, Sony SIRC, Panasonic, RC5. `encode(protocol, **params)` returns `(pulses, spaces)` for transmission.
 - **`ir_db.py`** -- SQLite-backed IR payload database. Tables: `brands`, `devices`, `buttons`, `schema_version`, `sync_state`. Provides hierarchical browsing (brands -> devices -> buttons), full-text search, and JSON seed import. Stores raw pulse/space arrays for each button. Auto-seeds from `payloads/ir/*.json` on first run.
-- **`ir_sync.py`** -- Incremental sync from [Flipper-IRDB](https://github.com/logickworkshop/Flipper-IRDB). Clones the repo shallow into `/opt/chonkyflipper/data/irdb/`, parses `.ir` files (raw and parsed signal types), and imports into the SQLite DB. Tracks sync state via `sync_state` table for incremental updates.
-- **`app.py` routes** -- `/api/ir/library/*` endpoints for browsing, `/api/ir/sync/*` for sync management.
+- **`ir_sync.py`** -- Incremental sync from [Flipper-IRDB](https://github.com/logickworkshop/Flipper-IRDB). Clones the repo shallow into `/opt/chonkyflipper/data/irdb/`, parses `.ir` files, and imports into the SQLite DB. Tracks sync state for incremental updates. Key bugfix: `parse_ir_file` now appends all signals (was only saving the last one per file).
+- **`routes/ir.py`** -- `/api/ir/library/*` endpoints for browsing, `/api/ir/sync/*` for sync management, `/api/ir/signals` for recorded signals.
 
 ### Zigbee2MQTT Bridge
 - **`zigbee.py`** communicates with a local MQTT broker (mosquitto on `localhost:1883`) using `paho-mqtt`.
@@ -103,12 +109,16 @@ The IR functionality spans four files:
 - Character map covers printable ASCII plus shifted variants.
 
 ### WiFi Scanning
-WiFi scanning is centralized in `_do_wifi_scan()` in `app.py` (not the `WiFiModule` class). Uses `wpa_cli -i wlan1 scan` + `scan_results`. The `WiFiModule` class (`wifi.py`) provides monitor mode, packet capture, and deauth -- lower-level aircrack-ng operations.
+WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and deauth. The old `WiFiModule.scan()` (iwlist-based, 60 lines) was dead code and has been removed.
 
 ## Frontend Architecture
-- Single-page app: `index.html` + `app.js` + `style.css`.
+- Single-page app: `index.html` + `style.css` + `js/*.js` (5 modules, 828 lines total).
+- **js/api.js**: `apiGet()`/`apiPost()` wrappers; **js/utils.js**: `escapeHtml()`, `escapeHtmlAttr()`, `log()`, `setLoading()`.
+- **js/main.js**: init, `checkStatus()`, `updateSystemInfo()`, `fetchVersion()`, `showModulePanel()`.
+- **js/modules.js**: WiFi, BLE, IR, SubGHz, NFC, BadUSB panel handlers.
+- **js/settings.js**: `updateNetworkStatus()`, `scanWifiNetworks()`, connect/disconnect, poweroff, update.
 - **Polling pattern**: `checkStatus()` every 5s, `updateSystemInfo()` every 10s, `fetchVersion()` every 60s, `updateNetworkStatus()` every 10s.
-- **Module panels**: Each hardware module has a hidden `<div class="module-panel">` in `index.html`. Clicking a `.module-item` in the grid shows the corresponding panel via `showModulePanel()`.
+- **Module panels**: Each hardware module has a hidden `<div class="module-panel">` in `index.html`. Clicking a `.module-item` in the grid shows the corresponding panel via `showModulePanel()`. Panels scroll at `max-height: 70vh`.
 - `API_BASE` auto-detects: uses `http://localhost:5000` when page is served from localhost, empty string otherwise (nginx proxies `/api/` to backend).
 
 ## Network Interfaces (current state)
@@ -150,6 +160,7 @@ See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
 | `mosquitto.service` | mosquitto | active | MQTT broker :1883 for Zigbee2MQTT |
 | `zigbee2mqtt.service` | zigbee2mqtt | active | Node.js, ember adapter, /dev/ttyUSB0 |
 | `wpa_supplicant@wlan1.service` | root | active | WiFi client on Alfa adapter |
+| `pipower5.service` | root | active | PiPower5 UPS HAT monitoring + shutdown |
 
 ## User & Permissions
 - Service user: `chonky` (groups: chonky, video, netdev, i2c, bluetooth, gpio, spi, dialout, kali)
@@ -177,7 +188,8 @@ See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
 - `GIT_TERMINAL_PROMPT=0` for non-interactive git operations
 - wpa_supplicant socket at `/var/run/wpa_supplicant/wlan1` needs cleanup (`rm -f`) before restart
 - IR timeout filter: values >= 1,000,000us are LIRC timeout markers, not real signals. Filter both at record time (0x00FFFF00 mask) and transmit time.
-- The `__init__.py` module file imports all hardware modules -- testing any module requires the venv Python (system Python lacks spidev, RPi.GPIO, etc.)
+- `modules/__init__.py` no longer eagerly imports hardware modules (spidev, board, etc.). Individual modules can be imported directly inside the venv: `from modules.ir import IRModule`
 - Mosquitto listens on 127.0.0.1:1883 only (localhost), not exposed to external networks
 - Zigbee2MQTT's pnpm requires a writable home directory for the zigbee2mqtt user -- set to `/opt/zigbee2mqtt` in `/etc/passwd`
 - Zigbee network map generation via API may time out on large networks; the API has a 15s timeout
+- **PiPower5 shutdown**: Kali lacks `raspi-config` and `rpi-eeprom-update`, so `POWER_OFF_ON_HALT=1` cannot be set in the EEPROM. The SDSIG jumper stays on **PI3V3**. A systemd-shutdown hook at `/lib/systemd/system-shutdown/pipower-shutdown` sends an I2C command `[0xAC, 0x03, 0x00, 0xAE]` to the PiPower5 MCU (address 0x5C) to disable output. This hook runs AFTER all filesystems are unmounted and synced by systemd-shutdown — confirmed clean (zero journal corruption). Do NOT use `dtoverlay=gpio-poweroff,gpio_pin=26` — GPIO 26 defaults to LOW during early boot (internal pull-down), causing immediate power-cut (boot-loop). Both the UI "Power Off" button and 2s button press work: Pi shuts down cleanly, systemd-shutdown syncs filesystems, then the I2C hook tells the HAT to cut battery power.

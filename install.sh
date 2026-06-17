@@ -115,6 +115,8 @@ echo "Step 4: Configuring Pi 4 shutdown behaviour for PiPower5..."
 if ! grep -q 'power_off_on_halt=1' "$BOOT_CONFIG" 2>/dev/null; then
     echo 'power_off_on_halt=1' >> "$BOOT_CONFIG"
 fi
+echo "Note: PiPower5 output cutoff is handled by pipower-shutdown.service"
+echo "(I2C command to MCU at final.target, no GPIO overlay needed)"
 
 # Install PiPower5 management tool
 echo ""
@@ -127,6 +129,22 @@ if [ ! -d "/opt/pipower5" ]; then
 else
     echo "PiPower5 tool already installed, skipping."
 fi
+
+# Install PiPower5 shutdown hook: sends I2C command to cut battery output.
+# Uses systemd-shutdown hook directory -- runs AFTER filesystems are
+# unmounted and synced, right before the kernel powers off.
+# SDSIG jumper must stay on PI3V3 for Pi 4.
+echo ""
+echo "Step 5b: Installing PiPower5 shutdown hook..."
+mkdir -p /lib/systemd/system-shutdown
+cat > /lib/systemd/system-shutdown/pipower-shutdown << 'SCRIPTEOF'
+#!/bin/bash
+# Runs AFTER all filesystems are unmounted and synced.
+# systemd-shutdown executes scripts here as the very last thing.
+i2ctransfer -y 1 w4@0x5C 0xAC 0x03 0x00 0xAE 2>/dev/null || true
+SCRIPTEOF
+chmod +x /lib/systemd/system-shutdown/pipower-shutdown
+echo "Shutdown hook installed"
 
 # Create service user
 echo ""
