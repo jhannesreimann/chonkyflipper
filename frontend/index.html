@@ -290,8 +290,17 @@
             <!-- Power -->
             <div class="settings-section">
                 <h3>Power</h3>
-                <button class="btn btn-danger" onclick="showPoweroffDialog()">
-                    🔴 Power Off
+                <div class="form-group">
+                    <label>Auto shutdown at <strong id="shutdown-pct-label">...</strong>% battery</label>
+                    <input type="range" id="shutdown-pct-slider" min="0" max="50" value="10"
+                           onchange="setShutdownPercentage(this.value)"
+                           style="width:100%;margin:8px 0;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--text-secondary);">
+                        <span>0%</span><span>50%</span>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="showPoweroffDialog()">
+                    Power Off
                 </button>
             </div>
 
@@ -311,10 +320,10 @@
         <!-- Power Off Confirmation Dialog -->
         <div id="poweroff-dialog" class="modal" style="display:none;">
             <div class="modal-content">
-                <h3>🔴 Power Off</h3>
+                <h3>Power Off</h3>
                 <p>Are you sure you want to shut down ChonkyFlipper? You will need physical access to turn it back on.</p>
                 <div class="button-group">
-                    <button class="btn btn-danger" onclick="confirmPoweroff()">Power Off</button>
+                    <button class="btn btn-primary" onclick="confirmPoweroff()">Power Off</button>
                     <button class="btn btn-secondary" onclick="hidePoweroffDialog()">Cancel</button>
                 </div>
             </div>

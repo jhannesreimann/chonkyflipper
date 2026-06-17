@@ -187,3 +187,37 @@ def system_poweroff():
         return api_success({'message': 'Shutting down...'})
     except Exception as e:
         return api_error(str(e), 500)
+
+
+@bp.route('/api/system/power/shutdown-percentage', methods=['GET'])
+def get_shutdown_percentage():
+    try:
+        global _pipower
+        if _pipower is None:
+            from pipower5.pipower5 import PiPower5
+            _pipower = PiPower5()
+        pct = _pipower.read_shutdown_percentage()
+        return api_success({'percentage': pct})
+    except Exception as e:
+        return api_error(str(e), 500)
+
+
+@bp.route('/api/system/power/shutdown-percentage', methods=['POST'])
+def set_shutdown_percentage():
+    data = request.json or {}
+    pct = data.get('percentage')
+    if pct is None or not isinstance(pct, (int, float)) or pct < 0 or pct > 100:
+        return api_error('percentage must be an integer between 0 and 100', 400)
+
+    try:
+        subprocess.run(
+            ['sudo', '/opt/pipower5/venv/bin/pipower5', '-sp', str(int(pct))],
+            capture_output=True, timeout=10, check=True,
+        )
+        subprocess.run(['sudo', 'systemctl', 'restart', 'pipower5.service'],
+                       capture_output=True, timeout=10)
+        return api_success({'percentage': int(pct)})
+    except subprocess.CalledProcessError as e:
+        return api_error(f'Failed to set shutdown percentage: {e.stderr}', 500)
+    except Exception as e:
+        return api_error(str(e), 500)

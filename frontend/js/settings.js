@@ -205,6 +205,28 @@ async function disconnectWifi() {
 
 // ------------------------------------------------------------------ Power & Update
 
+async function loadShutdownPercentage() {
+    try {
+        const data = await apiGet('/system/power/shutdown-percentage');
+        const pct = data.percentage;
+        document.getElementById('shutdown-pct-label').textContent = pct;
+        document.getElementById('shutdown-pct-slider').value = pct;
+    } catch (e) {
+        document.getElementById('shutdown-pct-label').textContent = '?';
+    }
+}
+
+async function setShutdownPercentage(value) {
+    const pct = parseInt(value);
+    document.getElementById('shutdown-pct-label').textContent = pct;
+    try {
+        await apiPost('/system/power/shutdown-percentage', { percentage: pct });
+        log('Shutdown threshold set to ' + pct + '%');
+    } catch (e) {
+        log('Failed to set shutdown percentage: ' + e.message);
+    }
+}
+
 function showPoweroffDialog() {
     document.getElementById('poweroff-dialog').style.display = 'flex';
 }

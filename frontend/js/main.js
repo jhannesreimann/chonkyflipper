@@ -22,6 +22,7 @@ async function init() {
     await updateSystemInfo();
     await fetchVersion();
     await updateNetworkStatus();
+    loadShutdownPercentage();
 
     setInterval(checkStatus, 5000);
     setInterval(updateSystemInfo, 10000);
