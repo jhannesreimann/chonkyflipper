@@ -5,7 +5,7 @@ System status, version, and update endpoints.
 import os
 import time
 import subprocess
-from flask import Blueprint
+from flask import Blueprint, request
 from config import VERSION_FILE, REPO_DIR
 from utils import api_success, api_error
 

@@ -349,6 +349,9 @@ chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip addr flush dev wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip link set wlan1 up
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/i2cdetect -y 1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/rm -f /var/run/wpa_supplicant/wlan1
+chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp *
+chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pipower5.service
 EOFSUDOERS
 chmod 440 /etc/sudoers.d/chonky-ops
 
