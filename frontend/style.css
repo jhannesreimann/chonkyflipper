@@ -243,6 +243,13 @@ body {
     background: #b91c1c;
 }
 
+.btn-sm {
+    padding: 3px 8px;
+    font-size: 0.65rem;
+    min-width: auto;
+    flex: none;
+}
+
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;

@@ -5,6 +5,23 @@
 
 // ------------------------------------------------------------------ WiFi
 
+function wifiTab(tab) {
+    document.querySelectorAll('#panel-wifi .ir-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#panel-wifi .ir-tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
+    const content = document.getElementById('wifi-tab-' + tab);
+    if (content) { content.classList.add('active'); content.style.display = ''; }
+    document.querySelector('#panel-wifi .ir-tab[onclick*="' + tab + '"]').classList.add('active');
+    if (tab === 'attack') wifiShowAttackable();
+}
+
+// Risk badge colors
+const RISK_COLORS = {critical: '#dc2626', high: '#f59e0b', medium: '#0ea5e9', low: '#10b981', none: '#94a3b8'};
+
+function riskBadge(risk) {
+    const color = RISK_COLORS[risk] || '#94a3b8';
+    return `<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:700;background:${color}20;color:${color};border:1px solid ${color}40;">${risk.toUpperCase()}</span>`;
+}
+
 async function wifiScan() {
     log('Scanning Wi-Fi networks...');
     setLoading('wifi-results', true);
@@ -17,9 +34,9 @@ async function wifiScan() {
         }
         if (data.networks && data.networks.length > 0) {
             container.innerHTML =
-                `<table><thead><tr><th>Network</th><th>BSSID</th><th>Ch</th><th>Sec</th><th>Signal</th></tr></thead><tbody>` +
+                `<table><thead><tr><th>Network</th><th>Security</th><th>Risk</th><th>Ch</th><th>Signal</th></tr></thead><tbody>` +
                 data.networks.map(net =>
-                    `<tr><td>${escapeHtml(net.ssid || 'Hidden')}</td><td>${net.bssid || '-'}</td><td>${net.channel || '-'}</td><td>${escapeHtml(net.security || 'Open')}</td><td>${net.signal_dbm !== undefined ? net.signal_dbm + ' dBm' : '-'}</td></tr>`
+                    `<tr><td>${escapeHtml(net.ssid || 'Hidden')}<br><span style="font-size:0.6rem;color:var(--text-secondary);">${net.bssid||'-'}</span></td><td style="font-size:0.7rem;">${escapeHtml(net.security||'?')}</td><td>${riskBadge(net.risk||'low')}</td><td>${net.channel||'-'}</td><td>${net.signal_dbm!==undefined?net.signal_dbm+' dBm':'-'}</td></tr>`
                 ).join('') + '</tbody></table>';
             log('Found ' + data.networks.length + ' networks');
         } else {
@@ -41,11 +58,175 @@ async function wifiMonitorMode() {
     } catch (error) { log('Monitor mode error: ' + error.message); }
 }
 
-async function wifiCapture() {
-    log('Starting packet capture (10s)...');
+// --- Audit tab ---
+
+async function wifiAudit() {
+    log('Auditing networks...');
+    const results = document.getElementById('wifi-audit-results');
+    results.innerHTML = '<p class="placeholder">Scanning and analyzing...</p>';
     try {
-        const data = await apiPost('/wifi/capture', { duration: 10 });
-        log(data.success ? `Capture saved: ${data.filename} (${data.size_bytes} bytes)` : 'Capture failed');
+        const data = await apiPost('/wifi/anomalies');
+        if (!data.success) { results.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(data.error||'Failed')}</p>`; return; }
+        if (!data.anomalies || data.anomalies.length === 0) {
+            results.innerHTML = '<p class="placeholder">✅ No anomalies detected.</p>';
+            log('Audit: no anomalies found');
+            return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">';
+        data.anomalies.forEach(a => {
+            const sevColor = RISK_COLORS[a.severity] || '#94a3b8';
+            html += `<div style="background:var(--bg-dark);border-radius:8px;padding:10px;border-left:3px solid ${sevColor};">
+                <div style="font-weight:600;font-size:0.8rem;">${escapeHtml(a.type.replace(/_/g,' ').toUpperCase())}</div>
+                <div style="font-size:0.7rem;color:var(--text-secondary);margin:4px 0;">${escapeHtml(a.description)}</div>
+                <div style="font-size:0.65rem;">${riskBadge(a.severity)} SSID: ${escapeHtml(a.ssid)}</div>
+            </div>`;
+        });
+        html += '</div>';
+        results.innerHTML = html;
+        log('Audit: ' + data.anomalies.length + ' anomalies found');
+    } catch (error) {
+        results.innerHTML = '<p class="placeholder" style="color:#e94560;">Audit failed</p>';
+        log('Audit error: ' + error.message);
+    }
+}
+
+// --- Probes tab ---
+
+async function wifiProbes(duration) {
+    log('Capturing probes (' + duration + 's)...');
+    const results = document.getElementById('wifi-probes-results');
+    results.innerHTML = '<p class="placeholder">Listening for ' + duration + ' seconds...</p>';
+    try {
+        const data = await apiPost('/wifi/probes', { duration: duration });
+        if (!data.success) { results.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(data.error||'Failed')}</p>`; return; }
+        if (!data.probes || data.probes.length === 0) {
+            results.innerHTML = '<p class="placeholder">No probe requests captured.</p>';
+            return;
+        }
+        let html = `<p style="font-size:0.7rem;color:var(--text-secondary);margin:8px 0;">${data.count} probes captured</p>`;
+        html += '<table><thead><tr><th>Client MAC</th><th>SSID</th></tr></thead><tbody>';
+        data.probes.forEach(p => {
+            html += `<tr><td style="font-family:monospace;font-size:0.7rem;">${p.client_mac}</td><td>${escapeHtml(p.ssid||'(broadcast)')}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        results.innerHTML = html;
+        log('Probes: ' + data.probes.length + ' captured');
+    } catch (error) {
+        results.innerHTML = '<p class="placeholder" style="color:#e94560;">Probe capture failed</p>';
+        log('Probe error: ' + error.message);
+    }
+}
+
+// --- Attack tab ---
+
+let _attackableNetworks = [];
+
+async function wifiShowAttackable() {
+    const list = document.getElementById('wifi-attack-list');
+    list.innerHTML = '<p class="placeholder">Scanning for targets...</p>';
+    try {
+        const data = await apiGet('/wifi/scan');
+        if (!data.success || !data.networks) {
+            list.innerHTML = '<p class="placeholder">Scan failed.</p>';
+            return;
+        }
+        _attackableNetworks = data.networks.filter(n => n.risk === 'critical' || n.risk === 'high' || n.security.includes('WPS'));
+        if (_attackableNetworks.length === 0) {
+            list.innerHTML = '<p class="placeholder">No vulnerable networks found.</p>';
+            return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">';
+        _attackableNetworks.forEach(n => {
+            const buttons = [];
+            if (n.security.includes('WEP')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                onclick="wifiAttackWEP('${n.bssid}',${n.channel})">WEP</button>`);
+            if (n.security.includes('WPA') && !n.security.includes('WPA3')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                onclick="wifiAttackWPA('${n.bssid}',${n.channel})">WPA</button>`);
+            if (n.security.includes('WPS')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                onclick="wifiAttackWPS('${n.bssid}',${n.channel})">WPS</button>`);
+            buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                onclick="wifiDeauth('${n.bssid}')">Deauth</button>`);
+            html += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <span style="font-weight:600;font-size:0.8rem;">${escapeHtml(n.ssid)}</span>
+                        <span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ${n.channel} ${n.signal_dbm}dBm ${riskBadge(n.risk)}</span>
+                    </div>
+                    <div style="display:flex;gap:4px;">${buttons.join('')}</div>
+                </div></div>`;
+        });
+        html += '</div>';
+        list.innerHTML = html;
+    } catch (e) { list.innerHTML = '<p class="placeholder">Scan error.</p>'; }
+}
+
+async function wifiAttackWEP(bssid, channel) {
+    const result = document.getElementById('wifi-attack-result');
+    result.style.display = 'block';
+    result.innerHTML = `<pre>Starting WEP attack on ${bssid} ch ${channel} (2 min)...</pre>`;
+    log('WEP attack: ' + bssid);
+    try {
+        const data = await apiPost('/wifi/attack/wep', { bssid, channel, timeout: 120 });
+        if (data.success) {
+            result.innerHTML = `<pre class="success">KEY FOUND: ${data.key}</pre>`;
+            log('WEP KEY: ' + data.key);
+        } else {
+            result.innerHTML = `<pre class="error">${escapeHtml(data.error||'Failed')}</pre>`;
+        }
+    } catch (e) { result.innerHTML = `<pre class="error">${escapeHtml(e.message)}</pre>`; }
+}
+
+async function wifiAttackWPA(bssid, channel) {
+    const result = document.getElementById('wifi-attack-result');
+    result.style.display = 'block';
+    result.innerHTML = `<pre>Capturing handshake then cracking with rockyou.txt (90s)...</pre>`;
+    log('WPA attack: ' + bssid);
+    try {
+        const data = await apiPost('/wifi/attack/wpa', { bssid, channel, timeout: 90 });
+        if (data.success) {
+            result.innerHTML = `<pre class="success">KEY FOUND: ${data.key}</pre>`;
+            log('WPA KEY: ' + data.key);
+        } else {
+            result.innerHTML = `<pre class="error">${escapeHtml(data.error||'Failed')}</pre>`;
+        }
+    } catch (e) { result.innerHTML = `<pre class="error">${escapeHtml(e.message)}</pre>`; }
+}
+
+async function wifiAttackWPS(bssid, channel) {
+    const result = document.getElementById('wifi-attack-result');
+    result.style.display = 'block';
+    result.innerHTML = `<pre>Starting WPS PIN attack on ${bssid} (5 min)...</pre>`;
+    log('WPS attack: ' + bssid);
+    try {
+        const data = await apiPost('/wifi/attack/wps', { bssid, channel, timeout: 300 });
+        if (data.success) {
+            let msg = `PIN: ${data.pin}`;
+            if (data.psk) msg += `\nPSK: ${data.psk}`;
+            result.innerHTML = `<pre class="success">${msg}</pre>`;
+            log('WPS crack: ' + msg.replace('\n', ', '));
+        } else {
+            result.innerHTML = `<pre class="error">${escapeHtml(data.error||'Failed')}</pre>`;
+        }
+    } catch (e) { result.innerHTML = `<pre class="error">${escapeHtml(e.message)}</pre>`; }
+}
+
+async function wifiDeauth(bssid) {
+    log('Deauth attack: ' + bssid);
+    try {
+        const data = await apiPost('/wifi/deauth', { bssid, count: 10 });
+        log(data.success ? `Deauth sent to ${bssid}` : 'Deauth failed: ' + (data.error||'Unknown'));
+    } catch (e) { log('Deauth error: ' + e.message); }
+}
+
+// --- Capture tab ---
+
+async function wifiCapture() {
+    const filter = document.getElementById('wifi-capture-filter').value || null;
+    const label = filter || 'all';
+    log('Starting packet capture (60s, filter: ' + label + ')...');
+    try {
+        const data = await apiPost('/wifi/capture', { duration: 60, filter: filter });
+        log(data.success ? `Capture saved: ${data.filename} (${data.size_bytes} bytes, filter: ${label})` : 'Capture failed');
     } catch (error) { log('Capture error: ' + error.message); }
 }
 

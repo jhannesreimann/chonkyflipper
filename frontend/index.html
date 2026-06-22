@@ -79,14 +79,63 @@
 
         <!-- Wi-Fi Scanner -->
         <section class="card module-panel" id="panel-wifi">
-            <h2>📡 Wi-Fi Scanner</h2>
-            <div class="button-group">
-                <button class="btn btn-primary" onclick="wifiScan()">🔍 Scan</button>
-                <button class="btn btn-secondary" onclick="wifiMonitorMode()">📡 Monitor Mode</button>
-                <button class="btn btn-danger" onclick="wifiCapture()">💾 Capture</button>
+            <h2>📡 Wi-Fi</h2>
+            <div class="ir-tabs">
+                <button class="ir-tab active" onclick="wifiTab('scan')">Scan</button>
+                <button class="ir-tab" onclick="wifiTab('audit')">Audit</button>
+                <button class="ir-tab" onclick="wifiTab('probes')">Probes</button>
+                <button class="ir-tab" onclick="wifiTab('attack')">Attack</button>
+                <button class="ir-tab" onclick="wifiTab('capture')">Capture</button>
             </div>
-            <div class="table-container" id="wifi-results">
-                <p class="placeholder">Click Scan to find networks...</p>
+            <!-- Scan tab -->
+            <div id="wifi-tab-scan" class="ir-tab-content active">
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="wifiScan()">🔍 Scan</button>
+                    <button class="btn btn-secondary" onclick="wifiMonitorMode()">📡 Monitor</button>
+                </div>
+                <div class="table-container" id="wifi-results">
+                    <p class="placeholder">Click Scan to find networks...</p>
+                </div>
+            </div>
+            <!-- Audit tab -->
+            <div id="wifi-tab-audit" class="ir-tab-content" style="display:none;">
+                <p class="hint">Detect evil twins, encryption downgrades, and suspicious signals.</p>
+                <button class="btn btn-primary" onclick="wifiAudit()">🛡 Audit Networks</button>
+                <div id="wifi-audit-results"></div>
+            </div>
+            <!-- Probes tab -->
+            <div id="wifi-tab-probes" class="ir-tab-content" style="display:none;">
+                <p class="hint">Capture probe requests to see what networks nearby devices are looking for.</p>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="wifiProbes(15)">15s</button>
+                    <button class="btn btn-secondary" onclick="wifiProbes(30)">30s</button>
+                    <button class="btn btn-secondary" onclick="wifiProbes(60)">60s</button>
+                </div>
+                <div id="wifi-probes-results"></div>
+            </div>
+            <!-- Attack tab -->
+            <div id="wifi-tab-attack" class="ir-tab-content" style="display:none;">
+                <p class="hint">Select a network below to attack. Buttons appear based on vulnerability.</p>
+                <p class="hint" style="color:var(--accent-warning);">Only attack networks you own or have permission to test.</p>
+                <div id="wifi-attack-list"></div>
+                <div id="wifi-attack-result" class="output-box" style="display:none;"></div>
+            </div>
+            <!-- Capture tab -->
+            <div id="wifi-tab-capture" class="ir-tab-content" style="display:none;">
+                <div class="form-group">
+                    <label>Filter:</label>
+                    <select id="wifi-capture-filter">
+                        <option value="">All packets</option>
+                        <option value="beacons">Beacons</option>
+                        <option value="probes">Probe requests</option>
+                        <option value="management">Management frames</option>
+                        <option value="data">Data frames</option>
+                        <option value="control">Control frames</option>
+                    </select>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="wifiCapture()">💾 Capture (60s)</button>
+                </div>
             </div>
         </section>
 
