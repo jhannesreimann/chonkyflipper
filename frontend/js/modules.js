@@ -136,9 +136,12 @@ async function wifiShowAttackable() {
             const enc = (t.encryption || '').toLowerCase();
             const hasWPS = t.wps === 'yes';
             const ch = parseInt(t.channel) || 0;
+            // ESSIDs that look like MAC addresses are hidden networks
+            const isHidden = /^\([0-9A-F:]+\)$/.test(t.essid);
+            const displayName = isHidden ? '(hidden: ' + t.essid + ')' : t.essid;
             return '<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">' +
                 '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-                '<div><span style="font-weight:600;font-size:0.8rem;">' + escapeHtml(t.essid) + '</span>' +
+                '<div><span style="font-weight:600;font-size:0.8rem;">' + escapeHtml(displayName) + '</span>' +
                 '<span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ' + t.channel + ' ' + t.power + 'dB ' + t.clients + ' clients ' + enc.toUpperCase() + (hasWPS?' +WPS':'') + '</span></div>' +
                 '<div style="display:flex;gap:4px;">' +
                 '<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;" onclick="wifiteAttackTarget(\'' + t.essid + '\',' + ch + ')" title="Run wifite against this target (WPA handshake + WPS)">Attack</button>' +
@@ -148,7 +151,7 @@ async function wifiShowAttackable() {
             '<button class="btn btn-secondary btn-sm" onclick="wifiShowAttackable()">Rescan</button>' +
             '</div>';
         rows += '<p style="margin-top:4px;font-size:0.65rem;color:var(--text-secondary);">' +
-            'Pick a target and click Deauth/WPA/WPS below to attack just that network.</p>';
+            'Targets with clients found by wifite. Click Attack to run wifite against that network (handshake + WPS).</p>';
         list.innerHTML = rows;
     } catch (e) {
         list.innerHTML = '<p class="placeholder" style="color:#e94560;">wifite scan failed.</p>';
@@ -158,11 +161,9 @@ async function wifiShowAttackable() {
 async function wifiteAttackTarget(bssid, channel) {
     const result = document.getElementById('wifi-attack-result');
     result.style.display = 'block';
-    result.innerHTML = '<pre>Wifite attacking ' + bssid + ' ch ' + channel + ' (2 min)...</pre>';
+    result.innerHTML = '<pre>Wifite attacking ' + escapeHtml(bssid) + ' ch ' + channel + ' (2 min)...</pre>';
     log('Wifite attack: ' + bssid);
     try {
-        // wifite attacks all targets on the given channel, but with --first 1
-        // and a specific channel, it effectively targets just that network
         const data = await apiPost('/wifi/audit/wifite-attack', {
             scan_time: 1, attack_time: 120, channel: channel
         });
@@ -171,7 +172,8 @@ async function wifiteAttackTarget(bssid, channel) {
             result.innerHTML = '<pre class="success">CRACKED:\n' + keys + '</pre>';
             log('Wifite cracked: ' + keys);
         } else if (data.targets && data.targets.length > 0) {
-            result.innerHTML = '<pre>Attack completed. No keys cracked in this run.\nTry running the full audit or check captured handshakes.</pre>';
+            result.innerHTML = '<pre>Attack completed. No keys cracked in this run.\nWifite captured handshakes; try cracking with a larger wordlist.\n\nTargets found:\n' +
+                data.targets.map(t => '  ' + t.essid + ' (ch ' + t.channel + ' ' + t.encryption + ' ' + t.clients + ' clients)').join('\n') + '</pre>';
         } else {
             result.innerHTML = '<pre>No target found on channel ' + channel + '.</pre>';
         }
