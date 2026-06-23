@@ -80,13 +80,11 @@ echo "$NEW_COMMIT" > "$INSTALL_DIR/VERSION"
 chown chonky:chonky "$INSTALL_DIR/VERSION"
 
 if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
-    echo "✅ Already up to date  --  nothing to do."
-    exit 0
+    echo "Git is up to date, still deploying files..."
+else
+    echo "Changes:"
+    run_git --no-pager log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "  (detailed log unavailable)"
 fi
-
-# Show what changed
-echo "Changes:"
-run_git --no-pager log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "  (detailed log unavailable)"
 echo ""
 
 # -- Update backend files --

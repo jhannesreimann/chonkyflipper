@@ -174,6 +174,20 @@ class WiFiModule:
     # ------------------------------------------------------------------
 
     def start_monitor_mode(self):
+        # Stop any existing WiFi client connection first
+        # (airmon-ng needs exclusive control of the interface)
+        had_connection = False
+        if os.path.exists('/sys/class/net/wlan1'):
+            subprocess.run(
+                ['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
+                capture_output=True,
+            )
+            subprocess.run(
+                ['sudo', '-n', 'ip', 'addr', 'flush', 'dev', self.interface],
+                capture_output=True,
+            )
+            had_connection = True
+
         commands = [
             'airmon-ng check kill',
             f'ifconfig {self.interface} down',
@@ -191,7 +205,8 @@ class WiFiModule:
 
         return {'success': success,
                 'interface': self.monitor_interface if success else None,
-                'commands': results}
+                'commands': results,
+                'was_connected': had_connection}
 
     def stop_monitor_mode(self):
         stdout, stderr, rc = self._run(f'airmon-ng stop {self.monitor_interface}')
