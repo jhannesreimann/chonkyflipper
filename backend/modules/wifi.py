@@ -17,9 +17,9 @@ from config import CAPTURES_DIR
 class WiFiModule:
     """Wi-Fi scanning, monitor mode, packet capture, deauth, and attacks."""
 
-    def __init__(self, interface='wlan1', monitor_interface='wlan1mon'):
+    def __init__(self, interface='wlan1'):
         self.interface = interface
-        self.monitor_interface = monitor_interface
+        self.monitor_interface = interface  # Same interface, iw changes the mode
         os.makedirs(CAPTURES_DIR, exist_ok=True)
 
     def _run(self, cmd, timeout=30):
@@ -174,46 +174,74 @@ class WiFiModule:
     # ------------------------------------------------------------------
 
     def start_monitor_mode(self):
-        # Stop any existing WiFi client connection first
-        # (airmon-ng needs exclusive control of the interface)
+        """
+        Enter monitor mode on wlan1 using iw (no airmon-ng).
+        airmon-ng check kill would kill gunicorn+hostapd -- avoided.
+        """
+        if not os.path.exists('/sys/class/net/wlan1'):
+            return {'success': False,
+                    'error': 'Alfa WiFi adapter (wlan1) not found'}
+
         had_connection = False
-        if os.path.exists('/sys/class/net/wlan1'):
-            subprocess.run(
-                ['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
-                capture_output=True,
-            )
-            subprocess.run(
-                ['sudo', '-n', 'ip', 'addr', 'flush', 'dev', self.interface],
-                capture_output=True,
-            )
+        if os.path.exists('/var/run/wpa_supplicant/wlan1'):
             had_connection = True
 
-        commands = [
-            'airmon-ng check kill',
-            f'ifconfig {self.interface} down',
-            f'airmon-ng start {self.interface}',
-            f'ifconfig {self.monitor_interface} up',
-        ]
-        results = []
-        for cmd in commands:
-            stdout, stderr, rc = self._run(cmd)
-            results.append({'command': cmd, 'success': rc == 0,
-                          'output': stdout if stdout else stderr})
+        # Stop WiFi client, flush, set monitor mode via iw
+        subprocess.run(
+            ['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
+            capture_output=True,
+        )
+        subprocess.run(
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'down'],
+            capture_output=True,
+        )
+        subprocess.run(
+            ['sudo', '-n', 'iw', 'dev', self.interface, 'set', 'type', 'monitor'],
+            capture_output=True,
+        )
+        subprocess.run(
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'up'],
+            capture_output=True,
+        )
 
-        check_stdout, _, check_rc = self._run(f'ip link show {self.monitor_interface}')
-        success = check_rc == 0 and self.monitor_interface in check_stdout
+        # Verify
+        stdout, _, rc = subprocess.run(
+            ['iwconfig', self.interface],
+            capture_output=True, text=True, timeout=10,
+        )
+        success = rc == 0 and 'Mode:Monitor' in stdout
+        self.monitor_interface = self.interface  # Use wlan1 directly
 
         return {'success': success,
-                'interface': self.monitor_interface if success else None,
-                'commands': results,
+                'interface': self.interface if success else None,
                 'was_connected': had_connection}
 
     def stop_monitor_mode(self):
-        stdout, stderr, rc = self._run(f'airmon-ng stop {self.monitor_interface}')
-        return {'success': rc == 0, 'output': stdout}
+        """Return wlan1 to managed mode and restart WiFi client if needed."""
+        subprocess.run(
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'down'],
+            capture_output=True,
+        )
+        subprocess.run(
+            ['sudo', '-n', 'iw', 'dev', self.interface, 'set', 'type', 'managed'],
+            capture_output=True,
+        )
+        subprocess.run(
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'up'],
+            capture_output=True,
+        )
+        # Restart wpa_supplicant to reconnect
+        subprocess.run(
+            ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
+            capture_output=True,
+        )
+        return {'success': True, 'interface': self.interface}
 
     def _is_monitor_mode(self):
-        stdout, _, rc = self._run(f'iwconfig {self.monitor_interface}')
+        stdout, _, rc = subprocess.run(
+            ['iwconfig', self.interface],
+            capture_output=True, text=True, timeout=10,
+        )
         return rc == 0 and 'Mode:Monitor' in stdout
 
     # --- Filter presets for capture ---
