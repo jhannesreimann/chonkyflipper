@@ -525,15 +525,33 @@ class WiFiModule:
                 num = int(stripped[0])
             except ValueError:
                 continue
-            # Parse rest of line by fixed positions after the number
-            rest = stripped[2:]  # Skip "NUM "
-            # ESSID is columns 0-26, CH 27-30, ENCR 31-37, PWR 38-44, WPS 45-49, CLIENT 50+
-            essid = rest[0:27].strip()
-            ch = rest[27:31].strip()
-            encr = rest[31:39].strip()
-            pwr = rest[39:46].strip()
-            wps = rest[46:52].strip() if len(rest) > 46 else 'no'
-            clients = rest[52:].strip() if len(rest) > 52 else '0'
+            # Skip past the number prefix (e.g. "  1  ")
+            rest = stripped.split(None, 1)[1] if ' ' in stripped else stripped[3:]
+            # Wifite columns (from header: "NUM  ESSID  CH  ENCR  PWR  WPS  CLIENT")
+            # ESSID takes ~25 chars, then space-separated fields follow
+            # Use right-anchored parsing: find the last 5 space-separated fields
+            fields = rest.rsplit(None, 5)  # CH ENCR PWR WPS CLIENT (5 fields from right)
+            if len(fields) >= 6:
+                essid = fields[0]
+                ch = fields[1]
+                encr = fields[2]
+                pwr = fields[3]
+                wps = fields[4]
+                clients = fields[5]
+            else:
+                # Fallback: split by 2+ spaces
+                parts = rest.split('  ')
+                if len(parts) >= 5:
+                    essid = parts[0].strip()
+                    ch = parts[1].strip() if len(parts) > 1 else '?'
+                    encr = parts[2].strip() if len(parts) > 2 else '?'
+                    pwr = parts[3].strip() if len(parts) > 3 else '?'
+                    rest2 = parts[4].strip() if len(parts) > 4 else ''
+                    wps_clients = rest2.split()
+                    wps = wps_clients[0] if wps_clients else 'no'
+                    clients = wps_clients[1] if len(wps_clients) > 1 else '0'
+                else:
+                    continue
             if essid and essid not in seen:
                 seen.add(essid)
                 targets.append({
