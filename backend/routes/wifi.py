@@ -105,6 +105,28 @@ def wifi_handshake():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
+# ------------------------------------------------------------------ attack viability check
+
+@bp.route('/api/wifi/attack/check', methods=['POST'])
+def wifi_attack_check():
+    data = request.json or {}
+    bssid = data.get('bssid')
+    channel = data.get('channel')
+    security = data.get('security')
+    flags = data.get('flags', '')
+    if not bssid or not channel:
+        return api_error('bssid and channel required', 400)
+
+    # Merge security from flags if not provided
+    if not security and flags:
+        from modules.wifi import WiFiModule
+        security, _ = WiFiModule._classify_security(flags)
+
+    wifi = _wifi_module()
+    result = wifi.check_attack_viability(bssid, channel, security)
+    return api_success(result)
+
+
 # ------------------------------------------------------------------ attacks
 
 @bp.route('/api/wifi/attack/wep', methods=['POST'])

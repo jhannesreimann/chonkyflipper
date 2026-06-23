@@ -135,45 +135,69 @@ async function wifiShowAttackable() {
             list.innerHTML = '<p class="placeholder">No vulnerable networks found.</p>';
             return;
         }
-        let html = '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">';
-        _attackableNetworks.forEach(n => {
-            const buttons = [];
-            // WEP: only if network actually uses WEP
-            if (n.security.includes('WEP')) {
-                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                    onclick="wifiAttackWEP('${n.bssid}',${n.channel})">WEP</button>`);
+        // Show loading placeholder while checking viability
+        list.innerHTML = '<p class="placeholder">Checking attack viability per network...</p>';
+
+        // Check viability for each network and render as results come in
+        Promise.all(_attackableNetworks.map(async (net, idx) => {
+            try {
+                const check = await apiPost('/wifi/attack/check', {
+                    bssid: net.bssid, channel: net.channel,
+                    security: net.security, flags: net.flags
+                });
+                return { net, check, idx };
+            } catch (e) {
+                return { net, check: null, idx };
             }
-            // WPA crack: WPA/WPA2 with TKIP or weak config (not WPA3)
-            if (n.security.includes('WPA') && !n.security.includes('WPA3')) {
-                const hasTKIP = n.security.includes('TKIP');
-                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                    onclick="wifiAttackWPA('${n.bssid}',${n.channel})"
-                    title="Captures WPA handshake + cracks with rockyou.txt. ${hasTKIP ? 'TKIP is weak; likely crackable.' : 'CCMP requires weak password.'}"
-                    >WPA</button>`);
-            }
-            // WPS: available but rate-limited on most routers
-            if (n.security.includes('WPS')) {
-                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                    onclick="wifiAttackWPS('${n.bssid}',${n.channel})"
-                    title="WPS PIN brute force (reaver). Most routers rate-limit after 3 attempts; may take hours."
-                    >WPS</button>`);
-            }
-            // Deauth: always available, works on non-PMF networks
-            buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiDeauth('${n.bssid}',${n.channel})"
-                title="Sends deauth frames to disconnect clients. Blocked on networks with 802.11w (PMF). IoT devices without PMF are best targets."
-                >Deauth</button>`);
-            html += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                        <span style="font-weight:600;font-size:0.8rem;">${escapeHtml(n.ssid)}</span>
-                        <span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ${n.channel} ${n.signal_dbm}dBm ${riskBadge(n.risk)}</span>
-                    </div>
-                    <div style="display:flex;gap:4px;">${buttons.join('')}</div>
-                </div></div>`;
+        })).then(results => {
+            let rows = '';
+            results.forEach(({ net, check }) => {
+                const buttons = [];
+                if (check) {
+                    const attacks = check;
+                    // WEP
+                    if (attacks.wep && attacks.wep.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                            onclick="wifiAttackWEP('${net.bssid}',${net.channel})"
+                            title="${escapeHtmlAttr(attacks.wep.reason)}">WEP</button>`);
+                    }
+                    // WPA
+                    if (attacks.wpa && attacks.wpa.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                            onclick="wifiAttackWPA('${net.bssid}',${net.channel})"
+                            title="${escapeHtmlAttr(attacks.wpa.reason)}">WPA</button>`);
+                    } else if (attacks.wpa && !attacks.wpa.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
+                            disabled title="${escapeHtmlAttr(attacks.wpa.reason)}">WPA</button>`);
+                    }
+                    // WPS
+                    if (attacks.wps && attacks.wps.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                            onclick="wifiAttackWPS('${net.bssid}',${net.channel})"
+                            title="${escapeHtmlAttr(attacks.wps.reason)}">WPS</button>`);
+                    } else if (attacks.wps && !attacks.wps.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
+                            disabled title="${escapeHtmlAttr(attacks.wps.reason)}">WPS</button>`);
+                    }
+                    // Deauth
+                    if (attacks.deauth && attacks.deauth.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                            onclick="wifiDeauth('${net.bssid}',${net.channel})"
+                            title="${escapeHtmlAttr(attacks.deauth.reason)}">Deauth</button>`);
+                    } else if (attacks.deauth && !attacks.deauth.viable) {
+                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
+                            disabled title="${escapeHtmlAttr(attacks.deauth.reason)}">Deauth</button>`);
+                    }
+                }
+                rows += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div><span style="font-weight:600;font-size:0.8rem;">${escapeHtml(net.ssid)}</span>
+                        <span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ${net.channel} ${net.signal_dbm}dBm ${riskBadge(net.risk)}</span></div>
+                        <div style="display:flex;gap:4px;">${buttons.join('')||'<span style="font-size:0.6rem;color:var(--text-secondary);">no viable attacks</span>'}</div>
+                    </div></div>`;
+            });
+            list.innerHTML = rows || '<p class="placeholder">No attackable networks found.</p>';
         });
-        html += '</div>';
-        list.innerHTML = html;
     } catch (e) { list.innerHTML = '<p class="placeholder">Scan error.</p>'; }
 }
 
