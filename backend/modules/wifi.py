@@ -505,34 +505,38 @@ class WiFiModule:
 
     @staticmethod
     def _parse_wifite_output(output):
-        """Parse wifite terminal output into structured target list."""
+        """Parse wifite terminal output into structured target list.
+        Wifite refreshes the screen, producing multiple tables. Use the last one."""
         targets = []
-        in_table = False
+        seen = set()
         for line in output.split('\n'):
-            if 'NUM' in line and 'ESSID' in line:
-                in_table = True
+            # Only parse rows from tables (start with whitespace + digit)
+            stripped = line.strip()
+            if not stripped or not stripped[0].isdigit():
                 continue
-            if in_table and line.strip() and len(line) > 5 and line[0].isdigit():
-                parts = line.split()
-                if len(parts) >= 7:
-                    try:
-                        num = int(parts[0])
-                    except ValueError:
-                        continue
-                    essid_idx = 1
-                    essid = parts[essid_idx]
-                    if essid.endswith('*'):
-                        essid = essid[:-1]
-                    if len(parts) >= essid_idx + 5:
-                        targets.append({
-                            'num': num,
-                            'essid': essid,
-                            'channel': parts[essid_idx + 1],
-                            'encryption': parts[essid_idx + 2],
-                            'power': parts[essid_idx + 3],
-                            'wps': parts[essid_idx + 4],
-                            'clients': parts[essid_idx + 5] if len(parts) > essid_idx + 5 else '0',
-                        })
+            parts = stripped.split()
+            if len(parts) >= 7:
+                try:
+                    num = int(parts[0])
+                except ValueError:
+                    continue
+                # Format: NUM ESSID CH ENCR PWR WPS CLIENT
+                # ESSID may contain spaces if quoted, but wifite uses fixed columns
+                essid = parts[1]
+                if essid.endswith('*'):
+                    essid = essid[:-1]
+                # Deduplicate by ESSID (keep strongest signal = first seen)
+                if essid not in seen and len(parts) >= 6:
+                    seen.add(essid)
+                    targets.append({
+                        'num': num,
+                        'essid': essid,
+                        'channel': parts[2],
+                        'encryption': parts[3],
+                        'power': parts[4],
+                        'wps': parts[5] if len(parts) > 5 else 'no',
+                        'clients': parts[6] if len(parts) > 6 else '0',
+                    })
         return targets
 
     # ------------------------------------------------------------------
