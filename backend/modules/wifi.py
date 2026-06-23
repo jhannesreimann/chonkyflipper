@@ -494,7 +494,8 @@ class WiFiModule:
     @staticmethod
     def _parse_wifite_summary(output):
         """Extract attack result summary from wifite output."""
-        lines = output.split('\n')
+        clean = WiFiModule._strip_ansi(output)
+        lines = clean.split('\n')
         summary = {'attacked': 0, 'cracked': 0, 'handshakes': 0}
         for line in lines:
             if 'cracked' in line.lower() or 'KEY' in line:
@@ -504,12 +505,19 @@ class WiFiModule:
         return summary
 
     @staticmethod
+    def _strip_ansi(text):
+        """Remove ANSI escape sequences and terminal control chars from text."""
+        import re as _re
+        return _re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\r', '', text)
+
+    @staticmethod
     def _parse_wifite_output(output):
         """Parse wifite terminal output into structured target list.
         Wifite refreshes the screen, producing multiple tables. Use the last one."""
+        clean = WiFiModule._strip_ansi(output)
         targets = []
         seen = set()
-        for line in output.split('\n'):
+        for line in clean.split('\n'):
             # Only parse rows from tables (start with whitespace + digit)
             stripped = line.strip()
             if not stripped or not stripped[0].isdigit():
