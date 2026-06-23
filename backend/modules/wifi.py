@@ -271,9 +271,9 @@ class WiFiModule:
                 return {'success': False, 'error': 'Failed to enter monitor mode'}
         interface = self.monitor_interface
 
-        cmd = f'sudo -n timeout {duration} tcpdump -i {interface} -w {filepath}'
+        cmd = f'timeout {duration} tcpdump -i {interface} -w {filepath}'
         if channel:
-            cmd = f'sudo -n iwconfig {interface} channel {channel} && ' + cmd
+            cmd = f'iwconfig {interface} channel {channel} && ' + cmd
 
         # Apply filter
         filter_str = self._FILTER_PRESETS.get(packet_filter, packet_filter)
