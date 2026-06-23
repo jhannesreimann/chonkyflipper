@@ -91,3 +91,14 @@ def zigbee_device_remove(device_name):
     zigbee = _zigbee_module()
     result = zigbee.remove_device(device_name)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+
+
+@bp.route('/api/zigbee/device/<device_name>/rename', methods=['POST'])
+def zigbee_device_rename(device_name):
+    data = request.json or {}
+    to_name = data.get('to')
+    if not to_name:
+        return api_error('new name ("to") required', 400)
+    zigbee = _zigbee_module()
+    result = zigbee.rename_device(device_name, to_name)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)

@@ -295,3 +295,14 @@ class ZigbeeModule:
         if error:
             return {'success': False, 'error': error}
         return {'success': True, 'result': result}
+
+    def rename_device(self, from_name, to_name):
+        payload = {'from': from_name, 'to': to_name}
+        result, error = self._publish_and_wait(
+            f'{self.BASE_TOPIC}/bridge/request/device/rename',
+            f'{self.BASE_TOPIC}/bridge/response/device/rename',
+            payload,
+        )
+        if error:
+            return {'success': False, 'error': error}
+        return {'success': True, 'result': result}
