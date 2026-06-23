@@ -161,22 +161,43 @@ async function wifiShowAttackable() {
 async function wifiteAttackTarget(bssid, channel) {
     const result = document.getElementById('wifi-attack-result');
     result.style.display = 'block';
-    result.innerHTML = '<pre>Wifite attacking ' + escapeHtml(bssid) + ' ch ' + channel + ' (2 min)...</pre>';
+    result.innerHTML = '<pre>Starting wifite attack on ' + escapeHtml(bssid) + ' ch ' + channel + '...\n(Runs in background, polling for results)</pre>';
     log('Wifite attack: ' + bssid);
+
     try {
-        const data = await apiPost('/wifi/audit/wifite-attack', {
+        // Start attack (returns immediately)
+        const start = await apiPost('/wifi/audit/wifite-attack', {
             scan_time: 1, attack_time: 120, channel: channel
         });
-        if (data.cracked && data.cracked.length > 0) {
-            let keys = data.cracked.map(c => (c.essid||c.bssid) + ': ' + (c.key||c.psk||c.pin||'found')).join('\n');
-            result.innerHTML = '<pre class="success">CRACKED:\n' + keys + '</pre>';
-            log('Wifite cracked: ' + keys);
-        } else if (data.targets && data.targets.length > 0) {
-            result.innerHTML = '<pre>Attack completed. No keys cracked in this run.\nWifite captured handshakes; try cracking with a larger wordlist.\n\nTargets found:\n' +
-                data.targets.map(t => '  ' + t.essid + ' (ch ' + t.channel + ' ' + t.encryption + ' ' + t.clients + ' clients)').join('\n') + '</pre>';
-        } else {
-            result.innerHTML = '<pre>No target found on channel ' + channel + '.</pre>';
+        if (!start.success) {
+            result.innerHTML = '<pre class="error">' + escapeHtml(start.error||'Failed to start') + '</pre>';
+            return;
         }
+        // Poll for completion every 5 seconds
+        let attempts = 0;
+        const poll = setInterval(async () => {
+            attempts++;
+            result.innerHTML = '<pre>Wifite attacking ' + escapeHtml(bssid) + '... (' + (attempts * 5) + 's)</pre>';
+            try {
+                const check = await apiGet('/wifi/audit/wifite-status');
+                if (!check.running) {
+                    clearInterval(poll);
+                    // Re-run scan to get updated results
+                    const scan = await apiPost('/wifi/audit/wifite-scan', { scan_time: 5 });
+                    if (scan.cracked && scan.cracked.length > 0) {
+                        let keys = scan.cracked.map(c => (c.essid||c.bssid) + ': ' + (c.key||c.psk||c.pin||'found')).join('\n');
+                        result.innerHTML = '<pre class="success">CRACKED:\n' + keys + '</pre>';
+                    } else {
+                        result.innerHTML = '<pre>Attack finished. No keys cracked.\nCheck captured handshakes in /root/hs/</pre>';
+                    }
+                    log('Wifite attack complete');
+                }
+            } catch (e) { /* polling - ignore errors */ }
+            if (attempts > 36) { // 3 minutes max
+                clearInterval(poll);
+                result.innerHTML = '<pre>Attack timed out after 3 min. Wifite may still be running.</pre>';
+            }
+        }, 5000);
     } catch (e) {
         result.innerHTML = '<pre class="error">' + escapeHtml(e.message) + '</pre>';
     }

@@ -117,16 +117,44 @@ def wifi_wifite_scan():
     return api_success({'targets': targets})
 
 
+_wifite_bg_task = None
+
 @bp.route('/api/wifi/audit/wifite-attack', methods=['POST'])
 def wifi_wifite_attack():
-    """Wifite attack: scan briefly then attack targets on specified channel."""
+    """Wifite attack: runs in background to avoid HTTP timeout."""
+    global _wifite_bg_task
+    if _wifite_bg_task and _wifite_bg_task.poll() is None:
+        return api_error('Attack already in progress', 400)
+
     data = request.json or {}
     scan_time = data.get('scan_time', 10)
     attack_time = data.get('attack_time', 120)
     channel = data.get('channel')
+
     wifi = _wifi_module()
-    results = wifi.run_wifite_audit(scan_time=scan_time, attack_time=attack_time)
-    return api_success(results)
+    # Run in background thread so API returns immediately
+    import threading
+    result_holder = {}
+
+    def _run():
+        result_holder['data'] = wifi.run_wifite_audit(
+            scan_time=scan_time, attack_time=attack_time)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    _wifite_bg_task = t
+
+    return api_success({'status': 'started', 'scan_time': scan_time,
+                         'attack_time': attack_time})
+
+
+@bp.route('/api/wifi/audit/wifite-status', methods=['GET'])
+def wifi_wifite_status():
+    """Check if background wifite attack is still running."""
+    global _wifite_bg_task
+    if _wifite_bg_task and _wifite_bg_task.is_alive():
+        return api_success({'running': True})
+    return api_success({'running': False, 'message': 'No attack in progress'})
 
 
 # ------------------------------------------------------------------ attack viability check
