@@ -418,31 +418,65 @@ class WiFiModule:
 
     def run_wifite_audit(self, scan_time=10, attack_time=300):
         """Run wifite full audit: scan then automatically attack all targets.
-        Returns structured results: targets found, attacks attempted, keys cracked."""
-        output, _, _ = self._run(
+        Uses detached process to survive gunicorn worker death from airmon-ng."""
+        tmpfile = f'/tmp/wifite_audit_{os.getpid()}.txt'
+        cmd = (
             f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--clients-only -p {scan_time} --daemon" /dev/null',
-            timeout=scan_time + attack_time + 30,
+            f'--clients-only -p {scan_time} --daemon" /dev/null '
+            f'> {tmpfile} 2>&1'
         )
+        proc = subprocess.Popen(
+            cmd, shell=True, start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            proc.wait(timeout=scan_time + attack_time + 30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+        try:
+            with open(tmpfile, 'r', errors='replace') as f:
+                output = f.read()
+            os.remove(tmpfile)
+        except (IOError, OSError):
+            output = ''
 
         targets = self._parse_wifite_output(output)
         cracked = self._read_wifite_cracked()
 
-        # Parse attack results from output
-        results = {
+        return {
             'targets': targets,
             'cracked': cracked,
             'summary': self._parse_wifite_summary(output),
         }
-        return results
 
     def run_wifite_scan_only(self, scan_time=10):
-        """Run wifite scan without attacking. Returns target list."""
-        output, _, _ = self._run(
+        """Run wifite scan without attacking. Returns target list.
+        Uses detached process to survive gunicorn worker death from airmon-ng."""
+        tmpfile = f'/tmp/wifite_scan_{os.getpid()}.txt'
+        cmd = (
             f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--skip-crack --clients-only -p {scan_time} --daemon" /dev/null',
-            timeout=scan_time + 30,
+            f'--skip-crack --clients-only -p {scan_time} --daemon" /dev/null '
+            f'> {tmpfile} 2>&1'
         )
+        proc = subprocess.Popen(
+            cmd, shell=True, start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            proc.wait(timeout=scan_time + 25)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+        # Read the output file
+        try:
+            with open(tmpfile, 'r', errors='replace') as f:
+                output = f.read()
+            os.remove(tmpfile)
+        except (IOError, OSError):
+            output = ''
         return self._parse_wifite_output(output)
 
     @staticmethod
