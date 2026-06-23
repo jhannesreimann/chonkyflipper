@@ -8,11 +8,19 @@ from utils import api_success, api_error
 bp = Blueprint('zigbee', __name__)
 
 
+_zigbee_instance = None
+
+
 def _zigbee_module():
-    import sys
-    sys.path.insert(0, '/opt/chonkyflipper')
-    from modules.zigbee import ZigbeeModule
-    return ZigbeeModule()
+    # Persistent singleton: keeps the MQTT subscription alive between requests
+    # so the event log accumulates non-retained bridge events over time.
+    global _zigbee_instance
+    if _zigbee_instance is None:
+        import sys
+        sys.path.insert(0, '/opt/chonkyflipper')
+        from modules.zigbee import ZigbeeModule
+        _zigbee_instance = ZigbeeModule()
+    return _zigbee_instance
 
 
 @bp.route('/api/zigbee/bridge', methods=['GET'])
@@ -60,6 +68,14 @@ def zigbee_device_set(device_name):
 def zigbee_dashboard():
     zigbee = _zigbee_module()
     result = zigbee.get_device_dashboard()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+
+
+@bp.route('/api/zigbee/events', methods=['GET'])
+def zigbee_events():
+    limit = request.args.get('limit', default=50, type=int)
+    zigbee = _zigbee_module()
+    result = zigbee.get_event_log(limit)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 

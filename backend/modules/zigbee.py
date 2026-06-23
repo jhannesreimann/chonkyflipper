@@ -7,6 +7,8 @@ Communicates with zigbee2mqtt service running on localhost:1883
 import json
 import threading
 import time
+from collections import deque
+from datetime import datetime
 
 
 class ZigbeeModule:
@@ -23,6 +25,7 @@ class ZigbeeModule:
         self._lock = threading.Lock()
         self._connected = False
         self._connect_event = threading.Event()
+        self._event_log = deque(maxlen=200)
 
     # ------------------------------------------------------------------
     # Internal MQTT plumbing
@@ -71,6 +74,41 @@ class ZigbeeModule:
             self._cache[topic] = payload
             if topic in self._response_events:
                 self._response_events[topic].set()
+            self._record_event(topic, payload)
+
+    def _record_event(self, topic, payload):
+        """Append noteworthy MQTT messages to the rolling event log.
+
+        Caller must hold self._lock. Captures two kinds of activity:
+        lifecycle events from bridge/event (join/leave/announce/interview)
+        and per-device state changes from zigbee2mqtt/<friendly_name>.
+        """
+        entry = None
+        if topic == f'{self.BASE_TOPIC}/bridge/event' and isinstance(payload, dict):
+            data = payload.get('data') or {}
+            entry = {
+                'timestamp': datetime.now().isoformat(),
+                'category': 'lifecycle',
+                'type': payload.get('type', 'event'),
+                'device': data.get('friendly_name') or data.get('ieee_address'),
+                'detail': data,
+            }
+        else:
+            # Device state topic is exactly zigbee2mqtt/<name> (2 parts, not a
+            # bridge topic). This naturally excludes /availability, /get, /set
+            # sub-topics, which have 3+ parts.
+            parts = topic.split('/')
+            if (len(parts) == 2 and parts[0] == self.BASE_TOPIC
+                    and parts[1] != 'bridge' and isinstance(payload, dict)):
+                entry = {
+                    'timestamp': datetime.now().isoformat(),
+                    'category': 'state',
+                    'type': 'state_change',
+                    'device': parts[1],
+                    'detail': payload,
+                }
+        if entry is not None:
+            self._event_log.append(entry)
 
     def _ensure_connected(self):
         if self._connected:
@@ -187,6 +225,26 @@ class ZigbeeModule:
         if isinstance(payload, dict):
             return payload.get('state') == 'online'
         return str(payload).strip().lower() == 'online'
+
+    def get_event_log(self, limit=50):
+        """Return recent network events (join/leave/announce/state), newest first.
+
+        Reads the in-memory rolling buffer. Calls _ensure_connected() first so
+        the subscriber is running and future events get captured.
+        """
+        self._ensure_connected()
+        with self._lock:
+            events = list(self._event_log)
+        total = len(events)
+        events.reverse()
+        if limit:
+            events = events[:limit]
+        return {
+            'success': True,
+            'connected': self._connected,
+            'events': events,
+            'total': total,
+        }
 
     def get_network_map(self):
         result, error = self._publish_and_wait(
