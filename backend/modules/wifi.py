@@ -513,38 +513,38 @@ class WiFiModule:
     @staticmethod
     def _parse_wifite_output(output):
         """Parse wifite terminal output into structured target list.
-        Wifite refreshes the screen, producing multiple tables. Use the last one."""
+        Wifite uses fixed-width columns: NUM(4) ESSID(27) CH(4) ENCR(7) PWR(6) WPS(4) CLIENT"""
         clean = WiFiModule._strip_ansi(output)
         targets = []
         seen = set()
         for line in clean.split('\n'):
-            # Only parse rows from tables (start with whitespace + digit)
             stripped = line.strip()
             if not stripped or not stripped[0].isdigit():
                 continue
-            parts = stripped.split()
-            if len(parts) >= 7:
-                try:
-                    num = int(parts[0])
-                except ValueError:
-                    continue
-                # Format: NUM ESSID CH ENCR PWR WPS CLIENT
-                # ESSID may contain spaces if quoted, but wifite uses fixed columns
-                essid = parts[1]
-                if essid.endswith('*'):
-                    essid = essid[:-1]
-                # Deduplicate by ESSID (keep strongest signal = first seen)
-                if essid not in seen and len(parts) >= 6:
-                    seen.add(essid)
-                    targets.append({
-                        'num': num,
-                        'essid': essid,
-                        'channel': parts[2],
-                        'encryption': parts[3],
-                        'power': parts[4],
-                        'wps': parts[5] if len(parts) > 5 else 'no',
-                        'clients': parts[6] if len(parts) > 6 else '0',
-                    })
+            try:
+                num = int(stripped[0])
+            except ValueError:
+                continue
+            # Parse rest of line by fixed positions after the number
+            rest = stripped[2:]  # Skip "NUM "
+            # ESSID is columns 0-26, CH 27-30, ENCR 31-37, PWR 38-44, WPS 45-49, CLIENT 50+
+            essid = rest[0:27].strip()
+            ch = rest[27:31].strip()
+            encr = rest[31:39].strip()
+            pwr = rest[39:46].strip()
+            wps = rest[46:52].strip() if len(rest) > 46 else 'no'
+            clients = rest[52:].strip() if len(rest) > 52 else '0'
+            if essid and essid not in seen:
+                seen.add(essid)
+                targets.append({
+                    'num': num,
+                    'essid': essid.rstrip('*'),
+                    'channel': ch,
+                    'encryption': encr,
+                    'power': pwr,
+                    'wps': wps,
+                    'clients': clients.split()[0] if clients else '0',
+                })
         return targets
 
     # ------------------------------------------------------------------
