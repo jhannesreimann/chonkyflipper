@@ -110,6 +110,7 @@ function showModulePanel(module) {
 
         if (module === 'ir') irShowTab('library');
         if (module === 'badusb') loadBadusbPayloads();
+        if (module === 'zigbee') zigbeeShowTab('devices');
 
         log(`Opened ${module.toUpperCase()} panel`);
     }

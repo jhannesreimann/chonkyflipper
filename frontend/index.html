@@ -266,6 +266,37 @@
             </div>
         </section>
 
+        <!-- Zigbee -->
+        <section class="card module-panel" id="panel-zigbee">
+            <h2>Zigbee</h2>
+            <div class="ir-tabs">
+                <button class="ir-tab active" onclick="zigbeeShowTab('devices')" id="zigbee-tab-devices">Devices</button>
+                <button class="ir-tab" onclick="zigbeeShowTab('events')" id="zigbee-tab-events">Events</button>
+            </div>
+
+            <!-- DEVICES TAB -->
+            <div id="zigbee-tab-content-devices" class="ir-tab-content active">
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="zigbeePermitJoin()">Permit Join (4 min)</button>
+                    <button class="btn btn-secondary" onclick="zigbeeLoadDevices()">Refresh</button>
+                </div>
+                <div id="zigbee-status" class="status-msg info" style="display:none;"></div>
+                <div id="zigbee-devices-list">
+                    <p class="placeholder">Loading devices...</p>
+                </div>
+            </div>
+
+            <!-- EVENTS TAB -->
+            <div id="zigbee-tab-content-events" class="ir-tab-content" style="display:none;">
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="zigbeeLoadEvents()">Refresh</button>
+                </div>
+                <div id="zigbee-events-list">
+                    <p class="placeholder">Loading events...</p>
+                </div>
+            </div>
+        </section>
+
         <!-- Settings -->
         <section class="card">
             <h2>⚙️ Settings</h2>

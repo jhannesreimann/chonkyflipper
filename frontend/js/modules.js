@@ -1,6 +1,6 @@
 /**
  * ChonkyFlipper Frontend - Module Panel Handlers
- * WiFi, Bluetooth, IR, Sub-1GHz, NFC, BadUSB
+ * WiFi, Bluetooth, IR, Sub-1GHz, NFC, BadUSB, Zigbee
  */
 
 // ------------------------------------------------------------------ WiFi
@@ -569,4 +569,181 @@ async function badusbExecute(payload) {
         const data = await apiPost('/badusb/execute', { payload });
         log(data.success ? 'Payload executed' : (data.error || 'Payload failed'));
     } catch (error) { log('BadUSB error: ' + error.message); }
+}
+
+// ------------------------------------------------------------------ Zigbee
+
+function zigbeeShowTab(tab) {
+    document.querySelectorAll('#panel-zigbee .ir-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#panel-zigbee .ir-tab-content').forEach(c => { c.classList.remove('active'); c.style.display = 'none'; });
+    const content = document.getElementById('zigbee-tab-content-' + tab);
+    if (content) { content.classList.add('active'); content.style.display = ''; }
+    document.getElementById('zigbee-tab-' + tab).classList.add('active');
+    if (tab === 'devices') zigbeeLoadDevices();
+    else if (tab === 'events') zigbeeLoadEvents();
+}
+
+// --- Devices tab ---
+
+async function zigbeeLoadDevices() {
+    const container = document.getElementById('zigbee-devices-list');
+    setLoading('zigbee-devices-list', true);
+    try {
+        const data = await apiGet('/zigbee/dashboard');
+        if (!data.success) {
+            container.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(data.error || 'Failed to load devices')}</p>`;
+            return;
+        }
+        const devices = (data.devices || []).filter(d => d.type !== 'Coordinator');
+        if (devices.length === 0) {
+            container.innerHTML = '<p class="placeholder">No devices paired. Use Permit Join to add one.</p>';
+            return;
+        }
+        container.innerHTML = devices.map(zigbeeDeviceRow).join('');
+        log('Zigbee: ' + devices.length + ' devices');
+    } catch (e) {
+        container.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+function zigbeeDeviceRow(d) {
+    const name = escapeHtml(d.friendly_name || '?');
+    const nameAttr = escapeHtmlAttr(d.friendly_name || '');
+    const meta = [d.vendor, d.model].filter(Boolean).map(escapeHtml).join(' ') || escapeHtml(d.type || 'device');
+
+    const av = d.available;
+    const dotColor = av === true ? '#22c55e' : av === false ? '#dc2626' : '#94a3b8';
+    const dotTitle = av === true ? 'online' : av === false ? 'offline' : 'unknown';
+
+    const badges = [];
+    if (d.battery !== null && d.battery !== undefined) {
+        const bcol = d.battery >= 60 ? '#22c55e' : d.battery >= 20 ? 'var(--accent-warning)' : '#dc2626';
+        badges.push(`<span style="font-size:0.65rem;color:${bcol};">Bat ${d.battery}%</span>`);
+    }
+    if (d.linkquality !== null && d.linkquality !== undefined) {
+        const lcol = d.linkquality >= 100 ? '#22c55e' : d.linkquality >= 50 ? 'var(--accent-warning)' : '#dc2626';
+        badges.push(`<span style="font-size:0.65rem;color:${lcol};" title="Link quality (LQI)">LQI ${d.linkquality}</span>`);
+    }
+
+    const actions = [];
+    if (d.state === 'ON' || d.state === 'OFF') {
+        const next = d.state === 'ON' ? 'OFF' : 'ON';
+        actions.push(`<button class="btn btn-secondary btn-sm" onclick="zigbeeToggle('${nameAttr}','${next}')">Turn ${next === 'ON' ? 'On' : 'Off'}</button>`);
+    }
+    actions.push(`<button class="btn btn-secondary btn-sm" onclick="zigbeeRename('${nameAttr}')">Rename</button>`);
+    actions.push(`<button class="btn btn-danger btn-sm" onclick="zigbeeRemove('${nameAttr}')">Remove</button>`);
+
+    return `<div style="background:var(--bg-dark);border-radius:10px;padding:10px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div style="min-width:0;">
+                <div style="font-weight:600;font-size:0.85rem;display:flex;align-items:center;gap:6px;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex:none;" title="${dotTitle}"></span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;">${name}</span>
+                </div>
+                <div style="font-size:0.65rem;color:var(--text-secondary);margin-top:2px;">${meta}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none;">${badges.join('')}</div>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">${actions.join('')}</div>
+    </div>`;
+}
+
+async function zigbeePermitJoin() {
+    const status = document.getElementById('zigbee-status');
+    status.style.display = 'block';
+    status.className = 'status-msg info';
+    status.textContent = 'Enabling join mode for 4 minutes...';
+    log('Zigbee: permit join enabled');
+    try {
+        const data = await apiPost('/zigbee/permit_join', { enable: true, duration: 254 });
+        if (data.success) {
+            status.className = 'status-msg success';
+            status.textContent = 'Join mode active. Put your device into pairing mode now.';
+        } else {
+            status.className = 'status-msg error';
+            status.textContent = data.error || 'Failed to enable join mode';
+        }
+    } catch (e) { status.className = 'status-msg error'; status.textContent = e.message; }
+}
+
+async function zigbeeToggle(name, next) {
+    log('Zigbee: ' + name + ' -> ' + next);
+    try {
+        const data = await apiPost(`/zigbee/device/${encodeURIComponent(name)}/set`, { state: next });
+        if (data.success) zigbeeLoadDevices();
+        else log('Zigbee toggle failed: ' + (data.error || 'Unknown'));
+    } catch (e) { log('Zigbee toggle error: ' + e.message); }
+}
+
+async function zigbeeRename(name) {
+    const to = prompt('Rename "' + name + '" to:', name);
+    if (!to || to === name) return;
+    log('Zigbee: rename ' + name + ' -> ' + to);
+    try {
+        const data = await apiPost(`/zigbee/device/${encodeURIComponent(name)}/rename`, { to: to });
+        if (data.success) { log('Renamed to ' + to); zigbeeLoadDevices(); }
+        else log('Rename failed: ' + (data.error || 'Unknown'));
+    } catch (e) { log('Rename error: ' + e.message); }
+}
+
+async function zigbeeRemove(name) {
+    if (!confirm('Remove "' + name + '" from the Zigbee network?')) return;
+    log('Zigbee: removing ' + name);
+    try {
+        const data = await apiDelete(`/zigbee/device/${encodeURIComponent(name)}`);
+        if (data.success) { log('Removed ' + name); zigbeeLoadDevices(); }
+        else log('Remove failed: ' + (data.error || 'Unknown'));
+    } catch (e) { log('Remove error: ' + e.message); }
+}
+
+// --- Events tab ---
+
+async function zigbeeLoadEvents() {
+    const container = document.getElementById('zigbee-events-list');
+    setLoading('zigbee-events-list', true);
+    try {
+        const data = await apiGet('/zigbee/events?limit=50');
+        if (!data.success) {
+            container.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(data.error || 'Failed to load events')}</p>`;
+            return;
+        }
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = '<p class="placeholder">No events recorded yet.</p>';
+            return;
+        }
+        container.innerHTML = data.events.map(zigbeeEventRow).join('');
+    } catch (e) {
+        container.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+function zigbeeEventRow(ev) {
+    const isLifecycle = ev.category === 'lifecycle';
+    const color = isLifecycle ? 'var(--accent-secondary)' : 'var(--text-secondary)';
+    const type = escapeHtml((ev.type || 'event').replace(/_/g, ' ').toUpperCase());
+    const device = escapeHtml(ev.device || '');
+    let time = '';
+    try { time = new Date(ev.timestamp).toLocaleTimeString(); } catch (e) { time = ''; }
+    const detail = zigbeeEventDetail(ev);
+    return `<div style="background:var(--bg-dark);border-radius:8px;padding:8px 10px;margin-bottom:6px;border-left:3px solid ${color};">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <span style="font-weight:600;font-size:0.75rem;">${type}</span>
+            <span style="font-size:0.6rem;color:var(--text-secondary);flex:none;">${time}</span>
+        </div>
+        <div style="font-size:0.68rem;color:var(--text-secondary);margin-top:2px;">${device}${detail}</div>
+    </div>`;
+}
+
+function zigbeeEventDetail(ev) {
+    const d = ev.detail || {};
+    const parts = [];
+    if (ev.category === 'state') {
+        ['state', 'action', 'contact', 'occupancy', 'battery', 'linkquality', 'temperature', 'humidity'].forEach(k => {
+            if (d[k] !== undefined && d[k] !== null) parts.push(`${k}: ${escapeHtml(String(d[k]))}`);
+        });
+    } else {
+        if (d.ieee_address) parts.push(escapeHtml(d.ieee_address));
+        if (d.status) parts.push(escapeHtml(String(d.status)));
+    }
+    return parts.length ? ' · ' + parts.join(' · ') : '';
 }

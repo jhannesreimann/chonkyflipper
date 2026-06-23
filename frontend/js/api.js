@@ -26,3 +26,12 @@ async function apiPost(path, body = {}) {
     }
     return response.json();
 }
+
+async function apiDelete(path) {
+    const response = await fetch(`${API_URL}${path}`, { method: 'DELETE' });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    return response.json();
+}
