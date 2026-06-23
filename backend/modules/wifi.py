@@ -220,21 +220,21 @@ class WiFiModule:
 
     def stop_monitor_mode(self):
         """Return wlan1 to managed mode and restart WiFi client if needed."""
+        # Realtek rtl8821au needs iwconfig, not iw, for mode switching
         subprocess.run(
-            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'down'],
+            ['sudo', '-n', 'ifconfig', self.interface, 'down'],
             capture_output=True,
         )
         subprocess.run(
-            ['sudo', '-n', 'iw', 'dev', self.interface, 'set', 'type', 'managed'],
+            ['sudo', '-n', 'iwconfig', self.interface, 'mode', 'managed'],
             capture_output=True,
         )
         subprocess.run(
-            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'up'],
+            ['sudo', '-n', 'ifconfig', self.interface, 'up'],
             capture_output=True,
         )
-        # Restart wpa_supplicant to reconnect
         subprocess.run(
-            ['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'],
+            ['sudo', '-n', 'systemctl', 'restart', 'wpa_supplicant@wlan1'],
             capture_output=True,
         )
         return {'success': True, 'interface': self.interface}

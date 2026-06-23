@@ -58,34 +58,42 @@ async function wifiMonitorMode() {
     } catch (error) { log('Monitor mode error: ' + error.message); }
 }
 
-// --- Audit tab ---
+// --- Audit tab (wifite-based vulnerability scan) ---
 
 async function wifiAudit() {
-    log('Auditing networks...');
+    log('Running wifite security audit...');
     const results = document.getElementById('wifi-audit-results');
-    results.innerHTML = '<p class="placeholder">Scanning and analyzing...</p>';
+    results.innerHTML = '<p class="placeholder">Wifite scanning for vulnerable networks (15s)...</p>';
     try {
-        const data = await apiPost('/wifi/anomalies');
-        if (!data.success) { results.innerHTML = `<p class="placeholder" style="color:#e94560;">${escapeHtml(data.error||'Failed')}</p>`; return; }
-        if (!data.anomalies || data.anomalies.length === 0) {
-            results.innerHTML = '<p class="placeholder">✅ No anomalies detected.</p>';
-            log('Audit: no anomalies found');
+        const data = await apiPost('/wifi/audit/wifite-scan', { scan_time: 15 });
+        const targets = data.targets || [];
+        if (targets.length === 0) {
+            results.innerHTML = '<p class="placeholder">No networks with connected clients detected. Try again later.</p>';
+            log('Audit: no targets with clients found');
             return;
         }
         let html = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">';
-        data.anomalies.forEach(a => {
-            const sevColor = RISK_COLORS[a.severity] || '#94a3b8';
-            html += `<div style="background:var(--bg-dark);border-radius:8px;padding:10px;border-left:3px solid ${sevColor};">
-                <div style="font-weight:600;font-size:0.8rem;">${escapeHtml(a.type.replace(/_/g,' ').toUpperCase())}</div>
-                <div style="font-size:0.7rem;color:var(--text-secondary);margin:4px 0;">${escapeHtml(a.description)}</div>
-                <div style="font-size:0.65rem;">${riskBadge(a.severity)} SSID: ${escapeHtml(a.ssid)}</div>
-            </div>`;
+        html += '<p style="font-size:0.7rem;color:var(--text-secondary);">Wifite found ' + targets.length + ' network(s) with active clients:</p>';
+        targets.forEach(t => {
+            const enc = (t.encryption || '').toLowerCase();
+            const hasWPS = t.wps === 'yes';
+            const clients = parseInt(t.clients) || 0;
+            const vulns = [];
+            if (enc.includes('wep')) vulns.push('WEP (minutes to crack)');
+            if (enc.includes('wpa') && !enc.includes('wpa3')) vulns.push('WPA handshake capture possible');
+            if (hasWPS) vulns.push('WPS enabled (Pixie-Dust attackable)');
+            if (clients > 0) vulns.push(clients + ' connected client(s)');
+            html += '<div style="background:var(--bg-dark);border-radius:8px;padding:10px;border-left:3px solid var(--accent-warning);">' +
+                '<div style="font-weight:600;font-size:0.8rem;">' + escapeHtml(t.essid) +
+                ' <span style="font-size:0.65rem;color:var(--text-secondary);">Ch ' + t.channel + ' ' + t.power + '</span></div>' +
+                '<div style="font-size:0.65rem;color:var(--text-secondary);margin:4px 0;">' + enc.toUpperCase() + '</div>' +
+                '<div style="font-size:0.65rem;">' + vulns.map(v => '• ' + v).join('<br>') + '</div></div>';
         });
         html += '</div>';
         results.innerHTML = html;
-        log('Audit: ' + data.anomalies.length + ' anomalies found');
+        log('Audit: ' + targets.length + ' target(s) found by wifite');
     } catch (error) {
-        results.innerHTML = '<p class="placeholder" style="color:#e94560;">Audit failed</p>';
+        results.innerHTML = '<p class="placeholder" style="color:#e94560;">wifite audit failed. Ensure wlan1 is available.</p>';
         log('Audit error: ' + error.message);
     }
 }
