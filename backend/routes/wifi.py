@@ -105,6 +105,30 @@ def wifi_handshake():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
+# ------------------------------------------------------------------ wifite audit
+
+@bp.route('/api/wifi/audit/wifite-scan', methods=['POST'])
+def wifi_wifite_scan():
+    """Wifite scan only (no attacks). Returns targets with clients."""
+    data = request.json or {}
+    scan_time = data.get('scan_time', 10)
+    wifi = _wifi_module()
+    targets = wifi.run_wifite_scan_only(scan_time=scan_time)
+    return api_success({'targets': targets})
+
+
+@bp.route('/api/wifi/audit/wifite-attack', methods=['POST'])
+def wifi_wifite_attack():
+    """Wifite attack: scan briefly then attack targets on specified channel."""
+    data = request.json or {}
+    scan_time = data.get('scan_time', 10)
+    attack_time = data.get('attack_time', 120)
+    channel = data.get('channel')
+    wifi = _wifi_module()
+    results = wifi.run_wifite_audit(scan_time=scan_time, attack_time=attack_time)
+    return api_success(results)
+
+
 # ------------------------------------------------------------------ attack viability check
 
 @bp.route('/api/wifi/attack/check', methods=['POST'])

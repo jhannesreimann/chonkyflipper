@@ -123,82 +123,61 @@ let _attackableNetworks = [];
 
 async function wifiShowAttackable() {
     const list = document.getElementById('wifi-attack-list');
-    list.innerHTML = '<p class="placeholder">Scanning for targets...</p>';
+    // Use wifite (Kali's wireless auditor) to find attackable targets with clients
+    list.innerHTML = '<p class="placeholder">Running wifite scan (10s) - finding targets with clients...</p>';
     try {
-        const data = await apiGet('/wifi/scan');
-        if (!data.success || !data.networks) {
-            list.innerHTML = '<p class="placeholder">Scan failed.</p>';
+        const data = await apiPost('/wifi/audit/wifite-scan', { scan_time: 10 });
+        const targets = data.targets || [];
+        if (targets.length === 0) {
+            list.innerHTML = '<p class="placeholder">No targets with connected clients found.</p>';
             return;
         }
-        _attackableNetworks = data.networks.filter(n => n.risk === 'critical' || n.risk === 'high' || n.security.includes('WPS'));
-        if (_attackableNetworks.length === 0) {
-            list.innerHTML = '<p class="placeholder">No vulnerable networks found.</p>';
-            return;
-        }
-        // Show loading placeholder while checking viability
-        list.innerHTML = '<p class="placeholder">Checking attack viability per network...</p>';
+        let rows = targets.map(t => {
+            const enc = (t.encryption || '').toLowerCase();
+            const hasWPS = t.wps === 'yes';
+            const ch = parseInt(t.channel) || 0;
+            return '<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                '<div><span style="font-weight:600;font-size:0.8rem;">' + escapeHtml(t.essid) + '</span>' +
+                '<span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ' + t.channel + ' ' + t.power + 'dB ' + t.clients + ' clients ' + enc.toUpperCase() + (hasWPS?' +WPS':'') + '</span></div>' +
+                '<div style="display:flex;gap:4px;">' +
+                '<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;" onclick="wifiteAttackTarget(\'' + t.essid + '\',' + ch + ')" title="Run wifite against this target (WPA handshake + WPS)">Attack</button>' +
+                '</div></div></div>';
+        }).join('');
+        rows += '<div style="margin-top:12px;display:flex;gap:8px;">' +
+            '<button class="btn btn-secondary btn-sm" onclick="wifiShowAttackable()">Rescan</button>' +
+            '</div>';
+        rows += '<p style="margin-top:4px;font-size:0.65rem;color:var(--text-secondary);">' +
+            'Pick a target and click Deauth/WPA/WPS below to attack just that network.</p>';
+        list.innerHTML = rows;
+    } catch (e) {
+        list.innerHTML = '<p class="placeholder" style="color:#e94560;">wifite scan failed.</p>';
+    }
+}
 
-        // Check viability for each network and render as results come in
-        Promise.all(_attackableNetworks.map(async (net, idx) => {
-            try {
-                const check = await apiPost('/wifi/attack/check', {
-                    bssid: net.bssid, channel: net.channel,
-                    security: net.security, flags: net.flags
-                });
-                return { net, check, idx };
-            } catch (e) {
-                return { net, check: null, idx };
-            }
-        })).then(results => {
-            let rows = '';
-            results.forEach(({ net, check }) => {
-                const buttons = [];
-                if (check) {
-                    const attacks = check;
-                    // WEP
-                    if (attacks.wep && attacks.wep.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                            onclick="wifiAttackWEP('${net.bssid}',${net.channel})"
-                            title="${escapeHtmlAttr(attacks.wep.reason)}">WEP</button>`);
-                    }
-                    // WPA
-                    if (attacks.wpa && attacks.wpa.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                            onclick="wifiAttackWPA('${net.bssid}',${net.channel})"
-                            title="${escapeHtmlAttr(attacks.wpa.reason)}">WPA</button>`);
-                    } else if (attacks.wpa && !attacks.wpa.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
-                            disabled title="${escapeHtmlAttr(attacks.wpa.reason)}">WPA</button>`);
-                    }
-                    // WPS
-                    if (attacks.wps && attacks.wps.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                            onclick="wifiAttackWPS('${net.bssid}',${net.channel})"
-                            title="${escapeHtmlAttr(attacks.wps.reason)}">WPS</button>`);
-                    } else if (attacks.wps && !attacks.wps.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
-                            disabled title="${escapeHtmlAttr(attacks.wps.reason)}">WPS</button>`);
-                    }
-                    // Deauth
-                    if (attacks.deauth && attacks.deauth.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                            onclick="wifiDeauth('${net.bssid}',${net.channel})"
-                            title="${escapeHtmlAttr(attacks.deauth.reason)}">Deauth</button>`);
-                    } else if (attacks.deauth && !attacks.deauth.viable) {
-                        buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;opacity:0.4;"
-                            disabled title="${escapeHtmlAttr(attacks.deauth.reason)}">Deauth</button>`);
-                    }
-                }
-                rows += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div><span style="font-weight:600;font-size:0.8rem;">${escapeHtml(net.ssid)}</span>
-                        <span style="font-size:0.65rem;color:var(--text-secondary);margin-left:6px;">Ch ${net.channel} ${net.signal_dbm}dBm ${riskBadge(net.risk)}</span></div>
-                        <div style="display:flex;gap:4px;">${buttons.join('')||'<span style="font-size:0.6rem;color:var(--text-secondary);">no viable attacks</span>'}</div>
-                    </div></div>`;
-            });
-            list.innerHTML = rows || '<p class="placeholder">No attackable networks found.</p>';
+async function wifiteAttackTarget(bssid, channel) {
+    const result = document.getElementById('wifi-attack-result');
+    result.style.display = 'block';
+    result.innerHTML = '<pre>Wifite attacking ' + bssid + ' ch ' + channel + ' (2 min)...</pre>';
+    log('Wifite attack: ' + bssid);
+    try {
+        // wifite attacks all targets on the given channel, but with --first 1
+        // and a specific channel, it effectively targets just that network
+        const data = await apiPost('/wifi/audit/wifite-attack', {
+            scan_time: 1, attack_time: 120, channel: channel
         });
-    } catch (e) { list.innerHTML = '<p class="placeholder">Scan error.</p>'; }
+        if (data.cracked && data.cracked.length > 0) {
+            let keys = data.cracked.map(c => (c.essid||c.bssid) + ': ' + (c.key||c.psk||c.pin||'found')).join('\n');
+            result.innerHTML = '<pre class="success">CRACKED:\n' + keys + '</pre>';
+            log('Wifite cracked: ' + keys);
+        } else if (data.targets && data.targets.length > 0) {
+            result.innerHTML = '<pre>Attack completed. No keys cracked in this run.\nTry running the full audit or check captured handshakes.</pre>';
+        } else {
+            result.innerHTML = '<pre>No target found on channel ' + channel + '.</pre>';
+        }
+    } catch (e) {
+        result.innerHTML = '<pre class="error">' + escapeHtml(e.message) + '</pre>';
+    }
 }
 
 async function wifiAttackWEP(bssid, channel) {

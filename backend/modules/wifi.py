@@ -413,6 +413,95 @@ class WiFiModule:
                 'bssid': bssid, 'channel': channel}
 
     # ------------------------------------------------------------------
+    # Wifite-based auditing (Kali's wireless auditor - scan + attack)
+    # ------------------------------------------------------------------
+
+    def run_wifite_audit(self, scan_time=10, attack_time=300):
+        """Run wifite full audit: scan then automatically attack all targets.
+        Returns structured results: targets found, attacks attempted, keys cracked."""
+        output, _, _ = self._run(
+            f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
+            f'--clients-only -p {scan_time} --daemon" /dev/null',
+            timeout=scan_time + attack_time + 30,
+        )
+
+        targets = self._parse_wifite_output(output)
+        cracked = self._read_wifite_cracked()
+
+        # Parse attack results from output
+        results = {
+            'targets': targets,
+            'cracked': cracked,
+            'summary': self._parse_wifite_summary(output),
+        }
+        return results
+
+    def run_wifite_scan_only(self, scan_time=10):
+        """Run wifite scan without attacking. Returns target list."""
+        output, _, _ = self._run(
+            f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
+            f'--skip-crack --clients-only -p {scan_time} --daemon" /dev/null',
+            timeout=scan_time + 30,
+        )
+        return self._parse_wifite_output(output)
+
+    @staticmethod
+    def _read_wifite_cracked():
+        """Read wifite's cracked.json file if it exists."""
+        for path in ['/root/cracked.json', os.path.expanduser('~/.wifite/cracked.json')]:
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, IOError):
+                    pass
+        return []
+
+    @staticmethod
+    def _parse_wifite_summary(output):
+        """Extract attack result summary from wifite output."""
+        lines = output.split('\n')
+        summary = {'attacked': 0, 'cracked': 0, 'handshakes': 0}
+        for line in lines:
+            if 'cracked' in line.lower() or 'KEY' in line:
+                summary['cracked'] += 1
+            if 'handshake' in line.lower():
+                summary['handshakes'] += 1
+        return summary
+
+    @staticmethod
+    def _parse_wifite_output(output):
+        """Parse wifite terminal output into structured target list."""
+        targets = []
+        in_table = False
+        for line in output.split('\n'):
+            if 'NUM' in line and 'ESSID' in line:
+                in_table = True
+                continue
+            if in_table and line.strip() and len(line) > 5 and line[0].isdigit():
+                parts = line.split()
+                if len(parts) >= 7:
+                    try:
+                        num = int(parts[0])
+                    except ValueError:
+                        continue
+                    essid_idx = 1
+                    essid = parts[essid_idx]
+                    if essid.endswith('*'):
+                        essid = essid[:-1]
+                    if len(parts) >= essid_idx + 5:
+                        targets.append({
+                            'num': num,
+                            'essid': essid,
+                            'channel': parts[essid_idx + 1],
+                            'encryption': parts[essid_idx + 2],
+                            'power': parts[essid_idx + 3],
+                            'wps': parts[essid_idx + 4],
+                            'clients': parts[essid_idx + 5] if len(parts) > essid_idx + 5 else '0',
+                        })
+        return targets
+
+    # ------------------------------------------------------------------
     # Attack viability checker (dynamic, no hardcoded assumptions)
     # ------------------------------------------------------------------
 
