@@ -212,10 +212,18 @@ async function wifiAttackWPS(bssid, channel) {
 
 async function wifiDeauth(bssid) {
     log('Deauth attack: ' + bssid);
+    const result = document.getElementById('wifi-attack-result');
+    result.style.display = 'block';
+    result.innerHTML = '<pre>Sending deauth frames...</pre>';
     try {
         const data = await apiPost('/wifi/deauth', { bssid, count: 10 });
-        log(data.success ? `Deauth sent to ${bssid}` : 'Deauth failed: ' + (data.error||'Unknown'));
-    } catch (e) { log('Deauth error: ' + e.message); }
+        if (data.success) {
+            result.innerHTML = '<pre class="success">Deauth sent: ' + data.frames_sent + ' frames\n' + (data.output||'') + '</pre>';
+            log('Deauth sent to ' + bssid);
+        } else {
+            result.innerHTML = '<pre class="error">' + escapeHtml(data.error||'Deauth failed') + '</pre>';
+        }
+    } catch (e) { result.innerHTML = '<pre class="error">' + escapeHtml(e.message) + '</pre>'; }
 }
 
 // --- Capture tab ---
