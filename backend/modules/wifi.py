@@ -422,8 +422,7 @@ class WiFiModule:
         tmpfile = f'/tmp/wifite_audit_{os.getpid()}.txt'
         cmd = (
             f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--clients-only -p {scan_time} --daemon" /dev/null '
-            f'> {tmpfile} 2>&1'
+            f'--clients-only -p {scan_time} --daemon" {tmpfile}'
         )
         proc = subprocess.Popen(
             cmd, shell=True, start_new_session=True,
@@ -438,9 +437,9 @@ class WiFiModule:
         try:
             with open(tmpfile, 'r', errors='replace') as f:
                 output = f.read()
-            os.remove(tmpfile)
         except (IOError, OSError):
             output = ''
+        subprocess.run(['sudo', '-n', 'rm', '-f', tmpfile], capture_output=True)
 
         targets = self._parse_wifite_output(output)
         cracked = self._read_wifite_cracked()
@@ -455,10 +454,11 @@ class WiFiModule:
         """Run wifite scan without attacking. Returns target list.
         Uses detached process to survive gunicorn worker death from airmon-ng."""
         tmpfile = f'/tmp/wifite_scan_{os.getpid()}.txt'
+        # script writes the pseudo-terminal output to the typescript file.
+        # Pass the tmpfile as the typescript target (not /dev/null).
         cmd = (
             f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--skip-crack --clients-only -p {scan_time} --daemon" /dev/null '
-            f'> {tmpfile} 2>&1'
+            f'--skip-crack --clients-only -p {scan_time} --daemon" {tmpfile}'
         )
         proc = subprocess.Popen(
             cmd, shell=True, start_new_session=True,
@@ -470,13 +470,13 @@ class WiFiModule:
             proc.kill()
             proc.wait()
 
-        # Read the output file
+        # Read the output file (created by root via sudo)
         try:
             with open(tmpfile, 'r', errors='replace') as f:
                 output = f.read()
-            os.remove(tmpfile)
         except (IOError, OSError):
             output = ''
+        subprocess.run(['sudo', '-n', 'rm', '-f', tmpfile], capture_output=True)
         return self._parse_wifite_output(output)
 
     @staticmethod
