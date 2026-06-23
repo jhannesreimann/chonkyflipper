@@ -307,7 +307,7 @@ class WiFiModule:
         cmd = (
             f'timeout {duration} tshark -i {self.monitor_interface} '
             f'-Y "wlan.fc.type_subtype == 4" '
-            f'-T fields -e wlan.sa -e wlan_mgt.ssid -E separator=,'
+            f'-T fields -e wlan.sa -e wlan.ssid -E separator=,'
         )
 
         stdout, stderr, rc = self._run(cmd, timeout=duration + 10)
