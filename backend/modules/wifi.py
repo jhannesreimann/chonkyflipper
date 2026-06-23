@@ -487,21 +487,21 @@ class WiFiModule:
 
         if pmf_likely:
             results['deauth'] = {'viable': False,
-                                 'reason': 'PMF (802.11w) likely enabled. Deauth frames will be ignored.'}
+                                 'reason': 'PMF (802.11w) blocks deauth frames.'}
         else:
             results['deauth'] = {'viable': True,
-                                 'reason': 'No PMF detected. Deauth should disconnect clients.' if not is_open else 'OPEN network. Deauth effective against connected clients.'}
+                                 'reason': 'Deauth frames sendable. Modern clients reconnect within ms; IoT devices disconnect visibly.'}
 
         # --- WPA handshake crack ---
         if not has_wpa:
             results['wpa'] = {'viable': False,
-                              'reason': 'Not a WPA/WPA2 network. Handshake capture not applicable.'}
+                              'reason': 'Not a WPA/WPA2 network.'}
         elif pmf_likely:
             results['wpa'] = {'viable': False,
-                              'reason': 'PMF (802.11w) blocks deauth-based handshake capture.'}
+                              'reason': 'PMF (802.11w) blocks handshake capture.'}
         else:
             results['wpa'] = {'viable': True,
-                              'reason': 'Handshake capture possible. Key found only if in rockyou.txt.'}
+                              'reason': 'Handshake capture possible via deauth. Cracked only if password is in wordlist.'}
 
         # --- WPS PIN attack ---
         if has_wps:
