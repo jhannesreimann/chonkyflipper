@@ -138,14 +138,31 @@ async function wifiShowAttackable() {
         let html = '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">';
         _attackableNetworks.forEach(n => {
             const buttons = [];
-            if (n.security.includes('WEP')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiAttackWEP('${n.bssid}',${n.channel})">WEP</button>`);
-            if (n.security.includes('WPA') && !n.security.includes('WPA3')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiAttackWPA('${n.bssid}',${n.channel})">WPA</button>`);
-            if (n.security.includes('WPS')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiAttackWPS('${n.bssid}',${n.channel})">WPS</button>`);
+            // WEP: only if network actually uses WEP
+            if (n.security.includes('WEP')) {
+                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                    onclick="wifiAttackWEP('${n.bssid}',${n.channel})">WEP</button>`);
+            }
+            // WPA crack: WPA/WPA2 with TKIP or weak config (not WPA3)
+            if (n.security.includes('WPA') && !n.security.includes('WPA3')) {
+                const hasTKIP = n.security.includes('TKIP');
+                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                    onclick="wifiAttackWPA('${n.bssid}',${n.channel})"
+                    title="Captures WPA handshake + cracks with rockyou.txt. ${hasTKIP ? 'TKIP is weak; likely crackable.' : 'CCMP requires weak password.'}"
+                    >WPA</button>`);
+            }
+            // WPS: available but rate-limited on most routers
+            if (n.security.includes('WPS')) {
+                buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
+                    onclick="wifiAttackWPS('${n.bssid}',${n.channel})"
+                    title="WPS PIN brute force (reaver). Most routers rate-limit after 3 attempts; may take hours."
+                    >WPS</button>`);
+            }
+            // Deauth: always available, works on non-PMF networks
             buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiDeauth('${n.bssid}',${n.channel})">Deauth</button>`);
+                onclick="wifiDeauth('${n.bssid}',${n.channel})"
+                title="Sends deauth frames to disconnect clients. Blocked on networks with 802.11w (PMF). IoT devices without PMF are best targets."
+                >Deauth</button>`);
             html += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
