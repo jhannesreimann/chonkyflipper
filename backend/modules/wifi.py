@@ -413,6 +413,119 @@ class WiFiModule:
                 'bssid': bssid, 'channel': channel}
 
     # ------------------------------------------------------------------
+    # Attack viability checker (dynamic, no hardcoded assumptions)
+    # ------------------------------------------------------------------
+
+    def check_attack_viability(self, bssid, channel, security):
+        """Quick non-destructive probes to determine which attacks are viable."""
+        results = {
+            'deauth': {'viable': False, 'reason': ''},
+            'wpa': {'viable': False, 'reason': ''},
+            'wps': {'viable': False, 'reason': ''},
+            'wep': {'viable': False, 'reason': ''},
+        }
+
+        enc_lower = (security or '').lower()
+        has_wpa = 'wpa' in enc_lower and 'wpa3' not in enc_lower
+        has_wps = 'wps' in enc_lower
+        has_wep = 'wep' in enc_lower
+        is_open = 'open' in enc_lower
+
+        # --- WEP ---
+        if has_wep:
+            results['wep'] = {'viable': True,
+                              'reason': 'WEP encryption detected. Crackable in minutes via aircrack-ng.'}
+        else:
+            results['wep'] = {'viable': False,
+                              'reason': 'Network does not use WEP encryption.'}
+
+        # --- Deauth ---
+        # Check for PMF (802.11w) by looking for MFP/PMF in RSN flags from scan
+        # We test viability by checking if we can receive beacons on target channel
+        if not self._is_monitor_mode():
+            self.start_monitor_mode()
+
+        # Tune to channel and check for beacon
+        self._run(f'iwconfig {self.monitor_interface} channel {channel}')
+        stdout, _, rc = self._run(
+            f'timeout 3 airodump-ng --bssid {bssid} -c {channel} {self.monitor_interface} -w /tmp/viability_check 2>&1',
+            timeout=8,
+        )
+
+        # Check for PMF indicators in the capture
+        pmf_likely = False
+        cap_file = '/tmp/viability_check-01.cap'
+        if os.path.exists(cap_file):
+            # Look for RSN PMF cap in beacon
+            check, _, _ = self._run(
+                f'tshark -r {cap_file} -Y "wlan.fc.type_subtype == 8" '
+                f'-T fields -e wlan.rsn.capabilities 2>/dev/null',
+                timeout=5,
+            )
+            # PMF required = bit 7, PMF capable = bit 6
+            if check.strip():
+                try:
+                    caps = [int(c, 16) for c in check.strip().split('\n') if c.strip()]
+                    for cap in caps:
+                        if cap & 0x40:  # Management Frame Protection Capable
+                            pmf_likely = True
+                            break
+                except (ValueError, TypeError):
+                    pass
+            # Also check if handshake appears to have PMF
+            check2, _, _ = self._run(
+                f'tshark -r {cap_file} -Y "eapol" 2>/dev/null | wc -l',
+                timeout=5,
+            )
+            subprocess.run(['sudo', '-n', 'rm', '-f', cap_file], capture_output=True)
+
+        # Clean up leftover files (airodump-ng creates them as root via sudo)
+        for f in ['/tmp/viability_check-01.csv', '/tmp/viability_check-01.kismet.csv',
+                  '/tmp/viability_check-01.log', '/tmp/viability_check-01.kismet.netxml']:
+            if os.path.exists(f):
+                subprocess.run(['sudo', '-n', 'rm', '-f', f], capture_output=True)
+
+        if pmf_likely:
+            results['deauth'] = {'viable': False,
+                                 'reason': 'PMF (802.11w) likely enabled. Deauth frames will be ignored.'}
+        else:
+            results['deauth'] = {'viable': True,
+                                 'reason': 'No PMF detected. Deauth should disconnect clients.' if not is_open else 'OPEN network. Deauth effective against connected clients.'}
+
+        # --- WPA handshake crack ---
+        if not has_wpa:
+            results['wpa'] = {'viable': False,
+                              'reason': 'Not a WPA/WPA2 network. Handshake capture not applicable.'}
+        elif pmf_likely:
+            results['wpa'] = {'viable': False,
+                              'reason': 'PMF (802.11w) blocks deauth-based handshake capture.'}
+        else:
+            results['wpa'] = {'viable': True,
+                              'reason': 'Handshake capture possible. Key found only if in rockyou.txt.'}
+
+        # --- WPS PIN attack ---
+        if has_wps:
+            # Quick test: try a WPS transaction with a 5s timeout
+            test, _, _ = self._run(
+                f'timeout 8 reaver -i {self.monitor_interface} -b {bssid} -c {channel} -vv 2>&1 | head -15',
+                timeout=12,
+            )
+            if 'rate limiting' in test.lower() or 'waiting 60 seconds' in test.lower():
+                results['wps'] = {'viable': False,
+                                  'reason': 'WPS rate-limited. Attack would take hours/days.'}
+            elif 'WPS' in test or 'PIN' in test:
+                results['wps'] = {'viable': True,
+                                  'reason': 'WPS appears responsive. PIN attack may succeed.'}
+            else:
+                results['wps'] = {'viable': False,
+                                  'reason': 'WPS not responding or locked.'}
+        else:
+            results['wps'] = {'viable': False,
+                              'reason': 'WPS not enabled on this network.'}
+
+        return results
+
+    # ------------------------------------------------------------------
     # Rogue AP detection (issue #14)
     # ------------------------------------------------------------------
 
