@@ -23,9 +23,11 @@ class WiFiModule:
         os.makedirs(CAPTURES_DIR, exist_ok=True)
 
     def _run(self, cmd, timeout=30):
+        """Run a shell command with sudo. Returns (stdout, stderr, returncode)."""
         try:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=timeout,
+                f'sudo -n {cmd}', shell=True, capture_output=True, text=True,
+                timeout=timeout,
             )
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired:
