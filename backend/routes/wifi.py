@@ -84,8 +84,9 @@ def wifi_deauth():
         return api_error('bssid required', 400)
     client = data.get('client')
     count = data.get('count', 5)
+    channel = data.get('channel')
     wifi = _wifi_module()
-    result = wifi.deauth_attack(bssid, client=client, count=count)
+    result = wifi.deauth_attack(bssid, client=client, count=count, channel=channel)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 

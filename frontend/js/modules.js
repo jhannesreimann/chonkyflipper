@@ -145,7 +145,7 @@ async function wifiShowAttackable() {
             if (n.security.includes('WPS')) buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
                 onclick="wifiAttackWPS('${n.bssid}',${n.channel})">WPS</button>`);
             buttons.push(`<button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:0.65rem;"
-                onclick="wifiDeauth('${n.bssid}')">Deauth</button>`);
+                onclick="wifiDeauth('${n.bssid}',${n.channel})">Deauth</button>`);
             html += `<div style="background:var(--bg-dark);border-radius:8px;padding:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
@@ -210,13 +210,13 @@ async function wifiAttackWPS(bssid, channel) {
     } catch (e) { result.innerHTML = `<pre class="error">${escapeHtml(e.message)}</pre>`; }
 }
 
-async function wifiDeauth(bssid) {
-    log('Deauth attack: ' + bssid);
+async function wifiDeauth(bssid, channel) {
+    log('Deauth attack: ' + bssid + ' ch ' + channel);
     const result = document.getElementById('wifi-attack-result');
     result.style.display = 'block';
-    result.innerHTML = '<pre>Sending deauth frames...</pre>';
+    result.innerHTML = '<pre>Sending deauth frames on channel ' + channel + '...</pre>';
     try {
-        const data = await apiPost('/wifi/deauth', { bssid, count: 10 });
+        const data = await apiPost('/wifi/deauth', { bssid, count: 10, channel: channel });
         if (data.success) {
             result.innerHTML = '<pre class="success">Deauth sent: ' + data.frames_sent + ' frames\n' + (data.output||'') + '</pre>';
             log('Deauth sent to ' + bssid);

