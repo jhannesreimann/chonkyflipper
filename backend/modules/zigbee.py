@@ -135,6 +135,59 @@ class ZigbeeModule:
             'devices': devices if isinstance(devices, list) else [],
         }
 
+    def get_device_dashboard(self):
+        """
+        Combined dashboard view: merges the device registry (bridge/devices)
+        with each device's live retained state (battery, linkquality/LQI,
+        on/off state, availability) cached from its zigbee2mqtt/<name> topic.
+        """
+        if not self._ensure_connected():
+            return {'success': False, 'error': 'MQTT broker not available'}
+        time.sleep(0.5)
+        with self._lock:
+            registry = self._cache.get(f'{self.BASE_TOPIC}/bridge/devices', [])
+            cache_snapshot = dict(self._cache)
+
+        if not isinstance(registry, list):
+            registry = []
+
+        devices = []
+        for dev in registry:
+            friendly = dev.get('friendly_name')
+            if not friendly:
+                continue
+            state = cache_snapshot.get(f'{self.BASE_TOPIC}/{friendly}')
+            if not isinstance(state, dict):
+                state = {}
+            definition = dev.get('definition') or {}
+            devices.append({
+                'friendly_name': friendly,
+                'ieee_address': dev.get('ieee_address'),
+                'type': dev.get('type'),
+                'model': definition.get('model'),
+                'vendor': definition.get('vendor'),
+                'description': definition.get('description'),
+                'power_source': dev.get('power_source'),
+                'battery': state.get('battery'),
+                'linkquality': state.get('linkquality'),
+                'state': state.get('state'),
+                'last_seen': state.get('last_seen'),
+                'available': self._parse_availability(
+                    cache_snapshot.get(f'{self.BASE_TOPIC}/{friendly}/availability')
+                ),
+            })
+
+        return {'success': True, 'devices': devices}
+
+    @staticmethod
+    def _parse_availability(payload):
+        """Z2M availability is either a plain 'online'/'offline' string or {'state': 'online'}."""
+        if payload is None:
+            return None
+        if isinstance(payload, dict):
+            return payload.get('state') == 'online'
+        return str(payload).strip().lower() == 'online'
+
     def get_network_map(self):
         result, error = self._publish_and_wait(
             f'{self.BASE_TOPIC}/bridge/request/networkmap',

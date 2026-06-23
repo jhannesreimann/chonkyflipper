@@ -56,6 +56,13 @@ def zigbee_device_set(device_name):
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
+@bp.route('/api/zigbee/dashboard', methods=['GET'])
+def zigbee_dashboard():
+    zigbee = _zigbee_module()
+    result = zigbee.get_device_dashboard()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+
+
 @bp.route('/api/zigbee/networkmap', methods=['GET'])
 def zigbee_networkmap():
     zigbee = _zigbee_module()
