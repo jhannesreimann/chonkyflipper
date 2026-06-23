@@ -421,7 +421,7 @@ class WiFiModule:
         Uses detached process to survive gunicorn worker death from airmon-ng."""
         tmpfile = f'/tmp/wifite_audit_{os.getpid()}.txt'
         cmd = (
-            f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
+            f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
             f'--clients-only -p {scan_time} --daemon" /dev/null '
             f'> {tmpfile} 2>&1'
         )
@@ -456,7 +456,7 @@ class WiFiModule:
         Uses detached process to survive gunicorn worker death from airmon-ng."""
         tmpfile = f'/tmp/wifite_scan_{os.getpid()}.txt'
         cmd = (
-            f'script -q -c "wifite -i {self.interface} --wpa --wps --wep '
+            f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
             f'--skip-crack --clients-only -p {scan_time} --daemon" /dev/null '
             f'> {tmpfile} 2>&1'
         )
