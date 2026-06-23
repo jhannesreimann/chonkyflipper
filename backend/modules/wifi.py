@@ -205,11 +205,11 @@ class WiFiModule:
         )
 
         # Verify
-        stdout, _, rc = subprocess.run(
+        result = subprocess.run(
             ['iwconfig', self.interface],
             capture_output=True, text=True, timeout=10,
         )
-        success = rc == 0 and 'Mode:Monitor' in stdout
+        success = result.returncode == 0 and 'Mode:Monitor' in result.stdout
         self.monitor_interface = self.interface  # Use wlan1 directly
 
         return {'success': success,
@@ -238,11 +238,11 @@ class WiFiModule:
         return {'success': True, 'interface': self.interface}
 
     def _is_monitor_mode(self):
-        stdout, _, rc = subprocess.run(
+        result = subprocess.run(
             ['iwconfig', self.interface],
             capture_output=True, text=True, timeout=10,
         )
-        return rc == 0 and 'Mode:Monitor' in stdout
+        return result.returncode == 0 and 'Mode:Monitor' in result.stdout
 
     # --- Filter presets for capture ---
 
