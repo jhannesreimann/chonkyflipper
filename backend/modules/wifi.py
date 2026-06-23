@@ -265,9 +265,9 @@ class WiFiModule:
 
         interface = self.monitor_interface if self._is_monitor_mode() else self.interface
 
-        cmd = f'timeout {duration} tcpdump -i {interface} -w {filepath}'
+        cmd = f'sudo -n timeout {duration} tcpdump -i {interface} -w {filepath}'
         if channel:
-            cmd = f'iwconfig {interface} channel {channel} && ' + cmd
+            cmd = f'sudo -n iwconfig {interface} channel {channel} && ' + cmd
 
         # Apply filter
         filter_str = self._FILTER_PRESETS.get(packet_filter, packet_filter)
