@@ -265,7 +265,11 @@ class WiFiModule:
         filename = f'capture_{timestamp}.pcap'
         filepath = os.path.join(CAPTURES_DIR, filename)
 
-        interface = self.monitor_interface if self._is_monitor_mode() else self.interface
+        if not self._is_monitor_mode():
+            result = self.start_monitor_mode()
+            if not result['success']:
+                return {'success': False, 'error': 'Failed to enter monitor mode'}
+        interface = self.monitor_interface
 
         cmd = f'sudo -n timeout {duration} tcpdump -i {interface} -w {filepath}'
         if channel:
@@ -338,7 +342,9 @@ class WiFiModule:
     def deauth_attack(self, bssid, client=None, count=5):
         """Send deauthentication frames via aireplay-ng."""
         if not self._is_monitor_mode():
-            return {'success': False, 'error': 'Monitor mode required'}
+            result = self.start_monitor_mode()
+            if not result['success']:
+                return {'success': False, 'error': 'Failed to enter monitor mode'}
         if client:
             cmd = f'aireplay-ng -0 {count} -a {bssid} -c {client} {self.monitor_interface}'
         else:
