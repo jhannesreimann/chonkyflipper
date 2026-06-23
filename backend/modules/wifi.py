@@ -477,13 +477,13 @@ class WiFiModule:
                 f'tshark -r {cap_file} -Y "eapol" 2>/dev/null | wc -l',
                 timeout=5,
             )
-            os.remove(cap_file)
+            subprocess.run(['sudo', '-n', 'rm', '-f', cap_file], capture_output=True)
 
-        # Clean up leftover files
+        # Clean up leftover files (airodump-ng creates them as root via sudo)
         for f in ['/tmp/viability_check-01.csv', '/tmp/viability_check-01.kismet.csv',
                   '/tmp/viability_check-01.log', '/tmp/viability_check-01.kismet.netxml']:
             if os.path.exists(f):
-                os.remove(f)
+                subprocess.run(['sudo', '-n', 'rm', '-f', f], capture_output=True)
 
         if pmf_likely:
             results['deauth'] = {'viable': False,
