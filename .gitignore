@@ -49,6 +49,9 @@ signals/*/*.json
 .DS_Store
 Thumbs.db
 
+# Playwright (local browser tests)
+.playwright-mcp/
+
 # Config files with secrets
 config/secrets.json
 *.key

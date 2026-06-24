@@ -25,7 +25,8 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 - Both addresses serve the same nginx instance (listens on 0.0.0.0:80, all interfaces)
 
 ## Development Notes
-- There is **no test suite, no linter, no build step**. The Flask app runs directly: `python3 backend/app.py` on the Pi.
+- The Flask backend has **no test suite, no linter** and runs directly: `python3 backend/app.py` on the Pi.
+- The frontend IS built: `cd frontend && npm run build` produces static files in `frontend/dist/`.  The dev server (`npm run dev`) proxies `/api` to the Pi so you can work on the UI locally against live hardware.
 - All module code runs only on the Pi -- it imports hardware-specific libraries (RPi.GPIO, spidev, board, adafruit_pn532). You can edit files locally, but testing requires deploying to the Pi.
 - The `requirements.txt` lists Pi-only packages. No venv is needed locally unless you want syntax checking.
 - The venv at `/opt/chonkyflipper/venv` MUST be owned by `chonky:chonky` so the service user can pip install during updates. If root-owned, `pip install` will fail with permission errors.
@@ -49,7 +50,7 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 ```
 Phone browser ---WiFi---> wlan0 AP (Chonky_Control, 192.168.4.1)
                            |
-                       nginx :80  --> static frontend (index.html, style.css, js/*.js)
+                       nginx :80  --> static frontend (dist/ built by Vite)
                            |
                        /api/* proxy --> gunicorn :5000 (Flask app.py, user: chonky)
 
@@ -111,15 +112,20 @@ The IR functionality spans four files:
 ### WiFi Scanning
 WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and deauth. The old `WiFiModule.scan()` (iwlist-based, 60 lines) was dead code and has been removed.
 
+- **rtl8821au driver gotcha**: Never use `ifconfig` to bring wlan1 down/up; it corrupts the driver state and causes `Invalid HW-addr family 0x0323` when wpa_supplicant tries to init. Use `ip link set down/up` instead. `stop_monitor_mode()` uses `ip link` + `iw set type managed` + `ip link set promisc off` to reliably exit monitor mode. If the interface gets into a broken state (promisc stuck, scans return empty), reload the module: `modprobe -r 8821au && modprobe 8821au`.
+
 ## Frontend Architecture
-- Single-page app: `index.html` + `style.css` + `js/*.js` (5 modules, 828 lines total).
-- **js/api.js**: `apiGet()`/`apiPost()` wrappers; **js/utils.js**: `escapeHtml()`, `escapeHtmlAttr()`, `log()`, `setLoading()`.
-- **js/main.js**: init, `checkStatus()`, `updateSystemInfo()`, `fetchVersion()`, `showModulePanel()`.
-- **js/modules.js**: WiFi, BLE, IR, SubGHz, NFC, BadUSB panel handlers.
-- **js/settings.js**: `updateNetworkStatus()`, `scanWifiNetworks()`, connect/disconnect, poweroff, update.
-- **Polling pattern**: `checkStatus()` every 5s, `updateSystemInfo()` every 10s, `fetchVersion()` every 60s, `updateNetworkStatus()` every 10s.
-- **Module panels**: Each hardware module has a hidden `<div class="module-panel">` in `index.html`. Clicking a `.module-item` in the grid shows the corresponding panel via `showModulePanel()`. Panels scroll at `max-height: 70vh`.
-- `API_BASE` auto-detects: uses `http://localhost:5000` when page is served from localhost, empty string otherwise (nginx proxies `/api/` to backend).
+- **Stack**: Vite, Tailwind CSS v4, DaisyUI v5, Font Awesome; plain ES modules, no framework.
+- **Source**: `frontend/src/`; one JS file per concern (see `frontend/README.md` for the full layout).
+- **`src/main.js`**: app shell -- sidebar nav, hash-based router, header (status dot + task counter), theme toggle.
+- **`src/state.js`**: central polling store -- `/api/status` (5s), `/api/system/info` (10s), `/api/network/status` (10s), `/api/system/version` (60s). Modules subscribe instead of polling independently.
+- **`src/api.js`**: `apiGet()`/`apiPost()`/`apiDelete()` wrappers with AbortController timeouts. Always hits `/api` (relative path; works in dev via Vite proxy and in prod via nginx).
+- **`src/ui.js`**: reusable fragments -- `pageHead()`, `card()`, `sectionTitle()`, `tabBar()`, `empty()`, `errorBox()`, `infoBox()`, `spinner()`, `riskBadge()`.
+- **`src/toast.js`**: transient toasts (`notify()`) + persistent task handles (`startTask()` with `.done()`/`.fail()`/`.update()`). Tracks active task count shown in the header.
+- **`src/style.css`**: Tailwind entry point, `chonky` / `chonky-dark` DaisyUI themes, `.nav-link` / `.surface` / `.console` component classes.
+- **`src/modules/*.js`**: one file per hardware module, each exporting a `renderXxx(root)` function called by the router.
+- **Local dev**: `cd frontend && npm install && CHONKY_API=http://192.168.178.78 npm run dev` → `http://localhost:5173`, `/api` proxied to the Pi.
+- **Production**: `npm run build` → `frontend/dist/`, copied to `/var/www/html/` by `update.sh`. nginx serves the static files and proxies `/api` to gunicorn.
 
 ## Network Interfaces (current state)
 | Interface | Type | IP | Purpose |
@@ -175,7 +181,7 @@ See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
 - **Fixing mixed ownership**: `sudo chown -R kali:kali /home/kali/chonkyflipper/.git`
 - **VERSION file**: Written by update.sh (root), must be chowned to `chonky:chonky` so the API can read it.
 - **Venv ownership**: The venv at `/opt/chonkyflipper/venv` must be `chonky:chonky`. If root-owned, pip install during updates will fail with permission errors.
-- **Deploying manually**: If update.sh skips because git HEAD matches, run the copy steps manually (backend files -> /opt/chonkyflipper/, frontend -> /var/www/html/, payloads, systemctl restart).
+- **Deploying manually**: If update.sh skips because git HEAD matches, run the copy steps manually — backend files → `/opt/chonkyflipper/`, `cd frontend && npm run build && cp -r dist/* /var/www/html/`, payloads, systemctl restart.
 
 ## DNS
 - dnsmasq serves BOTH `chonkyflipper.pi` AND `chonkyflipper.local` pointing to 192.168.4.1

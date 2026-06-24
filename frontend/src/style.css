@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+
+@plugin 'tailwindcss-motion';
+
+@plugin 'daisyui' {
+  logs: false;
+}
+
+/* Light theme pulled from the mascot: orange body, peach halo, ink outlines. */
+@plugin 'daisyui/theme' {
+  name: 'chonky';
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #fbf3ea;
+  --color-base-300: #f1e3d3;
+  --color-base-content: #1c1a17;
+  --color-primary: #f88828;
+  --color-primary-content: #2a1705;
+  --color-secondary: #f4b36a;
+  --color-secondary-content: #2a1705;
+  --color-accent: #e0700f;
+  --color-accent-content: #fff7ee;
+  --color-neutral: #1f1c19;
+  --color-neutral-content: #f6ede1;
+  --color-info: #3a9bd6;
+  --color-info-content: #ffffff;
+  --color-success: #3fae6b;
+  --color-success-content: #04210f;
+  --color-warning: #f0a32a;
+  --color-warning-content: #2a1705;
+  --color-error: #e0533d;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.6rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* Dark theme: warm near-black base so the orange still pops. */
+@plugin 'daisyui/theme' {
+  name: 'chonky-dark';
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #16140f;
+  --color-base-200: #1e1b16;
+  --color-base-300: #29251e;
+  --color-base-content: #f3ece1;
+  --color-primary: #f88828;
+  --color-primary-content: #1a1206;
+  --color-secondary: #f4b36a;
+  --color-secondary-content: #1a1206;
+  --color-accent: #ffa94d;
+  --color-accent-content: #1a1206;
+  --color-neutral: #100e0b;
+  --color-neutral-content: #f2e9dd;
+  --color-info: #4ba8df;
+  --color-info-content: #04121c;
+  --color-success: #46b873;
+  --color-success-content: #04210f;
+  --color-warning: #f0a32a;
+  --color-warning-content: #2a1705;
+  --color-error: #ef6149;
+  --color-error-content: #2a0a05;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.6rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-chonk-orange: #f88828;
+  --color-chonk-deep: #e0700f;
+  --color-chonk-peach: #fbe0c2;
+  --color-chonk-ink: #1b1a18;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    @apply bg-base-200 text-base-content font-sans antialiased;
+    overscroll-behavior-y: none;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content) 25%, transparent) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+    border-radius: 99px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
+           text-base-content/70 transition-colors duration-150
+           hover:bg-base-300 hover:text-base-content cursor-pointer select-none;
+  }
+  .nav-link.active {
+    @apply bg-primary/15 text-primary;
+  }
+  .nav-link .nav-ico {
+    @apply w-5 text-center text-base;
+  }
+
+  .surface {
+    @apply bg-base-100 rounded-2xl border border-base-300/70 shadow-sm;
+  }
+
+  .eyebrow {
+    @apply text-[0.65rem] font-bold uppercase tracking-wider text-base-content/45;
+  }
+
+  .console {
+    @apply font-mono text-xs leading-relaxed bg-base-300/60 rounded-xl p-3
+           whitespace-pre-wrap break-words;
+  }
+
+  .stat-tile {
+    @apply bg-base-100 rounded-2xl border border-base-300/70 shadow-sm p-4 flex flex-col gap-1;
+  }
+}
+
+.wave-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+}

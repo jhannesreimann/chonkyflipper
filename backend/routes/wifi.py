@@ -38,6 +38,14 @@ def wifi_start_monitor():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
+@bp.route('/api/wifi/stop_monitor', methods=['POST'])
+def wifi_stop_monitor():
+    """Return wlan1 to managed mode (e.g. after an attack) so scans work again."""
+    wifi = _wifi_module()
+    result = wifi.stop_monitor_mode()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+
+
 # ------------------------------------------------------------------ packet capture
 
 @bp.route('/api/wifi/capture', methods=['POST'])

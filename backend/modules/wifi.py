@@ -44,6 +44,13 @@ class WiFiModule:
         if not os.path.exists('/sys/class/net/wlan1'):
             return None
 
+        # wpa_cli scanning needs managed mode. A prior monitor session or a
+        # wifite attack leaves wlan1 in monitor mode, which would make every
+        # scan come back empty -- so transparently restore managed mode first.
+        if self._is_monitor_mode():
+            self.stop_monitor_mode()
+            time.sleep(2)
+
         subprocess.run(['sudo', '-n', 'ip', 'link', 'set', 'wlan1', 'up'],
                        capture_output=True)
 
@@ -219,18 +226,29 @@ class WiFiModule:
                 'was_connected': had_connection}
 
     def stop_monitor_mode(self):
-        """Return wlan1 to managed mode and restart WiFi client if needed."""
-        # Realtek rtl8821au needs iwconfig, not iw, for mode switching
+        """Return wlan1 to managed mode and restart WiFi client if needed.
+
+        Uses ip link + iw (not ifconfig) for the rtl8821au driver.  ifconfig
+        corrupts the driver state and causes "Invalid HW-addr family 0x0323"
+        when wpa_supplicant tries to init the interface.
+        """
         subprocess.run(
-            ['sudo', '-n', 'ifconfig', self.interface, 'down'],
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'down'],
             capture_output=True,
         )
         subprocess.run(
-            ['sudo', '-n', 'iwconfig', self.interface, 'mode', 'managed'],
+            ['sudo', '-n', 'iw', 'dev', self.interface, 'set', 'type', 'managed'],
             capture_output=True,
         )
         subprocess.run(
-            ['sudo', '-n', 'ifconfig', self.interface, 'up'],
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'up'],
+            capture_output=True,
+        )
+        # The rtl8821au driver sometimes leaves the PROMISC flag set after
+        # switching out of monitor mode, which silently breaks wpa_cli
+        # scanning.  Explicitly clear it.
+        subprocess.run(
+            ['sudo', '-n', 'ip', 'link', 'set', self.interface, 'promisc', 'off'],
             capture_output=True,
         )
         subprocess.run(
@@ -240,11 +258,23 @@ class WiFiModule:
         return {'success': True, 'interface': self.interface}
 
     def _is_monitor_mode(self):
+        """Return True if wlan1 is in monitor mode or has the PROMISC flag set.
+
+        The rtl8821au driver can get stuck with PROMISC on even after
+        iwconfig reports Mode:Managed -- scanning is broken in that state
+        too, so treat it as monitor-like.
+        """
         result = subprocess.run(
             ['iwconfig', self.interface],
             capture_output=True, text=True, timeout=10,
         )
-        return result.returncode == 0 and 'Mode:Monitor' in result.stdout
+        if result.returncode == 0 and 'Mode:Monitor' in result.stdout:
+            return True
+        result = subprocess.run(
+            ['ip', 'link', 'show', self.interface],
+            capture_output=True, text=True, timeout=5,
+        )
+        return 'PROMISC' in result.stdout
 
     # --- Filter presets for capture ---
 

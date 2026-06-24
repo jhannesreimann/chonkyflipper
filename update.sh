@@ -119,11 +119,26 @@ mkdir -p "$INSTALL_DIR/data"
 chown chonky:chonky "$INSTALL_DIR/data"
 echo "  ✓ data directory"
 
-# -- Update frontend --
-echo "Updating frontend..."
+# -- Build & deploy frontend (Vite + Tailwind v4 + DaisyUI) --
+echo "Building frontend..."
 if [ -d "$REPO_DIR/frontend" ]; then
-    cp -r "$REPO_DIR/frontend/"* "$FRONTEND_DIR/"
-    echo "  ✓ frontend/* → $FRONTEND_DIR"
+    if command -v npm >/dev/null 2>&1; then
+        # Build as the kali user so node_modules stays kali-owned (the repo
+        # lives under /home/kali). npm ci is reproducible; fall back to install.
+        ( cd "$REPO_DIR/frontend" \
+          && (sudo -u kali npm ci --no-audit --no-fund 2>&1 || sudo -u kali npm install --no-audit --no-fund 2>&1) | tail -3 \
+          && sudo -u kali npm run build 2>&1 | tail -5 )
+
+        if [ -d "$REPO_DIR/frontend/dist" ]; then
+            rm -rf "${FRONTEND_DIR:?}/"*
+            cp -r "$REPO_DIR/frontend/dist/"* "$FRONTEND_DIR/"
+            echo "  ✓ frontend/dist → $FRONTEND_DIR"
+        else
+            echo "  ✗ frontend build produced no dist/ -- leaving existing files in place"
+        fi
+    else
+        echo "  ⚠ npm not found -- cannot build the dashboard. Install Node.js (>= 20) to deploy the frontend."
+    fi
 fi
 
 # -- Update Python dependencies --
