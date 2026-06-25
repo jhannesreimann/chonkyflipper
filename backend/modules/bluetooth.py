@@ -10,9 +10,10 @@ import struct
 import subprocess
 
 try:
-    from bleak import BleakScanner
+    from bleak import BleakScanner, BleakClient
 except ImportError:
     BleakScanner = None
+    BleakClient = None
 
 # Eddystone service UUID (16-bit 0xFEAA in full 128-bit form)
 _EDDYSTONE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb'
@@ -127,6 +128,64 @@ class BluetoothModule:
         for b in data[3:]:
             url += _URL_EXPANSIONS[b] if b < len(_URL_EXPANSIONS) else chr(b)
         return url
+
+    # ------------------------------------------------------------------ GATT profiling
+
+    def profile_device(self, mac_address, read_values=True):
+        """Connect to a BLE device and enumerate its GATT services,
+        characteristics, descriptors, and (optionally) readable values."""
+        if BleakClient is None:
+            return {'success': False, 'error': 'bleak is not installed', 'mac': mac_address}
+        try:
+            return asyncio.run(self._profile(mac_address, read_values))
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'mac': mac_address}
+
+    async def _profile(self, mac_address, read_values):
+        services = []
+        async with BleakClient(mac_address, timeout=20.0, adapter=self.interface) as client:
+            for service in client.services:
+                characteristics = []
+                for char in service.characteristics:
+                    value_hex = value_text = None
+                    # Reading is best-effort: many characteristics are write/notify
+                    # only, or need pairing, so guard each read individually.
+                    if read_values and 'read' in char.properties:
+                        try:
+                            raw = await client.read_gatt_char(char.uuid)
+                            value_hex = raw.hex()
+                            value_text = self._printable(raw)
+                        except Exception:
+                            pass
+                    characteristics.append({
+                        'uuid': str(char.uuid),
+                        'name': char.description or '',
+                        'handle': char.handle,
+                        'properties': list(char.properties),
+                        'value_hex': value_hex,
+                        'value_text': value_text,
+                        'descriptors': [
+                            {'uuid': str(d.uuid), 'handle': d.handle}
+                            for d in char.descriptors
+                        ],
+                    })
+                services.append({
+                    'uuid': str(service.uuid),
+                    'name': service.description or '',
+                    'characteristics': characteristics,
+                })
+        return {'success': True, 'mac': mac_address, 'services': services}
+
+    @staticmethod
+    def _printable(raw):
+        """Return a UTF-8 string if the bytes are printable text, else None."""
+        try:
+            text = raw.decode('utf-8').strip('\x00')
+        except Exception:
+            return None
+        if text and all(32 <= ord(c) <= 126 or c in '\r\n\t' for c in text):
+            return text
+        return None
 
     # ------------------------------------------------------------------ pairing (bluetoothctl)
 

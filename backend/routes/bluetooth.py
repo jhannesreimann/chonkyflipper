@@ -2,7 +2,7 @@
 Bluetooth scanning endpoints.
 """
 
-from flask import Blueprint
+from flask import Blueprint, request
 from utils import api_success, api_error
 
 bp = Blueprint('bluetooth', __name__)
@@ -27,3 +27,14 @@ def bluetooth_beacons():
     bt = _bt_module()
     result = bt.scan_beacons()
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
+
+
+@bp.route('/api/bluetooth/gatt', methods=['POST'])
+def bluetooth_gatt():
+    data = request.json or {}
+    mac = data.get('mac')
+    if not mac:
+        return api_error('mac required', 400)
+    bt = _bt_module()
+    result = bt.profile_device(mac)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'GATT profiling failed'), 500)
