@@ -8,6 +8,7 @@ device info via bluetoothctl.
 import asyncio
 import struct
 import subprocess
+from datetime import datetime
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -83,6 +84,65 @@ class BluetoothModule:
                 beacons.append(beacon)
         beacons.sort(key=lambda b: b['rssi'] if b['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'beacons': beacons}
+
+    # ------------------------------------------------------------------ advertisement logging
+
+    def log_advertisements(self, duration=15):
+        """Passively log BLE advertisements over a time window.
+
+        Unlike scan_ble (one deduplicated snapshot), this counts every
+        advertisement seen per device, tracking sighting count and RSSI range,
+        so presence and signal drift over the window are visible.
+        """
+        if BleakScanner is None:
+            return {'success': False, 'error': 'bleak is not installed', 'devices': []}
+        try:
+            devices = asyncio.run(self._capture(duration))
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'devices': []}
+        return {
+            'success': True,
+            'duration': duration,
+            'count': sum(d['count'] for d in devices),
+            'devices': devices,
+        }
+
+    async def _capture(self, duration):
+        summary = {}
+
+        def on_advert(device, adv):
+            mac = device.address.upper()
+            name = adv.local_name or device.name or 'Unknown'
+            rssi = adv.rssi
+            beacon = self._parse_ibeacon(adv) or self._parse_eddystone(adv)
+            btype = beacon['type'] if beacon else None
+            ts = datetime.now().isoformat()
+
+            d = summary.get(mac)
+            if d is None:
+                d = summary[mac] = {
+                    'mac': mac, 'name': name, 'beacon': btype, 'count': 0,
+                    'rssi_last': None, 'rssi_min': None, 'rssi_max': None,
+                    'first_seen': ts, 'last_seen': ts,
+                }
+            d['count'] += 1
+            d['last_seen'] = ts
+            if name != 'Unknown':
+                d['name'] = name
+            if btype and not d['beacon']:
+                d['beacon'] = btype
+            if rssi is not None:
+                d['rssi_last'] = rssi
+                d['rssi_min'] = rssi if d['rssi_min'] is None else min(d['rssi_min'], rssi)
+                d['rssi_max'] = rssi if d['rssi_max'] is None else max(d['rssi_max'], rssi)
+
+        scanner = BleakScanner(detection_callback=on_advert, adapter=self.interface)
+        await scanner.start()
+        try:
+            await asyncio.sleep(duration)
+        finally:
+            await scanner.stop()
+        return sorted(summary.values(), key=lambda d: d['count'], reverse=True)
 
     # ------------------------------------------------------------------ beacon decode
 

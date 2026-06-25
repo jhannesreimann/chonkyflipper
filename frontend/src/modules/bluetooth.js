@@ -12,11 +12,20 @@ export default function renderBluetooth(root) {
         <button id="b-beacons" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-satellite-dish"></i>Beacons</button>
         <button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>
       `)}
+      <div class="flex items-center gap-2 mb-3">
+        <select id="b-cap-dur" class="select select-sm select-bordered w-auto">
+          <option value="15">15s</option>
+          <option value="30" selected>30s</option>
+          <option value="60">60s</option>
+        </select>
+        <button id="b-capture" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-clock-rotate-left"></i>Log adverts</button>
+      </div>
       <div id="b-out">${empty('Scan to discover nearby BLE devices.', 'fa-bluetooth')}</div>
     `)}
   `
   root.querySelector('#b-scan').addEventListener('click', () => scan(root))
   root.querySelector('#b-beacons').addEventListener('click', () => beacons(root))
+  root.querySelector('#b-capture').addEventListener('click', () => captureAdverts(root))
 }
 
 async function scan(root) {
@@ -146,5 +155,59 @@ async function beacons(root) {
   } catch (e) {
     task.fail('Beacon scan failed', e.message)
     out.innerHTML = errorBox(e.message)
+  }
+}
+
+// ------------------------------------------------------------------ advertisement log
+
+async function captureAdverts(root) {
+  const dur = parseInt(root.querySelector('#b-cap-dur').value, 10) || 30
+  const out = root.querySelector('#b-out')
+  out.innerHTML = spinner(`Logging advertisements for ${dur}s...`)
+  const task = startTask('BLE advert log', `${dur}s window`)
+  try {
+    const d = await apiPost('/bluetooth/capture', { duration: dur }, { timeout: (dur + 30) * 1000 })
+    const devices = d.devices || []
+    task.done('Advert log complete', `${d.count} sightings · ${devices.length} device(s)`)
+    if (!devices.length) return (out.innerHTML = empty('No advertisements captured.', 'fa-clock-rotate-left'))
+    out.innerHTML = advertLogView(d)
+  } catch (e) {
+    task.fail('Advert log failed', e.message)
+    out.innerHTML = errorBox(e.message)
+  }
+}
+
+function advertLogView(d) {
+  const rows = (d.devices || [])
+    .map(
+      (dev) => `<tr>
+        <td class="font-medium">${esc(dev.name || 'Unknown')}${dev.beacon ? ` <span class="badge badge-xs badge-ghost">${esc(dev.beacon)}</span>` : ''}</td>
+        <td class="font-mono text-xs">${esc(dev.mac)}</td>
+        <td class="text-xs text-center">${dev.count}</td>
+        <td class="text-xs">${rssiRange(dev)}</td>
+        <td class="text-xs">${esc(timeOnly(dev.last_seen))}</td>
+      </tr>`,
+    )
+    .join('')
+  return `
+    ${sectionTitle('Advertisement log', `<span class="text-[0.65rem] text-base-content/50">${d.count} sightings · ${d.duration}s</span>`)}
+    <div class="overflow-x-auto"><table class="table table-sm">
+      <thead><tr><th>Device</th><th>MAC</th><th>Seen</th><th>RSSI</th><th>Last</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
+}
+
+function rssiRange(dev) {
+  if (dev.rssi_last === null || dev.rssi_last === undefined) return '-'
+  if (dev.rssi_min === dev.rssi_max) return `${dev.rssi_last} dBm`
+  return `${dev.rssi_last} <span class="text-base-content/40">(${dev.rssi_min}..${dev.rssi_max})</span>`
+}
+
+function timeOnly(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleTimeString()
+  } catch (e) {
+    return ''
   }
 }
