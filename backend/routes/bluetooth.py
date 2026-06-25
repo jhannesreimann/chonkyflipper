@@ -3,7 +3,7 @@ Bluetooth scanning endpoints.
 """
 
 from flask import Blueprint
-from utils import api_success
+from utils import api_success, api_error
 
 bp = Blueprint('bluetooth', __name__)
 
@@ -18,12 +18,12 @@ def _bt_module():
 @bp.route('/api/bluetooth/scan', methods=['GET'])
 def bluetooth_scan():
     bt = _bt_module()
-    devices = bt.scan_ble()
-    return api_success({'devices': devices})
+    result = bt.scan_ble()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
 @bp.route('/api/bluetooth/beacons', methods=['GET'])
 def bluetooth_beacons():
     bt = _bt_module()
-    beacons = bt.scan_beacons()
-    return api_success({'beacons': beacons})
+    result = bt.scan_beacons()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
