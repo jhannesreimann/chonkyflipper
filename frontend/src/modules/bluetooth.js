@@ -9,7 +9,6 @@ export default function renderBluetooth(root) {
     ${pageHead('fa-bluetooth-b', 'Bluetooth', 'Built-in BLE 5.0 · hci0')}
     ${card(`
       ${sectionTitle('Devices', `
-        <button id="b-sample" class="btn btn-ghost btn-xs gap-2 text-base-content/50"><i class="fa-solid fa-flask"></i>Show sample</button>
         <button id="b-beacons" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-satellite-dish"></i>Beacons</button>
         <button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>
       `)}
@@ -18,7 +17,6 @@ export default function renderBluetooth(root) {
   `
   root.querySelector('#b-scan').addEventListener('click', () => scan(root))
   root.querySelector('#b-beacons').addEventListener('click', () => beacons(root))
-  root.querySelector('#b-sample').addEventListener('click', () => loadSampleGatt(root))
 }
 
 async function scan(root) {
@@ -121,43 +119,6 @@ function shortUuid(uuid) {
   if (!uuid) return ''
   const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid)
   return m ? '0x' + m[1].toUpperCase() : uuid
-}
-
-// TEMP: render a sample GATT profile so the layout can be eyeballed.
-function loadSampleGatt(root) {
-  const services = [
-    {
-      uuid: '00001800-0000-1000-8000-00805f9b34fb',
-      name: 'Generic Access',
-      characteristics: [
-        { uuid: '00002a00-0000-1000-8000-00805f9b34fb', name: 'Device Name', handle: 3, properties: ['read'], value_hex: '466c6f7765722043617265', value_text: 'Flower Care', descriptors: [] },
-        { uuid: '00002a01-0000-1000-8000-00805f9b34fb', name: 'Appearance', handle: 5, properties: ['read'], value_hex: '0000', value_text: null, descriptors: [] },
-      ],
-    },
-    {
-      uuid: '0000180a-0000-1000-8000-00805f9b34fb',
-      name: 'Device Information',
-      characteristics: [
-        { uuid: '00002a29-0000-1000-8000-00805f9b34fb', name: 'Manufacturer Name String', handle: 10, properties: ['read'], value_hex: '41434d4520436f7270', value_text: 'ACME Corp', descriptors: [] },
-        { uuid: '00002a26-0000-1000-8000-00805f9b34fb', name: 'Firmware Revision String', handle: 12, properties: ['read'], value_hex: '312e342e32', value_text: '1.4.2', descriptors: [] },
-      ],
-    },
-    {
-      uuid: '0000180f-0000-1000-8000-00805f9b34fb',
-      name: 'Battery Service',
-      characteristics: [
-        { uuid: '00002a19-0000-1000-8000-00805f9b34fb', name: 'Battery Level', handle: 15, properties: ['read', 'notify'], value_hex: '5b', value_text: null, descriptors: [{ uuid: '00002902-0000-1000-8000-00805f9b34fb', handle: 16 }] },
-      ],
-    },
-    {
-      uuid: '0000fe95-0000-1000-8000-00805f9b34fb',
-      name: 'Unknown service',
-      characteristics: [
-        { uuid: 'd0e8434d-cd29-0996-af41-6c90f4e0eb2a', name: 'Unknown characteristic', handle: 20, properties: ['write', 'notify'], value_hex: null, value_text: null, descriptors: [{ uuid: '00002902-0000-1000-8000-00805f9b34fb', handle: 21 }] },
-      ],
-    },
-  ]
-  root.querySelector('#b-out').innerHTML = gattView('A4:C1:38:AB:CD:EF', services)
 }
 
 async function beacons(root) {
