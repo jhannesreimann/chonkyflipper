@@ -217,9 +217,13 @@ function bridgeTab(body) {
   body.innerHTML = card(`
     ${sectionTitle('Bridge info', `<button id="zb-net" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-diagram-project"></i>Network map</button>`)}
     <div id="zb-bridge">${spinner('Loading bridge...')}</div>
-    <div id="zb-map" class="mt-3"></div>
+    <div class="mt-3 flex justify-end">
+      <button id="zb-sample" class="btn btn-ghost btn-xs gap-2 text-base-content/50"><i class="fa-solid fa-flask"></i>Show sample</button>
+    </div>
+    <div id="zb-map" class="mt-2"></div>
   `)
   body.querySelector('#zb-net').addEventListener('click', () => loadMap(body))
+  body.querySelector('#zb-sample').addEventListener('click', () => loadSampleMap(body))
   loadBridge(body)
 }
 
@@ -253,12 +257,128 @@ async function loadMap(body) {
   try {
     const d = await apiGet('/zigbee/networkmap', { timeout: 20000 })
     if (!d.success) throw new Error(d.error || 'Failed')
-    const nodes = d.map?.nodes || []
-    const links = d.map?.links || []
+    // Z2M wraps the raw map under data.value on some versions, data on others.
+    const m = d.map?.value || d.map || {}
+    const nodes = m.nodes || []
+    const links = m.links || []
     task.done('Network map ready', `${nodes.length} nodes`)
-    wrap.innerHTML = infoBox(`Map built: <strong>${nodes.length}</strong> nodes, <strong>${links.length}</strong> links.`, 'fa-diagram-project')
+    if (!nodes.length) return (wrap.innerHTML = empty('Network map is empty.', 'fa-diagram-project'))
+    wrap.innerHTML = networkMap(nodes, links)
   } catch (e) {
     task.fail('Network map failed', e.message)
     wrap.innerHTML = errorBox(e.message)
   }
+}
+
+// TEMP: renders the map with sample data so the topology can be eyeballed
+// without the Pi. Remove this function and the zb-sample button before shipping.
+function loadSampleMap(body) {
+  const nodes = [
+    { ieeeAddr: '0x0000', friendlyName: 'Coordinator', type: 'Coordinator' },
+    { ieeeAddr: '0x1111', friendlyName: 'living_room_plug', type: 'Router' },
+    { ieeeAddr: '0x2222', friendlyName: 'kitchen_plug', type: 'Router' },
+    { ieeeAddr: '0x3333', friendlyName: 'hallway_repeater', type: 'Router' },
+    { ieeeAddr: '0xa001', friendlyName: 'motion_hallway', type: 'EndDevice' },
+    { ieeeAddr: '0xa002', friendlyName: 'door_front', type: 'EndDevice' },
+    { ieeeAddr: '0xa003', friendlyName: 'temp_bedroom', type: 'EndDevice' },
+    { ieeeAddr: '0xa004', friendlyName: 'button_office', type: 'EndDevice' },
+    { ieeeAddr: '0xa005', friendlyName: 'leak_basement', type: 'EndDevice' },
+  ]
+  const links = [
+    { sourceIeeeAddr: '0x1111', targetIeeeAddr: '0x0000', lqi: 210 },
+    { sourceIeeeAddr: '0x0000', targetIeeeAddr: '0x1111', lqi: 208 },
+    { sourceIeeeAddr: '0x2222', targetIeeeAddr: '0x0000', lqi: 150 },
+    { sourceIeeeAddr: '0x3333', targetIeeeAddr: '0x0000', lqi: 80 },
+    { sourceIeeeAddr: '0xa001', targetIeeeAddr: '0x3333', lqi: 120 },
+    { sourceIeeeAddr: '0xa002', targetIeeeAddr: '0x1111', lqi: 200 },
+    { sourceIeeeAddr: '0xa003', targetIeeeAddr: '0x2222', lqi: 60 },
+    { sourceIeeeAddr: '0xa004', targetIeeeAddr: '0x1111', lqi: 140 },
+    { sourceIeeeAddr: '0xa005', targetIeeeAddr: '0x3333', lqi: 35 },
+  ]
+  body.querySelector('#zb-map').innerHTML = networkMap(nodes, links)
+}
+
+// Tiered topology: coordinator on top, routers in the middle, end devices
+// below. Edge opacity tracks link quality. Pure string builder, no deps.
+const ZB_TIERS = ['Coordinator', 'Router', 'EndDevice']
+const ZB_TONE = { Coordinator: 'text-primary', Router: 'text-secondary', EndDevice: 'text-base-content/55' }
+const ZB_RADIUS = { Coordinator: 9, Router: 7, EndDevice: 5 }
+
+function zbNodeId(n) {
+  return n.ieeeAddr || n.ieee_address || n.friendlyName || String(n.networkAddress ?? '')
+}
+
+export function networkMap(nodes, links) {
+  // Group by tier; unknown types fall in with the end devices.
+  const groups = ZB_TIERS.map((type) => ({ type, list: nodes.filter((n) => n.type === type) }))
+  const others = nodes.filter((n) => !ZB_TIERS.includes(n.type))
+  if (others.length) groups[2].list = groups[2].list.concat(others)
+  const present = groups.filter((g) => g.list.length)
+
+  const maxRow = Math.max(...present.map((g) => g.list.length), 1)
+  const W = Math.max(560, maxRow * 86)
+  const padX = 36
+  const padY = 34
+  const rowGap = 96
+  const H = padY * 2 + Math.max(0, present.length - 1) * rowGap
+
+  // Place every node, keyed by id so edges can find their endpoints.
+  const pos = new Map()
+  present.forEach((g, gi) => {
+    const y = padY + gi * rowGap
+    g.list.forEach((n, i) => {
+      const x = padX + ((i + 0.5) / g.list.length) * (W - 2 * padX)
+      pos.set(zbNodeId(n), { x, y, node: n })
+    })
+  })
+
+  // Collapse to one edge per unordered pair, keeping the strongest LQI.
+  const edges = new Map()
+  links.forEach((l) => {
+    const s = l.source?.ieeeAddr || l.sourceIeeeAddr
+    const t = l.target?.ieeeAddr || l.targetIeeeAddr
+    if (!s || !t || s === t || !pos.has(s) || !pos.has(t)) return
+    const key = s < t ? `${s}|${t}` : `${t}|${s}`
+    const lqi = l.lqi ?? l.linkquality ?? 0
+    const prev = edges.get(key)
+    if (!prev || lqi > prev.lqi) edges.set(key, { s, t, lqi })
+  })
+
+  const lineEls = [...edges.values()]
+    .map((e) => {
+      const a = pos.get(e.s)
+      const b = pos.get(e.t)
+      const op = Math.max(0.15, Math.min(0.7, e.lqi / 255)).toFixed(2)
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="currentColor" stroke-width="1.5" stroke-opacity="${op}" class="text-base-content"/>`
+    })
+    .join('')
+
+  const nodeEls = [...pos.values()]
+    .map(({ x, y, node }) => {
+      const type = ZB_TIERS.includes(node.type) ? node.type : 'EndDevice'
+      const name = node.friendlyName || node.friendly_name || zbNodeId(node) || '?'
+      const short = name.length > 12 ? name.slice(0, 12) : name
+      const ly = (y + ZB_RADIUS[type] + 11).toFixed(1)
+      return `<g class="${ZB_TONE[type]}">
+        <title>${esc(name)}</title>
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${ZB_RADIUS[type]}" fill="currentColor"/>
+        <text x="${x.toFixed(1)}" y="${ly}" text-anchor="middle" font-size="9" fill="currentColor" class="text-base-content/70">${esc(short)}</text>
+      </g>`
+    })
+    .join('')
+
+  const legend = `
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-primary"></span>Coordinator</span>
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-secondary"></span>Router</span>
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-base-content/50"></span>End device</span>`
+
+  return `
+  <div class="rounded-xl bg-base-200/40 p-2 overflow-hidden">
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:auto;max-height:58vh" preserveAspectRatio="xMidYMid meet">
+      ${lineEls}
+      ${nodeEls}
+    </svg>
+  </div>
+  <div class="flex flex-wrap items-center gap-4 mt-3">${legend}</div>
+  <p class="text-[0.65rem] text-base-content/45 mt-2">${nodes.length} nodes · ${edges.size} links · line opacity reflects link quality</p>`
 }
