@@ -49,7 +49,8 @@ apt-get install -y \
     iw \
     swig \
     python3-dev \
-    ir-keytable
+    ir-keytable \
+    bettercap
 
 # Note: pigpio daemon compilation fails on newer kernels
 # The Python pigpio library will be installed via pip for client mode
@@ -172,6 +173,7 @@ echo ""
 echo "Step 8: Copying backend files..."
 cp -r backend/* "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/setup-gadget.sh"
+chmod +x "$INSTALL_DIR/bt-deep-scan.sh"
 
 # Copy update script (lives in repo root, not backend/)
 if [ -f "$SCRIPT_DIR/update.sh" ]; then
@@ -358,6 +360,7 @@ chonky ALL=(ALL) NOPASSWD: /usr/bin/rm -f /var/run/wpa_supplicant/wlan1
 chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp *
 chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pipower5.service
+chonky ALL=(ALL) NOPASSWD: /opt/chonkyflipper/bt-deep-scan.sh [0-9]*
 EOFSUDOERS
 chmod 440 /etc/sudoers.d/chonky-ops
 

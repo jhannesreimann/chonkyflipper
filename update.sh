@@ -89,7 +89,7 @@ echo ""
 
 # -- Update backend files --
 echo "Updating backend..."
-for item in app.py config.py utils.py requirements.txt setup-gadget.sh maintenance-mode.sh modules routes; do
+for item in app.py config.py utils.py requirements.txt setup-gadget.sh maintenance-mode.sh bt-deep-scan.sh modules routes; do
     src="$REPO_DIR/backend/$item"
     if [ -e "$src" ]; then
         cp -r "$src" "$INSTALL_DIR/"
@@ -155,6 +155,7 @@ fi
 chown -R chonky:chonky "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/setup-gadget.sh" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/maintenance-mode.sh" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/bt-deep-scan.sh" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/update.sh" 2>/dev/null || true
 
 # -- Restart service --

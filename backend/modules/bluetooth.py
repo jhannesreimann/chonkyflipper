@@ -8,11 +8,12 @@ device info via bluetoothctl.
 import asyncio
 import os
 import re
+import shutil
 import struct
 import subprocess
 from datetime import datetime
 
-from config import HCI_CAPTURES_DIR
+from config import HCI_CAPTURES_DIR, INSTALL_DIR
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -450,6 +451,86 @@ class BluetoothModule:
             pass
         captures.sort(key=lambda c: c['modified'], reverse=True)
         return {'success': True, 'captures': captures}
+
+    # ------------------------------------------------------------------ deep scan (bettercap)
+
+    def deep_scan(self, duration=15):
+        """Deep BLE scan via bettercap for richer metadata (notably the MAC
+        manufacturer / vendor). Opt-in; falls back gracefully when bettercap
+        is not installed."""
+        if shutil.which('bettercap') is None:
+            return {'success': False, 'devices': [],
+                    'error': 'bettercap is not installed (sudo apt install bettercap)'}
+        script = f'{INSTALL_DIR}/bt-deep-scan.sh'
+        if not os.path.isfile(script):
+            return {'success': False, 'devices': [],
+                    'error': 'bt-deep-scan.sh not deployed; run update.sh'}
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', script, str(duration)],
+                capture_output=True, text=True, timeout=duration + 30,
+            )
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Deep scan timed out', 'devices': []}
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'devices': []}
+
+        devices = self._parse_bettercap_ble(result.stdout)
+        if not devices and result.returncode not in (0, 124):
+            err = (result.stderr or '').strip()
+            return {'success': False, 'devices': [],
+                    'error': err or 'bettercap returned no devices'}
+        devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
+        return {'success': True, 'duration': duration, 'engine': 'bettercap', 'devices': devices}
+
+    @staticmethod
+    def _parse_bettercap_ble(output):
+        # bettercap renders a table with a vertical-bar separator; normalise it
+        # to ASCII and map columns by their header so column order changes
+        # between versions don't break parsing.
+        devices = []
+        idx = None
+        for raw in output.splitlines():
+            line = _ANSI_RE.sub('', raw).replace(chr(0x2502), '|')
+            if '|' not in line:
+                continue
+            cells = [c.strip() for c in line.split('|')[1:-1]]
+            if not cells:
+                continue
+            upper = [c.upper() for c in cells]
+            if idx is None:
+                if 'RSSI' in upper and 'MAC' in upper:
+                    idx = {
+                        'rssi': upper.index('RSSI'),
+                        'mac': upper.index('MAC'),
+                        'vendor': upper.index('VENDOR') if 'VENDOR' in upper else None,
+                        'name': upper.index('NAME') if 'NAME' in upper else None,
+                        'connect': upper.index('CONNECT') if 'CONNECT' in upper else None,
+                    }
+                continue
+            if idx['mac'] >= len(cells):
+                continue
+            mac = cells[idx['mac']]
+            if not mac or ':' not in mac:
+                continue
+            rssi = None
+            ri = idx['rssi']
+            if ri < len(cells) and cells[ri]:
+                try:
+                    rssi = int(cells[ri].split()[0])
+                except (ValueError, IndexError):
+                    pass
+            vendor = cells[idx['vendor']] if (idx['vendor'] is not None and idx['vendor'] < len(cells)) else None
+            name = cells[idx['name']] if (idx['name'] is not None and idx['name'] < len(cells)) else None
+            connect = cells[idx['connect']] if (idx['connect'] is not None and idx['connect'] < len(cells)) else ''
+            devices.append({
+                'mac': mac.upper(),
+                'name': name or 'Unknown',
+                'rssi': rssi,
+                'vendor': vendor or None,
+                'connectable': connect.strip().lower() in ('true', 'yes', chr(0x2713)),
+            })
+        return devices
 
     # ------------------------------------------------------------------ pairing (bluetoothctl)
 

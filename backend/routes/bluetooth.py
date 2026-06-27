@@ -85,6 +85,19 @@ def bluetooth_captures():
     return api_success(bt.list_hci_captures())
 
 
+@bp.route('/api/bluetooth/deep-scan', methods=['POST'])
+def bluetooth_deep_scan():
+    data = request.json or {}
+    try:
+        duration = int(data.get('duration', 15))
+    except (TypeError, ValueError):
+        return api_error('duration must be an integer (seconds)', 400)
+    duration = max(1, min(duration, 120))
+    bt = _bt_module()
+    result = bt.deep_scan(duration)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Deep scan failed'), 500)
+
+
 @bp.route('/api/bluetooth/classic-scan', methods=['GET'])
 def bluetooth_classic_scan():
     try:

@@ -15,6 +15,7 @@ export default function renderBluetooth(root) {
         <div class="join">
           <button class="join-item btn btn-sm ${mode === 'le' ? 'btn-active' : ''}" data-mode="le">BLE</button>
           <button class="join-item btn btn-sm ${mode === 'classic' ? 'btn-active' : ''}" data-mode="classic">Classic</button>
+          <button class="join-item btn btn-sm ${mode === 'deep' ? 'btn-active' : ''}" data-mode="deep">Deep</button>
         </div>
         <div id="b-actions" class="flex items-center gap-2"></div>
       </div>
@@ -57,9 +58,12 @@ function renderActions(root) {
     el.querySelector('#b-scan').addEventListener('click', () => scan(root))
     el.querySelector('#b-beacons').addEventListener('click', () => beacons(root))
     el.querySelector('#b-capture').addEventListener('click', () => captureAdverts(root))
-  } else {
+  } else if (mode === 'classic') {
     el.innerHTML = `<button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>`
     el.querySelector('#b-scan').addEventListener('click', () => scanClassic(root))
+  } else {
+    el.innerHTML = `<button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass-chart"></i>Scan</button>`
+    el.querySelector('#b-scan').addEventListener('click', () => deepScan(root))
   }
 }
 
@@ -331,6 +335,37 @@ async function captureHci(root, dur) {
     task.fail('HCI capture failed', e.message)
     out.innerHTML = errorBox(e.message)
   }
+}
+
+// ------------------------------------------------------------------ deep scan (bettercap)
+
+async function deepScan(root) {
+  const out = root.querySelector('#b-out')
+  out.innerHTML = spinner('Deep scanning with bettercap (~15s)...')
+  const task = startTask('Deep BLE scan')
+  try {
+    const d = await apiPost('/bluetooth/deep-scan', { duration: 15 }, { timeout: 60000 })
+    const devs = d.devices || []
+    task.done('Deep scan complete', `${devs.length} device(s)`)
+    if (!devs.length) return (out.innerHTML = empty('No devices found.', 'fa-bluetooth'))
+    out.innerHTML = `
+      <div class="overflow-x-auto"><table class="table table-sm">
+        <thead><tr><th>Device</th><th>MAC</th><th>Vendor</th><th>RSSI</th></tr></thead>
+        <tbody>${devs.map(deepRow).join('')}</tbody>
+      </table></div>`
+  } catch (e) {
+    task.fail('Deep scan failed', e.message)
+    out.innerHTML = errorBox(e.message)
+  }
+}
+
+function deepRow(d) {
+  return `<tr>
+    <td class="font-medium">${esc(d.name || 'Unknown')}</td>
+    <td class="font-mono text-xs">${esc(d.mac)}</td>
+    <td class="text-xs">${esc(d.vendor || '-')}</td>
+    <td class="text-xs whitespace-nowrap">${esc(d.rssi ?? '-')} dBm</td>
+  </tr>`
 }
 
 // ------------------------------------------------------------------ Classic (BR/EDR) + SDP
