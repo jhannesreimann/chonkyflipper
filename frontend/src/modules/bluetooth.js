@@ -2,7 +2,7 @@
 // discovery + SDP service enumeration), switched via a mode toggle.
 import { apiGet, apiPost } from '../api.js'
 import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner } from '../ui.js'
-import { esc } from '../util.js'
+import { esc, fmtBytes } from '../util.js'
 import { startTask, notify } from '../toast.js'
 
 let mode = 'le'
@@ -18,6 +18,14 @@ export default function renderBluetooth(root) {
         </div>
         <div id="b-actions" class="flex items-center gap-2"></div>
       </div>
+      <div class="flex items-center gap-2 mb-3">
+        <select id="b-hci-dur" class="select select-xs select-bordered w-auto">
+          <option value="10">10s</option>
+          <option value="30" selected>30s</option>
+          <option value="60">60s</option>
+        </select>
+        <button id="b-hci" class="btn btn-ghost btn-xs gap-1"><i class="fa-solid fa-wave-square"></i>Capture HCI (Wireshark)</button>
+      </div>
       <div id="b-out">${empty('Scan to discover nearby devices.', 'fa-bluetooth')}</div>
     `)}
   `
@@ -29,6 +37,9 @@ export default function renderBluetooth(root) {
     }),
   )
   renderActions(root)
+  root
+    .querySelector('#b-hci')
+    .addEventListener('click', () => captureHci(root, parseInt(root.querySelector('#b-hci-dur').value, 10) || 30))
 }
 
 function renderActions(root) {
@@ -296,6 +307,29 @@ function timeOnly(iso) {
     return new Date(iso).toLocaleTimeString()
   } catch (e) {
     return ''
+  }
+}
+
+// ------------------------------------------------------------------ raw HCI capture
+
+async function captureHci(root, dur) {
+  const out = root.querySelector('#b-out')
+  out.innerHTML = spinner(`Capturing HCI for ${dur}s...`)
+  const task = startTask('HCI capture', `${dur}s`)
+  try {
+    const d = await apiPost('/bluetooth/capture-hci', { duration: dur }, { timeout: (dur + 30) * 1000 })
+    task.done('HCI capture complete', d.filename)
+    const href = `/api/loot/download?category=hci&name=${encodeURIComponent(d.filename)}`
+    out.innerHTML = `
+      <div class="rounded-xl bg-base-200/50 p-4 text-sm">
+        <div class="font-semibold mb-1"><i class="fa-solid fa-circle-check text-success mr-1"></i>Capture saved</div>
+        <div class="text-base-content/60 text-xs mb-3 font-mono break-all">${esc(d.filename)} · ${fmtBytes(d.size)}</div>
+        <a href="${href}" class="btn btn-primary btn-sm gap-2" download><i class="fa-solid fa-download"></i>Download .pcap</a>
+        <p class="text-[0.65rem] text-base-content/45 mt-3">Open in Wireshark for protocol analysis. Also listed in the Loot file manager.</p>
+      </div>`
+  } catch (e) {
+    task.fail('HCI capture failed', e.message)
+    out.innerHTML = errorBox(e.message)
   }
 }
 

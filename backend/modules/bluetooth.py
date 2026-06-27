@@ -6,10 +6,13 @@ device info via bluetoothctl.
 """
 
 import asyncio
+import os
 import re
 import struct
 import subprocess
 from datetime import datetime
+
+from config import HCI_CAPTURES_DIR
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -399,6 +402,54 @@ class BluetoothModule:
     @staticmethod
     def _clean(v):
         return v.decode('utf-8', 'replace') if isinstance(v, bytes) else v
+
+    # ------------------------------------------------------------------ raw HCI capture
+
+    def capture_hci(self, duration=20, filename=None):
+        """Capture raw HCI traffic to a btsnoop (.pcap) file via btmon for
+        offline Wireshark analysis. Blocks for `duration` seconds.
+
+        btmon needs CAP_NET_RAW; install.sh grants it via setcap so this runs
+        without sudo and the file stays owned by the service user.
+        """
+        os.makedirs(HCI_CAPTURES_DIR, exist_ok=True)
+        if not filename:
+            filename = f'hci_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pcap'
+        filename = os.path.basename(filename)
+        if not filename.endswith('.pcap'):
+            filename += '.pcap'
+        path = os.path.join(HCI_CAPTURES_DIR, filename)
+        try:
+            result = subprocess.run(
+                ['timeout', str(duration), 'btmon', '-w', path],
+                capture_output=True, text=True, timeout=duration + 15,
+            )
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'HCI capture timed out'}
+        except FileNotFoundError:
+            return {'success': False, 'error': 'btmon not found (install bluez)'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            err = (result.stderr or '').strip()
+            return {'success': False,
+                    'error': err or 'capture produced no data (btmon needs CAP_NET_RAW; run the setcap step)'}
+        return {'success': True, 'filename': filename,
+                'size': os.path.getsize(path), 'duration': duration}
+
+    def list_hci_captures(self):
+        captures = []
+        try:
+            for name in os.listdir(HCI_CAPTURES_DIR):
+                p = os.path.join(HCI_CAPTURES_DIR, name)
+                if os.path.isfile(p):
+                    st = os.stat(p)
+                    captures.append({'name': name, 'size': st.st_size, 'modified': st.st_mtime})
+        except FileNotFoundError:
+            pass
+        captures.sort(key=lambda c: c['modified'], reverse=True)
+        return {'success': True, 'captures': captures}
 
     # ------------------------------------------------------------------ pairing (bluetoothctl)
 

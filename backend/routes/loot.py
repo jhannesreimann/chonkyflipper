@@ -5,7 +5,7 @@ retrieved from the dashboard instead of over SSH.
 
 import os
 from flask import Blueprint, request, send_from_directory
-from config import CAPTURES_DIR, SIGNALS_IR, SIGNALS_SUBGHZ, CARDS_DIR
+from config import CAPTURES_DIR, HCI_CAPTURES_DIR, SIGNALS_IR, SIGNALS_SUBGHZ, CARDS_DIR
 from utils import api_success, api_error
 
 bp = Blueprint('loot', __name__)
@@ -15,6 +15,7 @@ bp = Blueprint('loot', __name__)
 # to reach arbitrary paths on the filesystem.
 LOOT_CATEGORIES = {
     'pcap': ('Packet Captures', CAPTURES_DIR),
+    'hci': ('HCI Captures', HCI_CAPTURES_DIR),
     'ir': ('IR Signals', SIGNALS_IR),
     'subghz': ('Sub-GHz Signals', SIGNALS_SUBGHZ),
     'nfc': ('NFC Cards', CARDS_DIR),

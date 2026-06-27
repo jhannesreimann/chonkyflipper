@@ -333,6 +333,12 @@ EOF
 # Allow the service user to write to /dev/hidg0 without root
 echo 'KERNEL=="hidg*", MODE="0666"' > /etc/udev/rules.d/99-chonky-hidg.rules
 
+# Let btmon capture raw HCI without root (the HCI monitor socket needs
+# CAP_NET_RAW). With this the capture file stays owned by the service user.
+if command -v btmon >/dev/null 2>&1; then
+    setcap 'cap_net_raw,cap_net_admin+ep' "$(command -v btmon)" || true
+fi
+
 # Allow service user to run privileged operations without a password prompt
 cat > /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
 chonky ALL=(ALL) NOPASSWD: /sbin/shutdown
