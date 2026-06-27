@@ -53,6 +53,19 @@ def bluetooth_gatt():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'GATT profiling failed'), 500)
 
 
+@bp.route('/api/bluetooth/gatt/write', methods=['POST'])
+def bluetooth_gatt_write():
+    data = request.json or {}
+    mac = data.get('mac')
+    char_uuid = data.get('char_uuid')
+    value = data.get('value')
+    if not mac or not char_uuid or value is None:
+        return api_error('mac, char_uuid, and value are required', 400)
+    bt = _bt_module()
+    result = bt.write_characteristic(mac, char_uuid, value, data.get('without_response'))
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Write failed'), 500)
+
+
 @bp.route('/api/bluetooth/classic-scan', methods=['GET'])
 def bluetooth_classic_scan():
     try:

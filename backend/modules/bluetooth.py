@@ -262,6 +262,50 @@ class BluetoothModule:
             return text
         return None
 
+    def write_characteristic(self, mac_address, char_uuid, value_hex, without_response=None):
+        """Write bytes (given as a hex string) to a writable GATT characteristic.
+
+        without_response: None = auto (prefer write-with-response when the
+        characteristic supports it), True = force write-without-response,
+        False = force write-with-response.
+        """
+        if BleakClient is None:
+            return {'success': False, 'error': 'bleak is not installed', 'mac': mac_address}
+        try:
+            data = bytes.fromhex(str(value_hex).replace('0x', '').replace(' ', '').replace(':', ''))
+        except ValueError:
+            return {'success': False, 'error': 'value must be a valid hex string'}
+        try:
+            return asyncio.run(self._write(mac_address, char_uuid, data, without_response))
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'mac': mac_address}
+
+    async def _write(self, mac_address, char_uuid, data, without_response):
+        async with BleakClient(mac_address, timeout=20.0, adapter=self.interface) as client:
+            char = client.services.get_characteristic(char_uuid)
+            if char is None:
+                return {'success': False, 'error': f'Characteristic {char_uuid} not found'}
+            props = char.properties
+            if without_response:
+                if 'write-without-response' not in props:
+                    return {'success': False, 'error': 'Characteristic does not support write-without-response'}
+                response = False
+            elif without_response is False:
+                if 'write' not in props:
+                    return {'success': False, 'error': 'Characteristic does not support write-with-response'}
+                response = True
+            elif 'write' in props:
+                response = True
+            elif 'write-without-response' in props:
+                response = False
+            else:
+                return {'success': False, 'error': 'Characteristic is not writable'}
+            await client.write_gatt_char(char, data, response=response)
+            return {
+                'success': True, 'mac': mac_address, 'char_uuid': char_uuid,
+                'bytes_written': len(data), 'with_response': response,
+            }
+
     # ------------------------------------------------------------------ Classic BT (BR/EDR) + SDP
 
     def scan_classic(self, duration=10):

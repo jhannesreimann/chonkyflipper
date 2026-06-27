@@ -3,7 +3,7 @@
 import { apiGet, apiPost } from '../api.js'
 import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner } from '../ui.js'
 import { esc } from '../util.js'
-import { startTask } from '../toast.js'
+import { startTask, notify } from '../toast.js'
 
 let mode = 'le'
 
@@ -97,6 +97,9 @@ async function profile(root, mac) {
     task.done('GATT profile complete', `${services.length} service(s)`)
     if (!services.length) return (out.innerHTML = empty('No services found (device may require pairing).', 'fa-sitemap'))
     out.innerHTML = gattView(mac, services)
+    out.querySelectorAll('[data-write]').forEach((btn) =>
+      btn.addEventListener('click', () => gattWrite(mac, btn)),
+    )
   } catch (e) {
     task.fail('GATT profile failed', e.message)
     out.innerHTML = errorBox(e.message)
@@ -123,7 +126,8 @@ function gattView(mac, services) {
 }
 
 function charRow(c) {
-  const props = (c.properties || [])
+  const propList = c.properties || []
+  const props = propList
     .map((p) => `<span class="badge badge-xs badge-ghost">${esc(p)}</span>`)
     .join(' ')
   const val = c.value_text
@@ -135,6 +139,18 @@ function charRow(c) {
     c.descriptors && c.descriptors.length
       ? `<div class="text-[0.6rem] text-base-content/40 mt-1">${c.descriptors.length} descriptor(s)</div>`
       : ''
+  const canWrite = propList.includes('write') || propList.includes('write-without-response')
+  const noResp = propList.includes('write-without-response') && !propList.includes('write')
+  const writeRow = canWrite
+    ? `<div class="flex items-center gap-1 mt-1.5" data-write-row>
+        <select class="select select-xs select-bordered w-auto" data-fmt>
+          <option value="hex" selected>hex</option>
+          <option value="ascii">ascii</option>
+        </select>
+        <input class="input input-xs input-bordered flex-1 font-mono" placeholder="value to write" data-wval />
+        <button class="btn btn-xs btn-ghost gap-1" data-write="${esc(c.uuid)}" data-wr="${noResp ? '1' : ''}"><i class="fa-solid fa-pen-to-square"></i>Write</button>
+      </div>`
+    : ''
   return `
     <div class="rounded-lg bg-base-100/60 px-3 py-2 mb-1">
       <div class="flex items-center justify-between gap-2">
@@ -144,6 +160,7 @@ function charRow(c) {
       <div class="font-mono text-[0.6rem] text-base-content/45">${esc(shortUuid(c.uuid))}</div>
       ${val}
       ${desc}
+      ${writeRow}
     </div>`
 }
 
@@ -152,6 +169,52 @@ function shortUuid(uuid) {
   if (!uuid) return ''
   const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid)
   return m ? '0x' + m[1].toUpperCase() : uuid
+}
+
+async function gattWrite(mac, btn) {
+  const row = btn.closest('[data-write-row]')
+  const fmt = row.querySelector('[data-fmt]').value
+  const rawValue = row.querySelector('[data-wval]').value
+  const charUuid = btn.dataset.write
+  const withoutResponse = btn.dataset.wr === '1'
+
+  let hex
+  try {
+    hex = fmt === 'ascii' ? asciiToHex(rawValue) : normalizeHex(rawValue)
+  } catch (e) {
+    return notify('Invalid value', 'error', e.message)
+  }
+  if (!hex) return notify('Enter a value to write', 'warning')
+
+  const task = startTask('GATT write', shortUuid(charUuid))
+  try {
+    const d = await apiPost('/bluetooth/gatt/write', {
+      mac,
+      char_uuid: charUuid,
+      value: hex,
+      without_response: withoutResponse,
+    })
+    task.done('Write succeeded', `${d.bytes_written} byte(s)${d.with_response ? '' : ', no response'}`)
+  } catch (e) {
+    task.fail('Write failed', e.message)
+  }
+}
+
+function asciiToHex(s) {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i)
+    if (code > 0xff) throw new Error('non-ASCII character in input')
+    out += code.toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+function normalizeHex(s) {
+  const h = s.replace(/0x/gi, '').replace(/[\s:]/g, '')
+  if (h && !/^[0-9a-f]+$/i.test(h)) throw new Error('not valid hex')
+  if (h.length % 2 !== 0) throw new Error('hex needs an even number of digits')
+  return h.toLowerCase()
 }
 
 async function beacons(root) {
