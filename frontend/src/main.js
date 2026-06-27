@@ -12,6 +12,7 @@ import renderSubghz from './modules/subghz.js'
 import renderNfc from './modules/nfc.js'
 import renderZigbee from './modules/zigbee.js'
 import renderBadusb from './modules/badusb.js'
+import renderLoot from './modules/loot.js'
 import renderSettings from './modules/settings.js'
 
 // Sidebar registry. statusKey maps to the module name in /api/status so the
@@ -26,6 +27,7 @@ const ROUTES = [
   { id: 'ir', label: 'Infrared', icon: 'fa-tower-broadcast', render: renderIr, statusKey: 'ir', group: 'devices' },
   { id: 'nfc', label: 'NFC / RFID', icon: 'fa-id-card', render: renderNfc, statusKey: 'pn532', group: 'devices' },
   { id: 'badusb', label: 'BadUSB', icon: 'fa-keyboard', render: renderBadusb, group: 'devices' },
+  { id: 'loot', label: 'Loot', icon: 'fa-box-archive', render: renderLoot, group: 'system' },
   { id: 'settings', label: 'Settings', icon: 'fa-sliders', render: renderSettings, group: 'system' },
 ]
 

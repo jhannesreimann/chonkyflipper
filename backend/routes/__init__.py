@@ -11,10 +11,11 @@ from .nfc import bp as nfc_bp
 from .badusb import bp as badusb_bp
 from .zigbee import bp as zigbee_bp
 from .network import bp as network_bp
+from .loot import bp as loot_bp
 
 
 def register_blueprints(app):
     """Register all route blueprints on the Flask app."""
     for bp in (status_bp, wifi_bp, bluetooth_bp, ir_bp, subghz_bp,
-               nfc_bp, badusb_bp, zigbee_bp, network_bp):
+               nfc_bp, badusb_bp, zigbee_bp, network_bp, loot_bp):
         app.register_blueprint(bp)
