@@ -51,3 +51,26 @@ def bluetooth_gatt():
     bt = _bt_module()
     result = bt.profile_device(mac)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'GATT profiling failed'), 500)
+
+
+@bp.route('/api/bluetooth/classic-scan', methods=['GET'])
+def bluetooth_classic_scan():
+    try:
+        duration = int(request.args.get('duration', 10))
+    except (TypeError, ValueError):
+        duration = 10
+    duration = max(1, min(duration, 60))
+    bt = _bt_module()
+    result = bt.scan_classic(duration)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Classic scan failed'), 500)
+
+
+@bp.route('/api/bluetooth/sdp', methods=['POST'])
+def bluetooth_sdp():
+    data = request.json or {}
+    mac = data.get('mac')
+    if not mac:
+        return api_error('mac required', 400)
+    bt = _bt_module()
+    result = bt.enumerate_services(mac)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'SDP enumeration failed'), 500)

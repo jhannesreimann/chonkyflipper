@@ -1,31 +1,55 @@
-// Bluetooth LE scanner + beacon detector + GATT profiler.
+// Bluetooth scanner: BLE (scan / beacons / advert log / GATT) and Classic (BR/EDR
+// discovery + SDP service enumeration), switched via a mode toggle.
 import { apiGet, apiPost } from '../api.js'
-import { pageHead, card, sectionTitle, empty, errorBox, spinner } from '../ui.js'
+import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner } from '../ui.js'
 import { esc } from '../util.js'
 import { startTask } from '../toast.js'
 
+let mode = 'le'
+
 export default function renderBluetooth(root) {
   root.innerHTML = `
-    ${pageHead('fa-bluetooth-b', 'Bluetooth', 'Built-in BLE 5.0 · hci0')}
+    ${pageHead('fa-bluetooth-b', 'Bluetooth', 'Built-in dual-mode · hci0')}
     ${card(`
-      ${sectionTitle('Devices', `
-        <button id="b-beacons" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-satellite-dish"></i>Beacons</button>
-        <button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>
-      `)}
-      <div class="flex items-center gap-2 mb-3">
-        <select id="b-cap-dur" class="select select-sm select-bordered w-auto">
-          <option value="15">15s</option>
-          <option value="30" selected>30s</option>
-          <option value="60">60s</option>
-        </select>
-        <button id="b-capture" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-clock-rotate-left"></i>Log adverts</button>
+      <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div class="join">
+          <button class="join-item btn btn-sm ${mode === 'le' ? 'btn-active' : ''}" data-mode="le">BLE</button>
+          <button class="join-item btn btn-sm ${mode === 'classic' ? 'btn-active' : ''}" data-mode="classic">Classic</button>
+        </div>
+        <div id="b-actions" class="flex items-center gap-2"></div>
       </div>
-      <div id="b-out">${empty('Scan to discover nearby BLE devices.', 'fa-bluetooth')}</div>
+      <div id="b-out">${empty('Scan to discover nearby devices.', 'fa-bluetooth')}</div>
     `)}
   `
-  root.querySelector('#b-scan').addEventListener('click', () => scan(root))
-  root.querySelector('#b-beacons').addEventListener('click', () => beacons(root))
-  root.querySelector('#b-capture').addEventListener('click', () => captureAdverts(root))
+  root.querySelectorAll('[data-mode]').forEach((b) =>
+    b.addEventListener('click', () => {
+      if (mode === b.dataset.mode) return
+      mode = b.dataset.mode
+      renderBluetooth(root)
+    }),
+  )
+  renderActions(root)
+}
+
+function renderActions(root) {
+  const el = root.querySelector('#b-actions')
+  if (mode === 'le') {
+    el.innerHTML = `
+      <select id="b-cap-dur" class="select select-sm select-bordered w-auto">
+        <option value="15">15s</option>
+        <option value="30" selected>30s</option>
+        <option value="60">60s</option>
+      </select>
+      <button id="b-capture" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-clock-rotate-left"></i>Log</button>
+      <button id="b-beacons" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-satellite-dish"></i>Beacons</button>
+      <button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>`
+    el.querySelector('#b-scan').addEventListener('click', () => scan(root))
+    el.querySelector('#b-beacons').addEventListener('click', () => beacons(root))
+    el.querySelector('#b-capture').addEventListener('click', () => captureAdverts(root))
+  } else {
+    el.innerHTML = `<button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>`
+    el.querySelector('#b-scan').addEventListener('click', () => scanClassic(root))
+  }
 }
 
 async function scan(root) {
@@ -210,4 +234,72 @@ function timeOnly(iso) {
   } catch (e) {
     return ''
   }
+}
+
+// ------------------------------------------------------------------ Classic (BR/EDR) + SDP
+
+async function scanClassic(root) {
+  const out = root.querySelector('#b-out')
+  out.innerHTML = spinner('Scanning Classic (BR/EDR) devices...')
+  const task = startTask('Classic scan')
+  try {
+    const d = await apiGet('/bluetooth/classic-scan', { timeout: 40000 })
+    const devs = d.devices || []
+    task.done('Classic scan complete', `${devs.length} device(s)`)
+    if (!devs.length) return (out.innerHTML = empty('No Classic devices found. Make sure targets are discoverable.', 'fa-bluetooth'))
+    out.innerHTML = devs.map(classicRow).join('')
+    out.querySelectorAll('[data-sdp]').forEach((b) => b.addEventListener('click', () => sdp(root, b.dataset.sdp)))
+  } catch (e) {
+    task.fail('Classic scan failed', e.message)
+    out.innerHTML = errorBox(e.message)
+  }
+}
+
+function classicRow(d) {
+  const detailId = 'sdp-' + d.mac.replace(/:/g, '')
+  const meta = [d.mac, d.type || 'device'].join(' · ') + (d.rssi != null ? ` · ${d.rssi} dBm` : '')
+  return `
+  <div class="rounded-xl bg-base-200/50 p-3 mb-2">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-semibold text-sm truncate">${esc(d.name || 'Unknown')}</div>
+        <div class="text-[0.65rem] text-base-content/45 font-mono">${esc(meta)}</div>
+      </div>
+      <button class="btn btn-ghost btn-xs gap-1 shrink-0" data-sdp="${esc(d.mac)}"><i class="fa-solid fa-list-ul"></i>SDP</button>
+    </div>
+    <div id="${detailId}" class="mt-2"></div>
+  </div>`
+}
+
+async function sdp(root, mac) {
+  const wrap = root.querySelector('#sdp-' + mac.replace(/:/g, ''))
+  if (!wrap) return
+  wrap.innerHTML = spinner('Browsing SDP services...')
+  const task = startTask('SDP browse', mac)
+  try {
+    const d = await apiPost('/bluetooth/sdp', { mac }, { timeout: 30000 })
+    const services = d.services || []
+    task.done('SDP browse complete', `${services.length} service(s)`)
+    if (!services.length) return (wrap.innerHTML = infoBox('No SDP services advertised.'))
+    wrap.innerHTML = sdpTable(services)
+  } catch (e) {
+    task.fail('SDP browse failed', e.message)
+    wrap.innerHTML = errorBox(e.message)
+  }
+}
+
+function sdpTable(services) {
+  return `
+    <div class="overflow-x-auto"><table class="table table-xs">
+      <thead><tr><th>Service</th><th>Proto</th><th>Ch</th></tr></thead>
+      <tbody>${services
+        .map(
+          (s) => `<tr>
+            <td>${esc(s.name || (s.service_classes && s.service_classes[0]) || 'Unknown')}</td>
+            <td class="text-xs">${esc(s.protocol || '-')}</td>
+            <td class="text-xs">${esc(s.channel ?? '-')}</td>
+          </tr>`,
+        )
+        .join('')}</tbody>
+    </table></div>`
 }

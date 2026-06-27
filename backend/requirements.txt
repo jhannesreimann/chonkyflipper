@@ -9,6 +9,7 @@ RPi.GPIO>=0.7.1
 adafruit-circuitpython-pn532>=2.4.9
 # pipower5  --  installed from /opt/pipower5/ by install.sh (not on PyPI)
 bleak>=0.21.0  # BLE scanning + beacon decode (BlueZ backend)
+pybluez2  # Classic BT (BR/EDR) SDP service browsing; needs libbluetooth-dev
 # pyserial==3.5  # For UART modules if needed
 
 # MQTT client for Zigbee2MQTT communication

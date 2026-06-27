@@ -6,6 +6,7 @@ device info via bluetoothctl.
 """
 
 import asyncio
+import re
 import struct
 import subprocess
 from datetime import datetime
@@ -15,6 +16,11 @@ try:
 except ImportError:
     BleakScanner = None
     BleakClient = None
+
+try:
+    import bluetooth as _pybluez  # PyBluez / pybluez2 (Classic SDP browsing)
+except ImportError:
+    _pybluez = None
 
 # Eddystone service UUID (16-bit 0xFEAA in full 128-bit form)
 _EDDYSTONE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb'
@@ -27,6 +33,15 @@ _URL_EXPANSIONS = [
     '.com/', '.org/', '.edu/', '.net/', '.info/', '.biz/', '.gov/',
     '.com', '.org', '.edu', '.net', '.info', '.biz', '.gov',
 ]
+
+# Bluetooth Class of Device -> major device class label (bits 8-12 of the CoD)
+_COD_MAJOR = {
+    0: 'Miscellaneous', 1: 'Computer', 2: 'Phone', 3: 'Network',
+    4: 'Audio/Video', 5: 'Peripheral', 6: 'Imaging', 7: 'Wearable',
+    8: 'Toy', 9: 'Health',
+}
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+_MAC_RE = re.compile(r'([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})')
 
 
 class BluetoothModule:
@@ -246,6 +261,100 @@ class BluetoothModule:
         if text and all(32 <= ord(c) <= 126 or c in '\r\n\t' for c in text):
             return text
         return None
+
+    # ------------------------------------------------------------------ Classic BT (BR/EDR) + SDP
+
+    def scan_classic(self, duration=10):
+        """Discover Classic (BR/EDR) devices via a bluetoothd-managed inquiry.
+
+        Runs bluetoothctl scan for `duration` seconds and parses the discovery
+        events, keeping devices that report a Class of Device (the BR/EDR
+        signal) so BLE-only devices are filtered out.
+        """
+        try:
+            result = subprocess.run(
+                ['bluetoothctl', '--timeout', str(duration), 'scan', 'on'],
+                capture_output=True, text=True, timeout=duration + 15,
+            )
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Classic scan timed out', 'devices': []}
+        except FileNotFoundError:
+            return {'success': False, 'error': 'bluetoothctl not found', 'devices': []}
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'devices': []}
+
+        devices = self._parse_classic_scan(result.stdout)
+        devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
+        return {'success': True, 'duration': duration, 'devices': devices}
+
+    def _parse_classic_scan(self, output):
+        found = {}
+        for raw in output.splitlines():
+            line = _ANSI_RE.sub('', raw).strip()
+            m = _MAC_RE.search(line)
+            if not m:
+                continue
+            mac = m.group(1).upper()
+            rest = line[m.end():].strip()
+            d = found.setdefault(mac, {'mac': mac, 'name': None, 'rssi': None, 'cod': None})
+            if ':' in rest:
+                key, _, val = rest.partition(':')
+                key, val = key.strip(), val.strip()
+                if key == 'RSSI':
+                    try:
+                        d['rssi'] = int(val.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif key == 'Class':
+                    d['cod'] = val
+                elif key == 'Name':
+                    d['name'] = val
+            elif rest and d['name'] is None:
+                d['name'] = rest
+        # Keep only BR/EDR devices (those that reported a Class of Device).
+        classic = []
+        for d in found.values():
+            if not d['cod']:
+                continue
+            d['type'] = self._cod_major(d['cod'])
+            d.pop('cod', None)
+            classic.append(d)
+        return classic
+
+    @staticmethod
+    def _cod_major(cod):
+        try:
+            val = int(cod, 16)
+        except (TypeError, ValueError):
+            return 'Unknown'
+        return _COD_MAJOR.get((val >> 8) & 0x1F, 'Unknown')
+
+    def enumerate_services(self, mac_address):
+        """SDP browse a Classic device for its service records (RFCOMM channels,
+        protocols, profiles) via PyBluez."""
+        if _pybluez is None:
+            return {'success': False, 'error': 'PyBluez is not installed (pip install pybluez2)',
+                    'services': [], 'mac': mac_address}
+        try:
+            records = _pybluez.find_service(address=mac_address)
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'services': [], 'mac': mac_address}
+
+        services = []
+        for r in records:
+            services.append({
+                'name': self._clean(r.get('name')),
+                'protocol': r.get('protocol'),
+                'channel': r.get('port'),
+                'service_classes': r.get('service-classes') or [],
+                'profiles': [p[0] for p in (r.get('profiles') or []) if p],
+                'description': self._clean(r.get('description')),
+            })
+        return {'success': True, 'mac': mac_address, 'services': services}
+
+    @staticmethod
+    def _clean(v):
+        return v.decode('utf-8', 'replace') if isinstance(v, bytes) else v
 
     # ------------------------------------------------------------------ pairing (bluetoothctl)
 
