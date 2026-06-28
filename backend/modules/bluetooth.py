@@ -6,14 +6,21 @@ device info via bluetoothctl.
 """
 
 import asyncio
+import json
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
+import sys
+import time
 from datetime import datetime
 
 from config import HCI_CAPTURES_DIR, INSTALL_DIR
+
+_ADVERTISER_SCRIPT = f'{INSTALL_DIR}/ble-advertiser.py'
+_ADVERTISER_PID = f'{INSTALL_DIR}/ble-advertiser.pid'
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -531,6 +538,169 @@ class BluetoothModule:
                 'connectable': connect.strip().lower() in ('true', 'yes', chr(0x2713)),
             })
         return devices
+
+    # ------------------------------------------------------------------ advertisement spoofing
+
+    def spoof_advertisement(self, params):
+        """Broadcast a crafted BLE advertisement (device spoof / beacon) via a
+        detached advertiser process. Replaces any advert already running."""
+        cfg, err = self._build_advert(params)
+        if err:
+            return {'success': False, 'error': err}
+        if not os.path.isfile(_ADVERTISER_SCRIPT):
+            return {'success': False, 'error': 'ble-advertiser.py not deployed; run update.sh'}
+
+        self._stop_advertiser()
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, _ADVERTISER_SCRIPT, json.dumps(cfg)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+        # If it dies right away it's usually a BlueZ permission / D-Bus issue.
+        time.sleep(0.6)
+        if proc.poll() is not None:
+            return {'success': False,
+                    'error': 'advertiser exited immediately (check BlueZ advertising permissions)'}
+
+        try:
+            with open(_ADVERTISER_PID, 'w') as f:
+                f.write(str(proc.pid))
+        except OSError:
+            pass
+        return {'success': True, 'pid': proc.pid, 'duration': cfg['duration'],
+                'name': cfg.get('name') or None, 'frame': (params.get('frame') or 'custom')}
+
+    def stop_spoof(self):
+        return {'success': True, 'stopped': self._stop_advertiser()}
+
+    def spoof_status(self):
+        pid = self._read_pid()
+        return {'success': True, 'running': pid is not None, 'pid': pid}
+
+    def _stop_advertiser(self):
+        pid = self._read_pid()
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        try:
+            os.remove(_ADVERTISER_PID)
+        except OSError:
+            pass
+        return pid is not None
+
+    @staticmethod
+    def _read_pid():
+        try:
+            with open(_ADVERTISER_PID) as f:
+                pid = int(f.read().strip())
+        except (OSError, ValueError):
+            return None
+        try:
+            os.kill(pid, 0)  # liveness check
+            return pid
+        except OSError:
+            try:
+                os.remove(_ADVERTISER_PID)
+            except OSError:
+                pass
+            return None
+
+    def _build_advert(self, params):
+        """Translate the high-level spoof form into the low-level advert config
+        the advertiser script consumes."""
+        try:
+            duration = max(1, min(int(params.get('duration', 60)), 600))
+        except (TypeError, ValueError):
+            duration = 60
+        cfg = {
+            'adapter': self.interface,
+            'duration': duration,
+            'type': params.get('type', 'peripheral'),
+            'name': params.get('name') or '',
+            'service_uuids': params.get('service_uuids') or [],
+            'manufacturer_data': {},
+            'service_data': {},
+            'include_tx_power': bool(params.get('include_tx_power', False)),
+        }
+        frame = (params.get('frame') or 'custom').lower()
+
+        if frame == 'ibeacon':
+            uuid = (params.get('uuid') or '').replace('-', '')
+            if len(uuid) != 32:
+                return None, 'iBeacon requires a 16-byte (32 hex char) UUID'
+            try:
+                major = int(params.get('major', 0)) & 0xFFFF
+                minor = int(params.get('minor', 0)) & 0xFFFF
+                tx = int(params.get('tx_power', -59)) & 0xFF
+            except (TypeError, ValueError):
+                return None, 'invalid iBeacon major/minor/tx_power'
+            cfg['manufacturer_data'] = {'76': f'0215{uuid}{major:04x}{minor:04x}{tx:02x}'}
+            cfg['type'] = 'broadcast'
+
+        elif frame == 'eddystone-url':
+            encoded, err = self._encode_eddystone_url(params.get('url') or '')
+            if err:
+                return None, err
+            tx = int(params.get('tx_power', -59)) & 0xFF
+            cfg['service_uuids'] = sorted(set(cfg['service_uuids'] + ['feaa']))
+            cfg['service_data'] = {'0000feaa-0000-1000-8000-00805f9b34fb': f'10{tx:02x}{encoded}'}
+            cfg['type'] = 'broadcast'
+
+        elif frame == 'eddystone-uid':
+            ns = (params.get('namespace') or '').replace('-', '')
+            inst = (params.get('instance') or '').replace('-', '')
+            if len(ns) != 20 or len(inst) != 12:
+                return None, 'Eddystone-UID needs a 10-byte namespace and 6-byte instance'
+            tx = int(params.get('tx_power', -59)) & 0xFF
+            cfg['service_uuids'] = sorted(set(cfg['service_uuids'] + ['feaa']))
+            cfg['service_data'] = {'0000feaa-0000-1000-8000-00805f9b34fb': f'00{tx:02x}{ns}{inst}'}
+            cfg['type'] = 'broadcast'
+
+        else:  # custom / raw
+            mfg_id = params.get('manufacturer_id')
+            mfg_data = (params.get('manufacturer_data') or '').replace(' ', '')
+            if mfg_id not in (None, '') and mfg_data:
+                try:
+                    cid = int(mfg_id)
+                    bytes.fromhex(mfg_data)  # validate hex
+                except (TypeError, ValueError):
+                    return None, 'invalid manufacturer id or data'
+                cfg['manufacturer_data'] = {str(cid): mfg_data}
+
+        if not (cfg['name'] or cfg['service_uuids'] or cfg['manufacturer_data'] or cfg['service_data']):
+            return None, 'advertisement is empty; set a name, service UUID, or data'
+        return cfg, None
+
+    @staticmethod
+    def _encode_eddystone_url(url):
+        if not url:
+            return None, 'Eddystone-URL requires a url'
+        scheme = None
+        rest = url
+        for i, prefix in enumerate(_URL_SCHEMES):
+            if url.startswith(prefix):
+                scheme, rest = i, url[len(prefix):]
+                break
+        if scheme is None:
+            return None, 'url must start with http(s):// (optionally www.)'
+        out = f'{scheme:02x}'
+        i = 0
+        while i < len(rest):
+            for code, exp in enumerate(_URL_EXPANSIONS):
+                if rest.startswith(exp, i):
+                    out += f'{code:02x}'
+                    i += len(exp)
+                    break
+            else:
+                out += f'{ord(rest[i]):02x}'
+                i += 1
+        return out, None
 
     # ------------------------------------------------------------------ pairing (bluetoothctl)
 

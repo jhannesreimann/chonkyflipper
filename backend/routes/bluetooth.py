@@ -85,6 +85,26 @@ def bluetooth_captures():
     return api_success(bt.list_hci_captures())
 
 
+@bp.route('/api/bluetooth/spoof', methods=['POST'])
+def bluetooth_spoof():
+    params = request.json or {}
+    bt = _bt_module()
+    result = bt.spoof_advertisement(params)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Spoof failed'), 500)
+
+
+@bp.route('/api/bluetooth/spoof/stop', methods=['POST'])
+def bluetooth_spoof_stop():
+    bt = _bt_module()
+    return api_success(bt.stop_spoof())
+
+
+@bp.route('/api/bluetooth/spoof/status', methods=['GET'])
+def bluetooth_spoof_status():
+    bt = _bt_module()
+    return api_success(bt.spoof_status())
+
+
 @bp.route('/api/bluetooth/deep-scan', methods=['POST'])
 def bluetooth_deep_scan():
     data = request.json or {}

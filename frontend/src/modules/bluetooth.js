@@ -16,6 +16,7 @@ export default function renderBluetooth(root) {
           <button class="join-item btn btn-sm ${mode === 'le' ? 'btn-active' : ''}" data-mode="le">BLE</button>
           <button class="join-item btn btn-sm ${mode === 'classic' ? 'btn-active' : ''}" data-mode="classic">Classic</button>
           <button class="join-item btn btn-sm ${mode === 'deep' ? 'btn-active' : ''}" data-mode="deep">Deep</button>
+          <button class="join-item btn btn-sm ${mode === 'spoof' ? 'btn-active' : ''}" data-mode="spoof">Spoof</button>
         </div>
         <div id="b-actions" class="flex items-center gap-2"></div>
       </div>
@@ -41,6 +42,7 @@ export default function renderBluetooth(root) {
   root
     .querySelector('#b-hci')
     .addEventListener('click', () => captureHci(root, parseInt(root.querySelector('#b-hci-dur').value, 10) || 30))
+  if (mode === 'spoof') renderSpoofForm(root)
 }
 
 function renderActions(root) {
@@ -61,9 +63,11 @@ function renderActions(root) {
   } else if (mode === 'classic') {
     el.innerHTML = `<button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>`
     el.querySelector('#b-scan').addEventListener('click', () => scanClassic(root))
-  } else {
+  } else if (mode === 'deep') {
     el.innerHTML = `<button id="b-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass-chart"></i>Scan</button>`
     el.querySelector('#b-scan').addEventListener('click', () => deepScan(root))
+  } else {
+    el.innerHTML = ''
   }
 }
 
@@ -366,6 +370,154 @@ function deepRow(d) {
     <td class="text-xs">${esc(d.vendor || '-')}</td>
     <td class="text-xs whitespace-nowrap">${esc(d.rssi ?? '-')} dBm</td>
   </tr>`
+}
+
+// ------------------------------------------------------------------ advertisement spoofing
+
+function renderSpoofForm(root) {
+  const out = root.querySelector('#b-out')
+  out.innerHTML = `
+    <div class="rounded-xl bg-base-200/40 p-4 space-y-3">
+      <p class="text-[0.7rem] text-base-content/55">Broadcast a crafted BLE advertisement. Authorized testing only.</p>
+      <div id="sp-status"></div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <label class="form-control">
+          <span class="label-text text-xs">Frame</span>
+          <select id="sp-frame" class="select select-sm select-bordered">
+            <option value="custom">Custom</option>
+            <option value="ibeacon">iBeacon</option>
+            <option value="eddystone-url">Eddystone URL</option>
+            <option value="eddystone-uid">Eddystone UID</option>
+          </select>
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs">Duration (s)</span>
+          <input id="sp-duration" type="number" value="60" min="1" max="600" class="input input-sm input-bordered" />
+        </label>
+      </div>
+
+      <label class="form-control">
+        <span class="label-text text-xs">Device name</span>
+        <input id="sp-name" type="text" placeholder="Fake Device" class="input input-sm input-bordered w-full" />
+      </label>
+
+      <div data-grp="custom" class="space-y-2">
+        <label class="form-control">
+          <span class="label-text text-xs">Service UUIDs (comma-separated)</span>
+          <input id="sp-uuids" type="text" placeholder="180d, feaa" class="input input-sm input-bordered w-full font-mono" />
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="form-control"><span class="label-text text-xs">Manufacturer ID</span><input id="sp-mfg-id" type="number" placeholder="76" class="input input-sm input-bordered" /></label>
+          <label class="form-control"><span class="label-text text-xs">Mfg data (hex)</span><input id="sp-mfg-data" type="text" placeholder="01ff" class="input input-sm input-bordered font-mono" /></label>
+        </div>
+      </div>
+
+      <div data-grp="ibeacon" class="space-y-2" style="display:none;">
+        <label class="form-control">
+          <span class="label-text text-xs">Proximity UUID (16 bytes)</span>
+          <input id="sp-uuid" type="text" placeholder="e2c56db5dffb48d2b060d0f5a71096e0" class="input input-sm input-bordered w-full font-mono" />
+        </label>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="form-control"><span class="label-text text-xs">Major</span><input id="sp-major" type="number" value="0" class="input input-sm input-bordered" /></label>
+          <label class="form-control"><span class="label-text text-xs">Minor</span><input id="sp-minor" type="number" value="0" class="input input-sm input-bordered" /></label>
+          <label class="form-control"><span class="label-text text-xs">TX @1m</span><input id="sp-tx" type="number" value="-59" class="input input-sm input-bordered" /></label>
+        </div>
+      </div>
+
+      <div data-grp="eddystone-url" class="space-y-2" style="display:none;">
+        <label class="form-control">
+          <span class="label-text text-xs">URL</span>
+          <input id="sp-url" type="text" placeholder="https://example.com" class="input input-sm input-bordered w-full font-mono" />
+        </label>
+      </div>
+
+      <div data-grp="eddystone-uid" class="grid grid-cols-2 gap-2" style="display:none;">
+        <label class="form-control"><span class="label-text text-xs">Namespace (10 bytes)</span><input id="sp-ns" type="text" class="input input-sm input-bordered font-mono" /></label>
+        <label class="form-control"><span class="label-text text-xs">Instance (6 bytes)</span><input id="sp-inst" type="text" class="input input-sm input-bordered font-mono" /></label>
+      </div>
+
+      <label class="label cursor-pointer justify-start gap-2">
+        <input id="sp-txp" type="checkbox" class="checkbox checkbox-sm" />
+        <span class="label-text text-xs">Include TX power</span>
+      </label>
+
+      <div class="flex gap-2">
+        <button id="sp-start" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-tower-broadcast"></i>Start</button>
+        <button id="sp-stop" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-stop"></i>Stop</button>
+      </div>
+    </div>`
+
+  const frame = out.querySelector('#sp-frame')
+  const showGroups = () => {
+    out.querySelectorAll('[data-grp]').forEach((g) => {
+      g.style.display = g.dataset.grp === frame.value ? '' : 'none'
+    })
+  }
+  frame.addEventListener('change', showGroups)
+  showGroups()
+  out.querySelector('#sp-start').addEventListener('click', () => startSpoof(root))
+  out.querySelector('#sp-stop').addEventListener('click', () => stopSpoof(root))
+  refreshSpoofStatus(root)
+}
+
+async function startSpoof(root) {
+  const out = root.querySelector('#b-out')
+  const v = (id) => out.querySelector('#' + id).value.trim()
+  const frame = v('sp-frame')
+  const params = {
+    frame,
+    name: v('sp-name'),
+    duration: parseInt(v('sp-duration'), 10) || 60,
+    include_tx_power: out.querySelector('#sp-txp').checked,
+  }
+  if (frame === 'custom') {
+    const uuids = v('sp-uuids')
+    if (uuids) params.service_uuids = uuids.split(',').map((s) => s.trim()).filter(Boolean)
+    if (v('sp-mfg-id')) params.manufacturer_id = parseInt(v('sp-mfg-id'), 10)
+    if (v('sp-mfg-data')) params.manufacturer_data = v('sp-mfg-data')
+  } else if (frame === 'ibeacon') {
+    params.uuid = v('sp-uuid')
+    params.major = parseInt(v('sp-major'), 10) || 0
+    params.minor = parseInt(v('sp-minor'), 10) || 0
+    params.tx_power = parseInt(v('sp-tx'), 10) || -59
+  } else if (frame === 'eddystone-url') {
+    params.url = v('sp-url')
+  } else if (frame === 'eddystone-uid') {
+    params.namespace = v('sp-ns')
+    params.instance = v('sp-inst')
+  }
+  const task = startTask('BLE spoof', frame)
+  try {
+    const d = await apiPost('/bluetooth/spoof', params)
+    task.done('Advertising', `${d.frame}, ${d.duration}s`)
+    refreshSpoofStatus(root)
+  } catch (e) {
+    task.fail('Spoof failed', e.message)
+  }
+}
+
+async function stopSpoof(root) {
+  try {
+    await apiPost('/bluetooth/spoof/stop')
+    notify('Spoof stopped', 'success')
+    refreshSpoofStatus(root)
+  } catch (e) {
+    notify('Stop failed', 'error', e.message)
+  }
+}
+
+async function refreshSpoofStatus(root) {
+  const el = root.querySelector('#sp-status')
+  if (!el) return
+  try {
+    const d = await apiGet('/bluetooth/spoof/status')
+    el.innerHTML = d.running
+      ? `<div class="rounded-lg bg-success/15 text-success text-xs px-3 py-2 flex items-center gap-2"><i class="fa-solid fa-tower-broadcast"></i>Advertising (pid ${esc(d.pid)})</div>`
+      : `<div class="rounded-lg bg-base-300/40 text-base-content/60 text-xs px-3 py-2">Not advertising</div>`
+  } catch (e) {
+    el.innerHTML = ''
+  }
 }
 
 // ------------------------------------------------------------------ Classic (BR/EDR) + SDP
