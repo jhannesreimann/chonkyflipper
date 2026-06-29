@@ -204,18 +204,20 @@ class ZigbeeAuditModule:
         if not os.path.exists(cap_file):
             return {'success': False, 'error': f'File not found: {cap_file}'}
 
-        stdout, stderr, rc = subprocess.run(
+        result = subprocess.run(
             ['sudo', '-n', 'tshark', '-r', cap_file,
              '-T', 'fields', '-e', 'wpan.src64', '-e', 'wpan.src16',
              '-e', 'wpan.dst_pan', '-e', 'frame.protocols',
              '-e', 'wpan.frame_type', '-E', 'header=n', '-E', 'separator=,'],
             capture_output=True, text=True, timeout=30,
         )
+        stdout, stderr, rc = result.stdout, result.stderr, result.returncode
         if rc != 0:
             return {'success': False, 'error': f'tshark failed: {stderr[:200]}'}
 
         devices = {}
         packet_count = 0
+        encrypted_count = 0
         for line in stdout.strip().split('\n'):
             line = line.strip()
             if not line:
@@ -229,7 +231,7 @@ class ZigbeeAuditModule:
             frame_type = parts[4].strip() if len(parts) > 4 else ''
 
             # Use src64 as device identifier, fallback to src16
-            dev_id = src64 if src64 else f'0x{src16}'
+            dev_id = src64 if src64 else src16
             if not dev_id or dev_id == '0x':
                 continue
 
@@ -239,34 +241,82 @@ class ZigbeeAuditModule:
                 'pan': pan,
                 'count': 0,
                 'protocols': set(),
-                'is_coordinator': False,
+                'is_coordinator': src16 == '0x0000',
+                'is_router': False,
+                'is_encrypted': False,
             })
             d['count'] += 1
             if protocols:
                 for proto in protocols.split(':'):
                     if proto.strip():
                         d['protocols'].add(proto.strip())
+                        if 'zbee_aps' in proto.strip().lower():
+                            d['is_encrypted'] = True
+                            encrypted_count += 1
             # Beacons indicate coordinator/router
             if frame_type == '0x0000':
-                d['is_coordinator'] = True
+                d['is_router'] = True
 
         # Format for output
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
-            mac_fmt = ':'.join(d['mac_long'][i:i+2] for i in range(0, len(d['mac_long']), 2)) if d['mac_long'] else f'0x{d["mac_short"]}'
-            role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
+            # tshark already formats MACs: EUI-64 as colon-sep, short as 0xHHHH
+            mac_fmt = d['mac_long'] if d['mac_long'] else d['mac_short'] if d['mac_short'] else dev_id
+            # Determine role
+            if d['is_coordinator']:
+                role = 'Coordinator'
+                role_desc = 'Network coordinator (trust center). Manages key distribution and device joins.'
+            elif d['is_router']:
+                role = 'Router'
+                role_desc = 'Mains-powered routing device. Relays messages for other devices.'
+            elif d['count'] >= 5:
+                role = 'Active End Device'
+                role_desc = 'Battery-powered device that communicates frequently.'
+            else:
+                role = 'End Device'
+                role_desc = 'Battery-powered device. Sleeps between transmissions to save power.'
             device_list.append({
                 'mac': mac_fmt,
                 'pan': d['pan'],
                 'packets': d['count'],
                 'role': role,
+                'role_desc': role_desc,
                 'has_zigbee': 'zbee_nwk' in str(d['protocols']),
                 'has_ipv6': '6lowpan' in str(d['protocols']) or 'ipv6' in str(d['protocols']),
+                'is_encrypted': d['is_encrypted'],
             })
+
+        # Cross-reference with coordinator's paired devices for identification
+        coordinator_devices = self._get_coordinator_devices()
+
+        for dev in device_list:
+            mac_clean = dev['mac'].replace(':', '').lower()
+            # Match against IEEE addresses from coordinator
+            for cd in coordinator_devices:
+                cd_addr = cd.get('ieee_address', '').replace('0x', '').lower()
+                if cd_addr and (cd_addr in mac_clean or mac_clean in cd_addr):
+                    dev['friendly_name'] = cd.get('friendly_name', '')
+                    dev['model'] = cd.get('model', '')
+                    dev['vendor'] = cd.get('vendor', '')
+                    dev['description'] = cd.get('description', '')
+                    break
 
         return {'success': True, 'devices': device_list,
                 'packets_analyzed': packet_count,
+                'encrypted_packets': encrypted_count,
                 'file': os.path.basename(cap_file)}
+
+    @staticmethod
+    def _get_coordinator_devices():
+        """Get paired device list from Zigbee2MQTT for cross-referencing."""
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request('http://127.0.0.1:5000/api/zigbee/dashboard')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = _json.loads(resp.read())
+            return data.get('devices', [])
+        except Exception:
+            return []
 
     # ------------------------------------------------------------------
     # List captures
