@@ -204,13 +204,14 @@ class ZigbeeAuditModule:
         if not os.path.exists(cap_file):
             return {'success': False, 'error': f'File not found: {cap_file}'}
 
-        stdout, stderr, rc = subprocess.run(
+        result = subprocess.run(
             ['sudo', '-n', 'tshark', '-r', cap_file,
              '-T', 'fields', '-e', 'wpan.src64', '-e', 'wpan.src16',
              '-e', 'wpan.dst_pan', '-e', 'frame.protocols',
              '-e', 'wpan.frame_type', '-E', 'header=n', '-E', 'separator=,'],
             capture_output=True, text=True, timeout=30,
         )
+        stdout, stderr, rc = result.stdout, result.stderr, result.returncode
         if rc != 0:
             return {'success': False, 'error': f'tshark failed: {stderr[:200]}'}
 
