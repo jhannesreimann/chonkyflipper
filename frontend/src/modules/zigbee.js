@@ -388,96 +388,93 @@ export function networkMap(nodes, links) {
 // ---------------------------------------------------------------- Sniffer (CC2531 + KillerBee)
 
 async function snifferTab(body) {
-  body.innerHTML = `
-    <p class="text-sm text-base-content/60 mb-4">CC2531 USB Sniffer with KillerBee. Passive capture and key extraction.</p>
-    <div class="flex flex-wrap gap-2 mb-4">
-      <button class="btn btn-sm btn-outline btn-info" id="sniff-check">Check Device</button>
-      <button class="btn btn-sm btn-primary" id="sniff-capture">Capture 10s</button>
-      <button class="btn btn-sm btn-secondary" id="sniff-scan">Scan ch 11-14</button>
-      <button class="btn btn-sm btn-accent" id="sniff-extract">Extract Keys</button>
-    </div>
-    <div class="flex gap-2 items-center mb-3">
-      <span class="text-xs text-base-content/50">Status:</span>
-      <span class="badge badge-sm badge-ghost" id="sniff-device-status">Unknown</span>
-      <select class="select select-xs select-bordered" id="sniff-channel">
-        ${[11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26].map(c => `<option value="${c}" ${c===11?'selected':''}>Ch ${c}</option>`).join('')}
-      </select>
-      <span class="text-xs text-base-content/50">Duration:</span>
-      <select class="select select-xs select-bordered" id="sniff-duration">
-        <option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option>
-      </select>
-    </div>
-    <div id="sniff-output" class="mt-3"></div>
-  `
+  var html = '<p class="text-sm text-base-content/60 mb-4">CC2531 USB Sniffer with KillerBee. Passive capture and key extraction.</p>' +
+    '<div class="flex flex-wrap gap-2 mb-4">' +
+      '<button class="btn btn-sm btn-outline btn-info" id="sniff-check">Check Device</button>' +
+      '<button class="btn btn-sm btn-primary" id="sniff-capture">Capture 10s</button>' +
+      '<button class="btn btn-sm btn-secondary" id="sniff-scan">Scan ch 11-14</button>' +
+      '<button class="btn btn-sm btn-accent" id="sniff-extract">Extract Keys</button>' +
+    '</div>' +
+    '<div class="flex gap-2 items-center mb-3">' +
+      '<span class="text-xs text-base-content/50">Status:</span>' +
+      '<span class="badge badge-sm badge-ghost" id="sniff-device-status">Unknown</span>' +
+      '<select class="select select-xs select-bordered" id="sniff-channel">';
+  for (var c = 11; c <= 26; c++) html += '<option value="' + c + '"' + (c===11?' selected':'') + '>Ch ' + c + '</option>';
+  html += '</select>' +
+      '<span class="text-xs text-base-content/50">Duration:</span>' +
+      '<select class="select select-xs select-bordered" id="sniff-duration">' +
+        '<option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option>' +
+      '</select>' +
+    '</div>' +
+    '<div id="sniff-output" class="mt-3"></div>';
+  body.innerHTML = html;
 
-  // Check device on load
-  checkSnifferDevice()
-  // Wire buttons
-  body.querySelector('#sniff-check').onclick = checkSnifferDevice
-  body.querySelector('#sniff-capture').onclick = sniffCapture
-  body.querySelector('#sniff-scan').onclick = sniffScan
-  body.querySelector('#sniff-extract').onclick = sniffExtract
+  checkSnifferDevice();
+  body.querySelector('#sniff-check').onclick = checkSnifferDevice;
+  body.querySelector('#sniff-capture').onclick = sniffCapture;
+  body.querySelector('#sniff-scan').onclick = sniffScan;
+  body.querySelector('#sniff-extract').onclick = sniffExtract;
 }
 
 async function checkSnifferDevice() {
-  const el = document.getElementById('sniff-device-status')
-  if (!el) return
+  var el = document.getElementById('sniff-device-status');
+  if (!el) return;
   try {
-    const { apiGet } = await import('../api.js')
-    const d = await apiGet('/zigbee/audit/device')
-    el.textContent = d.cc2531_present ? 'CC2531 connected' : 'Not found'
-    el.className = 'badge badge-sm ' + (d.cc2531_present ? 'badge-success' : 'badge-error')
+    var api = await import('../api.js');
+    var d = await api.apiGet('/zigbee/audit/device');
+    el.textContent = d.cc2531_present ? 'CC2531 connected' : 'Not found';
+    el.className = 'badge badge-sm ' + (d.cc2531_present ? 'badge-success' : 'badge-error');
   } catch (e) {
-    el.textContent = 'Error'
-    el.className = 'badge badge-sm badge-error'
+    el.textContent = 'Error';
+    el.className = 'badge badge-sm badge-error';
   }
 }
 
 async function sniffCapture() {
-  const out = document.getElementById('sniff-output')
-  if (!out) return
-  const ch = document.getElementById('sniff-channel')?.value || 11
-  const dur = document.getElementById('sniff-duration')?.value || 10
-  out.innerHTML = `<div class="text-sm text-info">Capturing ch ${ch} for ${dur}s...</div>`
+  var out = document.getElementById('sniff-output');
+  if (!out) return;
+  var ch = document.getElementById('sniff-channel')?.value || 11;
+  var dur = document.getElementById('sniff-duration')?.value || 10;
+  out.innerHTML = '<div class="text-sm text-info">Capturing ch ' + ch + ' for ' + dur + 's...</div>';
   try {
-    const { apiPost } = await import('../api.js')
-    const d = await apiPost('/zigbee/audit/capture', { channel: parseInt(ch), duration: parseInt(dur) })
+    var api = await import('../api.js');
+    var d = await api.apiPost('/zigbee/audit/capture', { channel: parseInt(ch), duration: parseInt(dur) });
     if (d.success) {
-      out.innerHTML = `<div class="text-sm text-success">Captured ${d.filename} (${d.size_bytes} bytes on ch ${d.channel})</div>`
+      out.innerHTML = '<div class="text-sm text-success">Captured ' + d.filename + ' (' + d.size_bytes + ' bytes on ch ' + d.channel + ')</div>';
     } else {
-      out.innerHTML = `<div class="text-sm text-error">${escapeHtml(d.error || 'Capture failed')}</div>`
+      out.innerHTML = '<div class="text-sm text-error">' + esc(d.error || 'Capture failed') + '</div>';
     }
-  } catch (e) { out.innerHTML = `<div class="text-sm text-error">${escapeHtml(e.message)}</div>` }
+  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
 }
 
 async function sniffScan() {
-  const out = document.getElementById('sniff-output')
-  if (!out) return
-  out.innerHTML = `<div class="text-sm text-info">Scanning channels 11-14...</div>`
+  var out = document.getElementById('sniff-output');
+  if (!out) return;
+  out.innerHTML = '<div class="text-sm text-info">Scanning channels 11-14...</div>';
   try {
-    const { apiPost } = await import('../api.js')
-    const d = await apiPost('/zigbee/audit/scan', { channels: '11-14', duration: 10 })
+    var api = await import('../api.js');
+    var d = await api.apiPost('/zigbee/audit/scan', { channels: '11-14', duration: 10 });
     out.innerHTML = d.success
-      ? `<div class="text-sm text-success">Scan complete. File: ${d.file || 'saved'}</div><pre class="text-xs text-base-content/60 mt-2">${escapeHtml(d.output||'')}</pre>`
-      : `<div class="text-sm text-error">${escapeHtml(d.error || 'Scan failed')}</div>`
-  } catch (e) { out.innerHTML = `<div class="text-sm text-error">${escapeHtml(e.message)}</div>` }
+      ? '<div class="text-sm text-success">Scan complete. File: ' + (d.file || 'saved') + '</div><pre class="text-xs text-base-content/60 mt-2">' + esc(d.output||'') + '</pre>'
+      : '<div class="text-sm text-error">' + esc(d.error || 'Scan failed') + '</div>';
+  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
 }
 
 async function sniffExtract() {
-  const out = document.getElementById('sniff-output')
-  if (!out) return
-  out.innerHTML = `<div class="text-sm text-info">Fetching latest capture...</div>`
+  var out = document.getElementById('sniff-output');
+  if (!out) return;
+  out.innerHTML = '<div class="text-sm text-info">Fetching latest capture...</div>';
   try {
-    const { apiGet, apiPost } = await import('../api.js')
-    const list = await apiGet('/zigbee/audit/captures')
+    var api = await import('../api.js');
+    var list = await api.apiGet('/zigbee/audit/captures');
     if (!list.captures || list.captures.length === 0) {
-      out.innerHTML = `<div class="text-sm text-error">No captures available. Run a capture first.</div>`
-      return
+      out.innerHTML = '<div class="text-sm text-error">No captures available. Run a capture first.</div>';
+      return;
     }
-    const latest = list.captures[0]
-    const d = await apiPost('/zigbee/audit/extract-keys', { file: `/opt/chonkyflipper/data/zigbee_captures/${latest.name}` })
+    var latest = list.captures[0];
+    var d = await api.apiPost('/zigbee/audit/extract-keys', { file: '/opt/chonkyflipper/data/zigbee_captures/' + latest.name });
     out.innerHTML = d.success
-      ? `<div class="text-sm text-success">Key extraction complete</div><pre class="text-xs text-base-content/60 mt-2">${escapeHtml(d.output||'')}</pre>`
-      : `<div class="text-sm text-error">${escapeHtml(d.error || 'Extraction failed')}</div>`
-  } catch (e) { out.innerHTML = `<div class="text-sm text-error">${escapeHtml(e.message)}</div>` }
-}`
+      ? '<div class="text-sm text-success">Key extraction complete</div><pre class="text-xs text-base-content/60 mt-2">' + esc(d.output||'') + '</pre>'
+      : '<div class="text-sm text-error">' + esc(d.error || 'Extraction failed') + '</div>';
+  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
+}
