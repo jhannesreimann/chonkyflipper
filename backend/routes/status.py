@@ -71,6 +71,10 @@ def _detect_modules():
             ),
             'usb': 'ttyUSB0',
         },
+        'zigbee-audit': {
+            'available': False,
+            'usb': 'CC2531',
+        },
     }
 
     # PN532: check I2C bus
@@ -84,6 +88,14 @@ def _detect_modules():
                 if line.startswith('20:') and '24' in line.split():
                     module_status['pn532']['available'] = True
                     break
+    except Exception:
+        pass
+
+    # CC2531 sniffer: check USB
+    try:
+        import usb.core
+        dev = usb.core.find(idVendor=0x0451, idProduct=0x16AE)
+        module_status['zigbee-audit']['available'] = dev is not None
     except Exception:
         pass
 

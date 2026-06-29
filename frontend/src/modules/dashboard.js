@@ -9,6 +9,7 @@ const MODULES = [
   { key: 'bluetooth', label: 'Bluetooth', icon: 'fa-bluetooth-b', route: 'bluetooth' },
   { key: 'cc1101', label: 'Sub-1GHz', icon: 'fa-satellite-dish', route: 'subghz' },
   { key: 'zigbee', label: 'Zigbee', icon: 'fa-house-signal', route: 'zigbee' },
+  { key: 'zigbee-audit', label: 'Zigbee Sniffer', icon: 'fa-search', route: 'zigbee' },
   { key: 'ir', label: 'Infrared', icon: 'fa-tower-broadcast', route: 'ir' },
   { key: 'pn532', label: 'NFC / RFID', icon: 'fa-id-card', route: 'nfc' },
 ]
