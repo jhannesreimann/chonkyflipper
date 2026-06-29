@@ -254,7 +254,14 @@ class ZigbeeAuditModule:
         # Format for output
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
-            mac_fmt = ':'.join(d['mac_long'][i:i+2] for i in range(0, len(d['mac_long']), 2)) if d['mac_long'] else f'0x{d["mac_short"]}'
+            # Format MAC: long EUI-64 as colon-separated hex, short as 0xHHHH
+            if d['mac_long'] and len(d['mac_long']) >= 16:
+                raw = d['mac_long'][:16]
+                mac_fmt = ':'.join(raw[i:i+2] for i in range(0, 16, 2)).lower()
+            elif d['mac_short']:
+                mac_fmt = f'0x{d["mac_short"]}'
+            else:
+                mac_fmt = dev_id
             role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
             device_list.append({
                 'mac': mac_fmt,
