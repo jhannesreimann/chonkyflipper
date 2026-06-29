@@ -28,5 +28,5 @@ def badusb_execute():
     if not payload_name:
         return api_error('payload name required', 400)
     badusb = _badusb_module()
-    result = badusb.execute_payload(payload_name)
+    result = badusb.execute_payload(payload_name, layout=data.get('layout'))
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)

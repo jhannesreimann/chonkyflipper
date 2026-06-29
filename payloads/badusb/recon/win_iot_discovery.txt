@@ -1,0 +1,21 @@
+REM Windows IoT discovery: ping-sweep the local /24, then dump the ARP cache
+REM Populates the neighbour table so IoT device IPs and MACs show up in arp -a.
+REM Derives the subnet from the default gateway, so no subnet is hardcoded.
+REM Works on Windows PowerShell 5.1. Read-only. Authorised testing only.
+
+DEFAULTDELAY 120
+
+DELAY 800
+GUI r
+DELAY 600
+STRING powershell
+ENTER
+DELAY 1400
+
+STRINGLN $gw = (Get-WmiObject Win32_IP4RouteTable | Where-Object {$_.Destination -eq '0.0.0.0'} | Select-Object -First 1).NextHop
+STRINGLN $p = $gw.Substring(0, $gw.LastIndexOf('.') + 1)
+STRINGLN 1..254 | ForEach-Object { Start-Process ping -ArgumentList "-n 1 -w 200 $p$_" -WindowStyle Hidden }
+STRINGLN Start-Sleep -Seconds 8
+STRINGLN arp -a | Out-File "$env:USERPROFILE\Desktop\iot_hosts.txt"
+STRINGLN notepad "$env:USERPROFILE\Desktop\iot_hosts.txt"
+STRINGLN exit

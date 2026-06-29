@@ -1,0 +1,34 @@
+REM DuckyScript 3.0 feature demo: variables, loops, conditionals, jitter.
+REM Harmless -- opens Notepad and types a few lines. Authorised testing only.
+REM_BLOCK
+  Shows the interpreter extensions over classic DuckyScript 1.0:
+    VAR / assignment, WHILE, IF / ELSE IF / ELSE,
+    DEFAULT_CHAR_DELAY (per-key pacing) and JITTER (randomised pacing).
+END_REM
+
+DEFAULTDELAY 200
+DEFAULT_CHAR_DELAY 8
+JITTER 12
+
+DELAY 800
+GUI r
+DELAY 600
+STRING notepad
+ENTER
+DELAY 1200
+
+STRINGLN DuckyScript 3.0 demo
+
+VAR $i = 1
+WHILE ($i <= 5)
+  STRING line
+  STRING  number
+  STRINGLN  done
+  $i = $i + 1
+END_WHILE
+
+IF ($i == 6) THEN
+  STRINGLN loop finished after 5 lines
+ELSE
+  STRINGLN unexpected counter
+END_IF

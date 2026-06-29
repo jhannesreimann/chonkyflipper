@@ -1,0 +1,22 @@
+REM Windows network map: dump interface, route, ARP and neighbour tables
+REM Target: Windows workstation that administers IoT gear
+REM Read-only. Writes a report to the Desktop and opens it in Notepad.
+REM Authorised testing only.
+
+DEFAULTDELAY 120
+
+DELAY 800
+GUI r
+DELAY 600
+STRING powershell
+ENTER
+DELAY 1400
+
+STRINGLN $out = "$env:USERPROFILE\Desktop\netmap.txt"
+STRINGLN ipconfig /all | Out-File $out
+STRINGLN route print | Out-File $out -Append
+STRINGLN arp -a | Out-File $out -Append
+STRINGLN Get-NetNeighbor -AddressFamily IPv4 | Out-File $out -Append
+STRINGLN netstat -ano | Out-File $out -Append
+STRINGLN notepad $out
+STRINGLN exit

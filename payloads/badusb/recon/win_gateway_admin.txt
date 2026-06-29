@@ -1,0 +1,16 @@
+REM Open the default gateway's admin page in the default browser
+REM Useful for landing on a router / IoT hub login panel during an engagement.
+REM Read-only. Authorised testing only.
+
+DEFAULTDELAY 120
+
+DELAY 800
+GUI r
+DELAY 600
+STRING powershell
+ENTER
+DELAY 1400
+
+STRINGLN $gw = (Get-WmiObject Win32_IP4RouteTable | Where-Object {$_.Destination -eq '0.0.0.0'} | Select-Object -First 1).NextHop
+STRINGLN Start-Process ("http://" + $gw)
+STRINGLN exit
