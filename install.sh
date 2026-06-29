@@ -374,11 +374,23 @@ systemctl unmask hostapd
 systemctl enable hostapd
 systemctl enable dnsmasq
 
-# Deploy frontend via nginx
+# Deploy frontend via nginx (Vite SPA build)
 echo ""
-echo "Step 14: Deploying frontend..."
+echo "Step 14: Building and deploying frontend..."
 mkdir -p /var/www/html
-cp -r "$SCRIPT_DIR/frontend/"* /var/www/html/
+if [ -d "$SCRIPT_DIR/frontend" ] && command -v npm >/dev/null 2>&1; then
+    ( cd "$SCRIPT_DIR/frontend" && npm ci --no-audit --no-fund 2>&1 | tail -3 && npm run build 2>&1 | tail -3 )
+    if [ -d "$SCRIPT_DIR/frontend/dist" ]; then
+        cp -r "$SCRIPT_DIR/frontend/dist/"* /var/www/html/
+        echo "  ✓ frontend built and deployed"
+    else
+        cp -r "$SCRIPT_DIR/frontend/"* /var/www/html/
+        echo "  ⚠ build failed, copied raw files"
+    fi
+else
+    cp -r "$SCRIPT_DIR/frontend/"* /var/www/html/
+    echo "  ⚠ no npm, copied raw files"
+fi
 cat > /etc/nginx/sites-available/chonky << 'EOF'
 server {
     listen 80;
@@ -517,6 +529,34 @@ EOF
 systemctl daemon-reload
 # Enable but do not start — requires Zigbee USB dongle to be present first
 systemctl enable zigbee2mqtt
+
+# Install CC2531 Zigbee Sniffer support (KillerBee framework)
+echo ""
+echo "Step 18: Installing CC2531 Zigbee Sniffer support..."
+# KillerBee framework
+if [ ! -d "$INSTALL_DIR/killerbee" ]; then
+    git clone --depth 1 https://github.com/riverloopsec/killerbee.git "$INSTALL_DIR/killerbee" 2>&1 | tail -2
+    echo "  ✓ KillerBee cloned"
+fi
+# Python dependencies for KillerBee + pcap analysis
+source "$INSTALL_DIR/venv/bin/activate"
+pip install scapy pyusb pyserial rangeparser --quiet 2>&1 | tail -1
+echo "  ✓ Python deps (scapy, pyusb, pyserial)"
+# Udev rule for CC2531 USB dongle (VID:0451 PID:16AE)
+cat > /etc/udev/rules.d/99-cc2531.rules << 'UDEVEOF'
+SUBSYSTEM=="usb", ATTR{idVendor}=="0451", ATTR{idProduct}=="16ae", MODE="0666"
+UDEVEOF
+udevadm control --reload-rules 2>/dev/null || true
+udevadm trigger 2>/dev/null || true
+echo "  ✓ CC2531 udev rule"
+# Sudoers for tshark (used by zigbee_audit module)
+if ! grep -q "/usr/bin/tshark" /etc/sudoers.d/chonky-ops 2>/dev/null; then
+    cat >> /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
+chonky ALL=(ALL) NOPASSWD: /usr/bin/tshark *
+chonky ALL=(ALL) NOPASSWD: /usr/bin/script *
+EOFSUDOERS
+fi
+echo "  ✓ sudoers updated"
 
 echo ""
 echo "==================================================="
