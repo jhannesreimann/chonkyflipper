@@ -17,15 +17,25 @@ def _bt_module():
 
 @bp.route('/api/bluetooth/scan', methods=['GET'])
 def bluetooth_scan():
+    try:
+        duration = int(request.args.get('duration', 8))
+    except (TypeError, ValueError):
+        duration = 8
+    duration = max(1, min(duration, 120))
     bt = _bt_module()
-    result = bt.scan_ble()
+    result = bt.scan_ble(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
 @bp.route('/api/bluetooth/beacons', methods=['GET'])
 def bluetooth_beacons():
+    try:
+        duration = int(request.args.get('duration', 8))
+    except (TypeError, ValueError):
+        duration = 8
+    duration = max(1, min(duration, 120))
     bt = _bt_module()
-    result = bt.scan_beacons()
+    result = bt.scan_beacons(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
@@ -139,3 +149,30 @@ def bluetooth_sdp():
     bt = _bt_module()
     result = bt.enumerate_services(mac)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'SDP enumeration failed'), 500)
+
+
+# ------------------------------------------------------------------ background ad log daemon
+
+@bp.route('/api/bluetooth/log/start', methods=['POST'])
+def bluetooth_log_start():
+    bt = _bt_module()
+    result = bt.start_advert_log()
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed to start logger'), 500)
+
+
+@bp.route('/api/bluetooth/log/stop', methods=['POST'])
+def bluetooth_log_stop():
+    bt = _bt_module()
+    return api_success(bt.stop_advert_log())
+
+
+@bp.route('/api/bluetooth/log/status', methods=['GET'])
+def bluetooth_log_status():
+    bt = _bt_module()
+    return api_success(bt.advert_log_status())
+
+
+@bp.route('/api/bluetooth/log/data', methods=['GET'])
+def bluetooth_log_data():
+    bt = _bt_module()
+    return api_success(bt.advert_log_data())

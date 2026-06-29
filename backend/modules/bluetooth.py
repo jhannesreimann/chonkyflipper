@@ -28,10 +28,6 @@ except ImportError:
     BleakScanner = None
     BleakClient = None
 
-try:
-    import bluetooth as _pybluez  # PyBluez / pybluez2 (Classic SDP browsing)
-except ImportError:
-    _pybluez = None
 
 # Eddystone service UUID (16-bit 0xFEAA in full 128-bit form)
 _EDDYSTONE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb'
@@ -320,61 +316,63 @@ class BluetoothModule:
     # ------------------------------------------------------------------ Classic BT (BR/EDR) + SDP
 
     def scan_classic(self, duration=10):
-        """Discover Classic (BR/EDR) devices via a bluetoothd-managed inquiry.
+        """Discover Classic (BR/EDR) devices via hcitool inquiry.
 
-        Runs bluetoothctl scan for `duration` seconds and parses the discovery
-        events, keeping devices that report a Class of Device (the BR/EDR
-        signal) so BLE-only devices are filtered out.
+        hcitool inq performs a real BR/EDR inquiry (unlike bluetoothctl scan
+        which defaults to BLE).  Each response includes the Class of Device so
+        we know the device is BR/EDR-capable without guessing.
         """
         try:
+            # --length is in 1.28 s units; cap at a reasonable max.
+            length = max(1, min(int(duration / 1.28), 60))
+        except (TypeError, ValueError):
+            length = 8
+        try:
             result = subprocess.run(
-                ['bluetoothctl', '--timeout', str(duration), 'scan', 'on'],
+                ['hcitool', 'inq', '--flush', '--length', str(length)],
                 capture_output=True, text=True, timeout=duration + 15,
             )
         except subprocess.TimeoutExpired:
             return {'success': False, 'error': 'Classic scan timed out', 'devices': []}
         except FileNotFoundError:
-            return {'success': False, 'error': 'bluetoothctl not found', 'devices': []}
+            return {'success': False, 'error': 'hcitool not found (install bluez-hcidump)', 'devices': []}
         except Exception as e:
             return {'success': False, 'error': str(e), 'devices': []}
 
-        devices = self._parse_classic_scan(result.stdout)
+        devices = self._parse_hci_inq(result.stdout)
+        # Resolve friendly names (best-effort, one at a time).
+        for d in devices:
+            try:
+                name = subprocess.run(
+                    ['hcitool', 'name', d['mac']],
+                    capture_output=True, text=True, timeout=5,
+                )
+                n = name.stdout.strip()
+                if n and ':' not in n and n != 'Unknown':
+                    d['name'] = n
+            except Exception:
+                pass
         devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'duration': duration, 'devices': devices}
 
-    def _parse_classic_scan(self, output):
-        found = {}
-        for raw in output.splitlines():
-            line = _ANSI_RE.sub('', raw).strip()
+    def _parse_hci_inq(self, output):
+        devices = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line or line.startswith('Inquiring'):
+                continue
             m = _MAC_RE.search(line)
             if not m:
                 continue
-            mac = m.group(1).upper()
-            rest = line[m.end():].strip()
-            d = found.setdefault(mac, {'mac': mac, 'name': None, 'rssi': None, 'cod': None})
-            if ':' in rest:
-                key, _, val = rest.partition(':')
-                key, val = key.strip(), val.strip()
-                if key == 'RSSI':
-                    try:
-                        d['rssi'] = int(val.split()[0])
-                    except (ValueError, IndexError):
-                        pass
-                elif key == 'Class':
-                    d['cod'] = val
-                elif key == 'Name':
-                    d['name'] = val
-            elif rest and d['name'] is None:
-                d['name'] = rest
-        # Keep only BR/EDR devices (those that reported a Class of Device).
-        classic = []
-        for d in found.values():
-            if not d['cod']:
-                continue
-            d['type'] = self._cod_major(d['cod'])
-            d.pop('cod', None)
-            classic.append(d)
-        return classic
+            d = {'mac': m.group(1).upper(), 'name': None, 'rssi': None}
+            # Class of Device — e.g. "class: 0x0c043c"
+            cm = re.search(r'class:\s*(0x[0-9a-fA-F]+)', line)
+            if cm:
+                d['type'] = self._cod_major(cm.group(1))
+            else:
+                d['type'] = 'Unknown'
+            devices.append(d)
+        return devices
 
     @staticmethod
     def _cod_major(cod):
@@ -385,31 +383,103 @@ class BluetoothModule:
         return _COD_MAJOR.get((val >> 8) & 0x1F, 'Unknown')
 
     def enumerate_services(self, mac_address):
-        """SDP browse a Classic device for its service records (RFCOMM channels,
-        protocols, profiles) via PyBluez."""
-        if _pybluez is None:
-            return {'success': False, 'error': 'PyBluez is not installed (pip install pybluez2)',
-                    'services': [], 'mac': mac_address}
+        """SDP browse a Classic device via sdptool (part of bluez)."""
         try:
-            records = _pybluez.find_service(address=mac_address)
+            result = subprocess.run(
+                ['sdptool', 'browse', mac_address],
+                capture_output=True, text=True, timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'SDP browse timed out',
+                    'services': [], 'mac': mac_address}
+        except FileNotFoundError:
+            return {'success': False, 'error': 'sdptool not found (install bluez)',
+                    'services': [], 'mac': mac_address}
         except Exception as e:
             return {'success': False, 'error': str(e), 'services': [], 'mac': mac_address}
 
-        services = []
-        for r in records:
-            services.append({
-                'name': self._clean(r.get('name')),
-                'protocol': r.get('protocol'),
-                'channel': r.get('port'),
-                'service_classes': r.get('service-classes') or [],
-                'profiles': [p[0] for p in (r.get('profiles') or []) if p],
-                'description': self._clean(r.get('description')),
-            })
+        if result.returncode != 0:
+            err = (result.stderr or '').strip()
+            return {'success': False, 'error': err or 'SDP browse failed',
+                    'services': [], 'mac': mac_address}
+
+        services = self._parse_sdptool(result.stdout)
         return {'success': True, 'mac': mac_address, 'services': services}
 
     @staticmethod
-    def _clean(v):
-        return v.decode('utf-8', 'replace') if isinstance(v, bytes) else v
+    def _parse_sdptool(output):
+        """Parse sdptool browse output into structured service records."""
+        services = []
+        cur = None
+        in_list = None  # current list key: 'classes', 'protocols', 'profiles'
+
+        for raw in output.splitlines():
+            line = raw.rstrip()
+
+            # Service Name: (may appear before or after RecHandle)
+            if line.startswith('Service Name:') or line.startswith('Service Provider:'):
+                if cur is None:
+                    cur = {'name': None, 'protocol': None, 'channel': None,
+                           'service_classes': [], 'profiles': []}
+                val = line.split(':', 1)[1].strip()
+                if val and line.startswith('Service Name:'):
+                    cur['name'] = val
+                continue
+
+            # Service RecHandle starts a new record (some records have no name)
+            if line.startswith('Service RecHandle:'):
+                if cur is not None:
+                    services.append(cur)
+                cur = {'name': None, 'protocol': None, 'channel': None,
+                       'service_classes': [], 'profiles': []}
+                in_list = None
+                continue
+
+            if cur is None:
+                continue
+
+            # "Service Class ID List:" / "Protocol Descriptor List:" / "Profile Descriptor List:"
+            if line.startswith('Service Class ID List:'):
+                in_list = 'classes'
+                continue
+            if line.startswith('Protocol Descriptor List:'):
+                in_list = 'protocols'
+                continue
+            if line.startswith('Profile Descriptor List:'):
+                in_list = 'profiles'
+                continue
+
+            # Indented list items
+            stripped = line.lstrip()
+            if not stripped:
+                in_list = None
+                continue
+
+            if in_list == 'classes':
+                # "Headset Audio Gateway" (0x1112)
+                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
+                if m:
+                    cur['service_classes'].append(m.group(1))
+
+            elif in_list == 'protocols':
+                # "L2CAP" (0x0100)  or  "RFCOMM" (0x0003)
+                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
+                if m:
+                    cur['protocol'] = m.group(1)
+                if stripped.startswith('Channel:'):
+                    try:
+                        cur['channel'] = int(stripped.split(':')[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+
+            elif in_list == 'profiles':
+                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
+                if m:
+                    cur['profiles'].append(m.group(1))
+
+        if cur is not None:
+            services.append(cur)
+        return services
 
     # ------------------------------------------------------------------ raw HCI capture
 
@@ -506,13 +576,13 @@ class BluetoothModule:
                 continue
             upper = [c.upper() for c in cells]
             if idx is None:
-                if 'RSSI' in upper and 'MAC' in upper:
+                if any('RSSI' in c for c in upper) and any('MAC' in c for c in upper):
                     idx = {
-                        'rssi': upper.index('RSSI'),
-                        'mac': upper.index('MAC'),
-                        'vendor': upper.index('VENDOR') if 'VENDOR' in upper else None,
-                        'name': upper.index('NAME') if 'NAME' in upper else None,
-                        'connect': upper.index('CONNECT') if 'CONNECT' in upper else None,
+                        'rssi': next((i for i, c in enumerate(upper) if 'RSSI' in c), 0),
+                        'mac': next((i for i, c in enumerate(upper) if c == 'MAC'), 0),
+                        'vendor': next((i for i, c in enumerate(upper) if c == 'VENDOR'), None),
+                        'name': next((i for i, c in enumerate(upper) if c == 'NAME'), None),
+                        'connect': next((i for i, c in enumerate(upper) if c == 'CONNECT'), None),
                     }
                 continue
             if idx['mac'] >= len(cells):
@@ -535,7 +605,7 @@ class BluetoothModule:
                 'name': name or 'Unknown',
                 'rssi': rssi,
                 'vendor': vendor or None,
-                'connectable': connect.strip().lower() in ('true', 'yes', chr(0x2713)),
+                'connectable': connect.strip().lower() in ('true', 'yes', '✓', '✔'),
             })
         return devices
 
@@ -739,3 +809,95 @@ class BluetoothModule:
             return {'success': True, 'mac': mac_address}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+
+    # ------------------------------------------------------------------ background ad log daemon
+
+    _LOGGER_SCRIPT = f'{INSTALL_DIR}/ble-advert-logger.py'
+    _LOGGER_PID = f'{INSTALL_DIR}/ble-advert-logger.pid'
+    _LOGGER_STATE = f'{INSTALL_DIR}/ble-advert-log.json'
+
+    def start_advert_log(self):
+        """Start the background BLE advertisement logger daemon."""
+        if not os.path.isfile(self._LOGGER_SCRIPT):
+            return {'success': False, 'error': 'ble-advert-logger.py not deployed; run update.sh'}
+        if self._logger_running():
+            return {'success': False, 'error': 'Advert logger is already running'}
+
+        self._stop_logger()
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, self._LOGGER_SCRIPT, self._LOGGER_STATE, self._LOGGER_PID],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+        time.sleep(0.8)
+        if proc.poll() is not None:
+            return {'success': False, 'error': 'Logger exited immediately (check bleak)'}
+
+        try:
+            with open(self._LOGGER_PID, 'w') as f:
+                f.write(str(proc.pid))
+        except OSError:
+            pass
+        return {'success': True, 'pid': proc.pid}
+
+    def stop_advert_log(self):
+        stopped = self._stop_logger()
+        try:
+            os.remove(self._LOGGER_STATE)
+        except OSError:
+            pass
+        return {'success': True, 'stopped': stopped}
+
+    def advert_log_status(self):
+        pid = self._logger_running()
+        return {'success': True, 'running': pid is not None, 'pid': pid}
+
+    def advert_log_data(self):
+        """Read the current state file from the running daemon."""
+        try:
+            with open(self._LOGGER_STATE) as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {'success': True, 'running': False, 'devices': [], 'total_sightings': 0,
+                    'device_count': 0, 'started_at': None}
+        data['success'] = True
+        return data
+
+    def _stop_logger(self):
+        pid = self._read_logger_pid()
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        try:
+            os.remove(self._LOGGER_PID)
+        except OSError:
+            pass
+        return pid is not None
+
+    def _logger_running(self):
+        pid = self._read_logger_pid()
+        if pid is None:
+            return None
+        try:
+            os.kill(pid, 0)
+            return pid
+        except OSError:
+            try:
+                os.remove(self._LOGGER_PID)
+            except OSError:
+                pass
+            return None
+
+    @classmethod
+    def _read_logger_pid(cls):
+        try:
+            with open(cls._LOGGER_PID) as f:
+                return int(f.read().strip())
+        except (OSError, ValueError):
+            return None

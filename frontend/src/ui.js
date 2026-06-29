@@ -81,7 +81,7 @@ export function tabBar(tabs, activeId) {
         (t) => `
       <a role="tab" data-tab="${t.id}"
          class="tab gap-2 ${t.id === activeId ? 'tab-active' : ''}">
-        ${t.icon ? `<i class="fa-solid ${t.icon} text-xs"></i>` : ''}${esc(t.label)}
+        ${t.icon ? `<i class="${faClass(t.icon)} text-xs"></i>` : ''}${esc(t.label)}
       </a>`,
       )
       .join('')}
