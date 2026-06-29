@@ -256,7 +256,7 @@ class ZigbeeAuditModule:
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
             # tshark already formats MACs: EUI-64 as colon-sep, short as 0xHHHH
-            mac_fmt = d['mac_long'] if d['mac_long'] else f'0x{d["mac_short"]}' if d['mac_short'] else dev_id
+            mac_fmt = d['mac_long'] if d['mac_long'] else d['mac_short'] if d['mac_short'] else dev_id
             role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
             device_list.append({
                 'mac': mac_fmt,
