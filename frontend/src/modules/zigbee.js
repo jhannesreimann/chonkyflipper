@@ -9,7 +9,6 @@ import { startTask, notify } from '../toast.js'
 const TABS = [
   { id: 'devices', label: 'Devices', icon: 'fa-microchip' },
   { id: 'events', label: 'Events', icon: 'fa-list' },
-  { id: 'sniffer', label: 'Sniffer', icon: 'fa-search' },
   { id: 'bridge', label: 'Bridge', icon: 'fa-network-wired' },
 ]
 
@@ -35,7 +34,6 @@ function paint(root) {
   const body = root.querySelector('#zb-body')
   if (active === 'devices') devicesTab(body)
   else if (active === 'events') eventsTab(body)
-  else if (active === 'sniffer') snifferTab(body)
   else bridgeTab(body)
 }
 
@@ -385,96 +383,3 @@ export function networkMap(nodes, links) {
   <p class="text-[0.65rem] text-base-content/45 mt-2">${nodes.length} nodes · ${edges.size} links · line opacity reflects link quality</p>`
 }
 
-// ---------------------------------------------------------------- Sniffer (CC2531 + KillerBee)
-
-async function snifferTab(body) {
-  var html = '<p class="text-sm text-base-content/60 mb-4">CC2531 USB Sniffer with KillerBee. Passive capture and key extraction.</p>' +
-    '<div class="flex flex-wrap gap-2 mb-4">' +
-      '<button class="btn btn-sm btn-outline btn-info" id="sniff-check">Check Device</button>' +
-      '<button class="btn btn-sm btn-primary" id="sniff-capture">Capture 10s</button>' +
-      '<button class="btn btn-sm btn-secondary" id="sniff-scan">Scan ch 11-14</button>' +
-      '<button class="btn btn-sm btn-accent" id="sniff-extract">Extract Keys</button>' +
-    '</div>' +
-    '<div class="flex gap-2 items-center mb-3">' +
-      '<span class="text-xs text-base-content/50">Status:</span>' +
-      '<span class="badge badge-sm badge-ghost" id="sniff-device-status">Unknown</span>' +
-      '<select class="select select-xs select-bordered" id="sniff-channel">';
-  for (var c = 11; c <= 26; c++) html += '<option value="' + c + '"' + (c===11?' selected':'') + '>Ch ' + c + '</option>';
-  html += '</select>' +
-      '<span class="text-xs text-base-content/50">Duration:</span>' +
-      '<select class="select select-xs select-bordered" id="sniff-duration">' +
-        '<option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option>' +
-      '</select>' +
-    '</div>' +
-    '<div id="sniff-output" class="mt-3"></div>';
-  body.innerHTML = html;
-
-  checkSnifferDevice();
-  body.querySelector('#sniff-check').onclick = checkSnifferDevice;
-  body.querySelector('#sniff-capture').onclick = sniffCapture;
-  body.querySelector('#sniff-scan').onclick = sniffScan;
-  body.querySelector('#sniff-extract').onclick = sniffExtract;
-}
-
-async function checkSnifferDevice() {
-  var el = document.getElementById('sniff-device-status');
-  if (!el) return;
-  try {
-    var api = await import('../api.js');
-    var d = await api.apiGet('/zigbee/audit/device');
-    el.textContent = d.cc2531_present ? 'CC2531 connected' : 'Not found';
-    el.className = 'badge badge-sm ' + (d.cc2531_present ? 'badge-success' : 'badge-error');
-  } catch (e) {
-    el.textContent = 'Error';
-    el.className = 'badge badge-sm badge-error';
-  }
-}
-
-async function sniffCapture() {
-  var out = document.getElementById('sniff-output');
-  if (!out) return;
-  var ch = document.getElementById('sniff-channel')?.value || 11;
-  var dur = document.getElementById('sniff-duration')?.value || 10;
-  out.innerHTML = '<div class="text-sm text-info">Capturing ch ' + ch + ' for ' + dur + 's...</div>';
-  try {
-    var api = await import('../api.js');
-    var d = await api.apiPost('/zigbee/audit/capture', { channel: parseInt(ch), duration: parseInt(dur) });
-    if (d.success) {
-      out.innerHTML = '<div class="text-sm text-success">Captured ' + d.filename + ' (' + d.size_bytes + ' bytes on ch ' + d.channel + ')</div>';
-    } else {
-      out.innerHTML = '<div class="text-sm text-error">' + esc(d.error || 'Capture failed') + '</div>';
-    }
-  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
-}
-
-async function sniffScan() {
-  var out = document.getElementById('sniff-output');
-  if (!out) return;
-  out.innerHTML = '<div class="text-sm text-info">Scanning channels 11-14...</div>';
-  try {
-    var api = await import('../api.js');
-    var d = await api.apiPost('/zigbee/audit/scan', { channels: '11-14', duration: 10 });
-    out.innerHTML = d.success
-      ? '<div class="text-sm text-success">Scan complete. File: ' + (d.file || 'saved') + '</div><pre class="text-xs text-base-content/60 mt-2">' + esc(d.output||'') + '</pre>'
-      : '<div class="text-sm text-error">' + esc(d.error || 'Scan failed') + '</div>';
-  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
-}
-
-async function sniffExtract() {
-  var out = document.getElementById('sniff-output');
-  if (!out) return;
-  out.innerHTML = '<div class="text-sm text-info">Fetching latest capture...</div>';
-  try {
-    var api = await import('../api.js');
-    var list = await api.apiGet('/zigbee/audit/captures');
-    if (!list.captures || list.captures.length === 0) {
-      out.innerHTML = '<div class="text-sm text-error">No captures available. Run a capture first.</div>';
-      return;
-    }
-    var latest = list.captures[0];
-    var d = await api.apiPost('/zigbee/audit/extract-keys', { file: '/opt/chonkyflipper/data/zigbee_captures/' + latest.name });
-    out.innerHTML = d.success
-      ? '<div class="text-sm text-success">Key extraction complete</div><pre class="text-xs text-base-content/60 mt-2">' + esc(d.output||'') + '</pre>'
-      : '<div class="text-sm text-error">' + esc(d.error || 'Extraction failed') + '</div>';
-  } catch (e) { out.innerHTML = '<div class="text-sm text-error">' + esc(e.message) + '</div>'; }
-}

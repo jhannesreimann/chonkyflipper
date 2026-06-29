@@ -11,6 +11,7 @@ import renderIr from './modules/ir.js'
 import renderSubghz from './modules/subghz.js'
 import renderNfc from './modules/nfc.js'
 import renderZigbee from './modules/zigbee.js'
+import renderZigbeeSniffer from './modules/zigbee-sniffer.js'
 import renderBadusb from './modules/badusb.js'
 import renderLoot from './modules/loot.js'
 import renderSettings from './modules/settings.js'
@@ -23,7 +24,12 @@ const ROUTES = [
   { id: 'wifi', label: 'Wi-Fi', icon: 'fa-wifi', render: renderWifi, statusKey: 'wifi', group: 'radios' },
   { id: 'bluetooth', label: 'Bluetooth', icon: 'fa-bluetooth-b', render: renderBluetooth, statusKey: 'bluetooth', group: 'radios' },
   { id: 'subghz', label: 'Sub-1GHz', icon: 'fa-satellite-dish', render: renderSubghz, statusKey: 'cc1101', group: 'radios' },
-  { id: 'zigbee', label: 'Zigbee', icon: 'fa-house-signal', render: renderZigbee, statusKey: 'zigbee', group: 'radios' },
+  { id: 'zigbee', label: 'Zigbee', icon: 'fa-house-signal', group: 'radios',
+    children: [
+      { id: 'zigbee', label: 'Coordinator (SONOFF)', icon: 'fa-microchip', render: renderZigbee, statusKey: 'zigbee' },
+      { id: 'zigbee-sniffer', label: 'Sniffer (CC2531)', icon: 'fa-search', render: renderZigbeeSniffer, statusKey: 'zigbee-audit' },
+    ],
+  },
   { id: 'ir', label: 'Infrared', icon: 'fa-tower-broadcast', render: renderIr, statusKey: 'ir', group: 'devices' },
   { id: 'nfc', label: 'NFC / RFID', icon: 'fa-id-card', render: renderNfc, statusKey: 'pn532', group: 'devices' },
   { id: 'badusb', label: 'BadUSB', icon: 'fa-keyboard', render: renderBadusb, group: 'devices' },
@@ -92,6 +98,16 @@ function header() {
   </header>`
 }
 
+function navLink(r, indent) {
+  indent = indent || false
+  return `
+    <a class="nav-link${indent ? ' pl-10' : ''}" data-route="${r.id}" href="#/${r.id}">
+      <i class="${faClass(r.icon)} nav-ico"></i>
+      <span class="flex-1">${esc(r.label)}</span>
+      ${r.statusKey ? `<span class="nav-dot w-1.5 h-1.5 rounded-full bg-base-content/20" data-status="${r.statusKey}"></span>` : ''}
+    </a>`
+}
+
 function sidebar() {
   const links = GROUPS.map((g) => {
     const items = ROUTES.filter((r) => r.group === g.id)
@@ -99,19 +115,21 @@ function sidebar() {
     const heading = g.label
       ? `<div class="eyebrow px-3 pt-4 pb-1">${esc(g.label)}</div>`
       : ''
-    return (
-      heading +
-      items
-        .map(
-          (r) => `
-        <a class="nav-link" data-route="${r.id}" href="#/${r.id}">
-          <i class="${faClass(r.icon)} nav-ico"></i>
-          <span class="flex-1">${esc(r.label)}</span>
-          ${r.statusKey ? `<span class="nav-dot w-1.5 h-1.5 rounded-full bg-base-content/20" data-status="${r.statusKey}"></span>` : ''}
-        </a>`,
-        )
-        .join('')
-    )
+    return heading + items.map((r) => {
+      if (r.children) {
+        // Expandable parent with sub-items
+        return `
+          <details class="group" open>
+            <summary class="nav-link cursor-pointer marker:hidden">
+              <i class="${faClass(r.icon)} nav-ico"></i>
+              <span class="flex-1">${esc(r.label)}</span>
+              <i class="fa-solid fa-chevron-down text-[0.6rem] text-base-content/40 group-open:rotate-180 transition-transform"></i>
+            </summary>
+            ${r.children.map((c) => navLink(c, true)).join('')}
+          </details>`
+      }
+      return navLink(r)
+    }).join('')
   }).join('')
 
   return `
@@ -133,9 +151,21 @@ function sidebar() {
   </aside>`
 }
 
+function findRoute(id) {
+  for (const r of ROUTES) {
+    if (r.id === id && r.render) return r
+    if (r.children) {
+      for (const c of r.children) {
+        if (c.id === id) return c
+      }
+    }
+  }
+  return ROUTES[0]
+}
+
 function navigate() {
   const id = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/')[0]
-  const route = ROUTES.find((r) => r.id === id) || ROUTES[0]
+  const route = findRoute(id)
   if (route.id === currentId) return
   currentId = route.id
 
