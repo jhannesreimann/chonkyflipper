@@ -79,6 +79,11 @@ async function doScan(body) {
       if (dev.model) metaHtml += '<span class="mr-2">' + esc(dev.model) + '</span>'
       if (dev.vendor) metaHtml += '<span class="text-base-content/40">' + esc(dev.vendor) + '</span>'
       if (dev.description) metaHtml += '<span class="text-base-content/40 ml-1">(' + esc(dev.description) + ')</span>'
+      if (dev.device_types && dev.device_types.length > 0) {
+        dev.device_types.forEach(function(dt) {
+          metaHtml += '<span class="badge badge-xs badge-success ml-1" title="' + esc(dt.desc || '') + '">' + esc(dt.name) + '</span>'
+        })
+      }
 
       html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
         '<div class="flex items-center justify-between">' +

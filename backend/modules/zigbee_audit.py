@@ -183,8 +183,65 @@ class ZigbeeAuditModule:
         return {'success': True, 'output': stdout, 'file': cap_file}
 
     # ------------------------------------------------------------------
-    # Device discovery (parse pcap for devices)
+    # Device discovery (parse pcap for devices, with ZCL cluster identification)
     # ------------------------------------------------------------------
+
+    # ZCL cluster ID -> human-readable device type
+    _ZCL_CLUSTER_TYPES = {
+        '0x0000': {'name': 'Basic', 'desc': 'Basic device info (all devices)'},
+        '0x0001': {'name': 'Power Config', 'desc': 'Battery-powered device'},
+        '0x0002': {'name': 'Temperature', 'desc': 'Temperature sensor'},
+        '0x0003': {'name': 'Identify', 'desc': 'Device identification'},
+        '0x0004': {'name': 'Groups', 'desc': 'Group membership'},
+        '0x0005': {'name': 'Scenes', 'desc': 'Scene memory'},
+        '0x0006': {'name': 'On/Off', 'desc': 'Switch or light'},
+        '0x0007': {'name': 'On/Off Config', 'desc': 'Switch/light config'},
+        '0x0008': {'name': 'Level Control', 'desc': 'Dimmable light'},
+        '0x0009': {'name': 'Alarms', 'desc': 'Alarm device'},
+        '0x000A': {'name': 'Time', 'desc': 'Time server'},
+        '0x000B': {'name': 'RSSI Location', 'desc': 'Location tracking'},
+        '0x000C': {'name': 'Analog Input', 'desc': 'Analog sensor (e.g. pressure)'},
+        '0x000D': {'name': 'Analog Output', 'desc': 'Analog output'},
+        '0x000E': {'name': 'Analog Value', 'desc': 'Analog value sensor'},
+        '0x000F': {'name': 'Binary Input', 'desc': 'Contact sensor / button'},
+        '0x0010': {'name': 'Binary Output', 'desc': 'Relay output'},
+        '0x0012': {'name': 'Multistate Input', 'desc': 'Multi-position sensor'},
+        '0x0013': {'name': 'Multistate Output', 'desc': 'Multi-position output'},
+        '0x0015': {'name': 'Commissioning', 'desc': 'Commissioning data'},
+        '0x0019': {'name': 'OTA Upgrade', 'desc': 'Over-the-air firmware'},
+        '0x0020': {'name': 'Poll Control', 'desc': 'Poll-controlled device'},
+        '0x0101': {'name': 'Door Lock', 'desc': 'Smart door lock'},
+        '0x0102': {'name': 'Window Covering', 'desc': 'Blinds/shades'},
+        '0x0201': {'name': 'Thermostat', 'desc': 'HVAC thermostat'},
+        '0x0202': {'name': 'Fan Control', 'desc': 'Fan controller'},
+        '0x0300': {'name': 'Color Control', 'desc': 'Color light (RGB/CT)'},
+        '0x0400': {'name': 'Illuminance', 'desc': 'Light level sensor'},
+        '0x0402': {'name': 'Temperature', 'desc': 'Temperature sensor'},
+        '0x0403': {'name': 'Pressure', 'desc': 'Pressure sensor'},
+        '0x0404': {'name': 'Flow', 'desc': 'Flow rate sensor'},
+        '0x0405': {'name': 'Humidity', 'desc': 'Humidity sensor'},
+        '0x0406': {'name': 'Occupancy', 'desc': 'Presence/motion sensor'},
+        '0x0500': {'name': 'IAS Zone', 'desc': 'Alarm/safety sensor'},
+        '0x0502': {'name': 'IAS WD', 'desc': 'Alarm warning device'},
+        '0x0702': {'name': 'Smart Energy', 'desc': 'Power metering device'},
+    }
+
+    @staticmethod
+    def _get_network_key():
+        """Read the Zigbee network key from Zigbee2MQTT config."""
+        try:
+            import yaml
+            config_path = '/opt/zigbee2mqtt/data/configuration.yaml'
+            if not os.path.exists(config_path):
+                return None
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            key = config.get('advanced', {}).get('network_key', [])
+            if key and isinstance(key, list) and len(key) == 16:
+                return ''.join(format(b, '02x') for b in key)
+        except Exception:
+            pass
+        return None
 
     def discover_devices(self, cap_file=None):
         """Parse a pcap file to discover Zigbee devices (MACs, PANs, roles)."""
@@ -275,6 +332,13 @@ class ZigbeeAuditModule:
             else:
                 role = 'End Device'
                 role_desc = 'Battery-powered device. Sleeps between transmissions to save power.'
+            # Merge ZCL cluster info for this device
+            dev_clusters = {}
+            for mac_pattern in [mac_fmt.replace(':', '').lower(), mac_fmt.replace(':', '').upper()]:
+                if mac_pattern in zcl_clusters:
+                    dev_clusters = zcl_clusters[mac_pattern]
+                    break
+
             device_list.append({
                 'mac': mac_fmt,
                 'pan': d['pan'],
@@ -284,7 +348,14 @@ class ZigbeeAuditModule:
                 'has_zigbee': 'zbee_nwk' in str(d['protocols']),
                 'has_ipv6': '6lowpan' in str(d['protocols']) or 'ipv6' in str(d['protocols']),
                 'is_encrypted': d['is_encrypted'],
+                'device_types': [self._ZCL_CLUSTER_TYPES.get(c, {'name': 'Cluster '+c, 'desc': 'Unknown cluster'}) for c in dev_clusters],
             })
+
+        # Decrypt and identify device types via ZCL clusters (if key is available)
+        zcl_clusters = {}  # mac -> set of cluster type names
+        network_key = self._get_network_key()
+        if network_key and cap_file and os.path.exists(cap_file):
+            zcl_clusters = self._parse_zcl_clusters(cap_file, network_key)
 
         # Cross-reference with coordinator's paired devices for identification
         coordinator_devices = self._get_coordinator_devices()
@@ -305,6 +376,29 @@ class ZigbeeAuditModule:
                 'packets_analyzed': packet_count,
                 'encrypted_packets': encrypted_count,
                 'file': os.path.basename(cap_file)}
+
+    def _parse_zcl_clusters(self, cap_file, network_key):
+        """Decrypt pcap with network key and extract ZCL cluster IDs per device."""
+        clusters = {}
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', 'tshark', '-r', cap_file,
+                 '-o', f'zigbee_network_key:{network_key}',
+                 '-Y', 'zbee_zcl',
+                 '-T', 'fields', '-e', 'wpan.src64', '-e', 'zbee_zcl.cluster'],
+                capture_output=True, text=True, timeout=30,
+            )
+            for line in result.stdout.strip().split('\n'):
+                parts = line.split('\t')
+                if len(parts) < 2 or not parts[1].strip():
+                    continue
+                mac = parts[0].strip().replace(':', '').lower()
+                cluster_id = parts[1].strip()
+                if mac and cluster_id:
+                    clusters.setdefault(mac, set()).add(cluster_id)
+        except Exception:
+            pass
+        return clusters
 
     @staticmethod
     def _get_coordinator_devices():
