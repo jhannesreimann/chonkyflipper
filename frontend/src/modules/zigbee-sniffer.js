@@ -39,27 +39,11 @@ function paint(root) {
 async function scanTab(body) {
   body.innerHTML = card(`
     ${sectionTitle('PAN Discovery', `
-      <button id="zs-dev-check" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-plug"></i>Check</button>
       <button id="zs-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan ch 11-14</button>
     `)}
-    <div id="zs-dev-status" class="text-xs text-base-content/50 mb-2"></div>
-    <div id="zs-results">${empty('Check device then scan for Zigbee PANs.', 'fa-search')}</div>
+    <div id="zs-results">${empty('Scan Zigbee channels to discover PANs.', 'fa-search')}</div>
   `)
   body.querySelector('#zs-scan').addEventListener('click', () => doScan(body))
-  body.querySelector('#zs-dev-check').addEventListener('click', () => checkDevice(body))
-  checkDevice(body)
-}
-
-async function checkDevice(body) {
-  const el = body.querySelector('#zs-dev-status')
-  try {
-    const d = await apiGet('/zigbee/audit/device')
-    el.innerHTML = d.cc2531_present
-      ? '<span class="badge badge-success badge-sm gap-1"><i class="fa-solid fa-circle-check text-[0.5rem]"></i>CC2531 connected</span>'
-      : '<span class="badge badge-error badge-sm gap-1"><i class="fa-solid fa-circle-xmark text-[0.5rem]"></i>Not found</span>'
-  } catch (e) {
-    el.innerHTML = '<span class="badge badge-ghost badge-sm">Error</span>'
-  }
 }
 
 async function doScan(body) {
@@ -174,6 +158,27 @@ async function extractTab(body) {
   body.querySelector('#zs-extract-go').addEventListener('click', () => doExtract(body))
 }
 
+function parseKeysFromOutput(output) {
+  var keys = []
+  var lines = (output || '').split('\n')
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    // zbdsniff outputs lines like: Network Key: 00112233445566778899AABBCCDDEEFF
+    var m = line.match(/key:\s*([0-9a-fA-F]{32})/i)
+    if (m) { keys.push({ hex: m[1].toUpperCase(), type: 'Network' }); continue }
+    m = line.match(/link key:?\s*([0-9a-fA-F]{32})/i)
+    if (m) { keys.push({ hex: m[1].toUpperCase(), type: 'Link' }); continue }
+    m = line.match(/TC link key:?\s*([0-9a-fA-F]{32})/i)
+    if (m) { keys.push({ hex: m[1].toUpperCase(), type: 'TC Link' }); continue }
+    // Fallback: any 32-char hex
+    m = line.match(/([0-9A-Fa-f]{32})/)
+    if (m && !line.includes('Processing') && !line.includes('Processed')) {
+      keys.push({ hex: m[1].toUpperCase(), type: 'Key' })
+    }
+  }
+  return keys
+}
+
 async function doExtract(body) {
   const file = body.querySelector('#zs-extract-file')?.value?.trim()
   if (!file) { notify('Enter a capture filename', 'warning'); return }
@@ -181,12 +186,33 @@ async function doExtract(body) {
   out.innerHTML = spinner('Extracting keys...')
   try {
     const d = await apiPost('/zigbee/audit/extract-keys', { file: '/opt/chonkyflipper/data/zigbee_captures/' + file })
-    if (d.success) {
-      out.innerHTML = '<div class="text-sm text-success mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Extraction complete</div>' +
-        '<pre class="text-xs text-base-content/60 bg-base-200/50 rounded-lg p-3 overflow-x-auto max-h-64">' + esc(d.output || 'No keys found in this capture.') + '</pre>'
+    if (!d.success) { out.innerHTML = errorBox(d.error || 'Extraction failed'); return }
+    var keys = parseKeysFromOutput(d.output || '')
+    var html = '<div class="text-sm text-success mb-3"><i class="fa-solid fa-circle-check mr-1"></i>Key extraction complete</div>'
+    if (keys.length > 0) {
+      html += '<div class="flex flex-col gap-2 mb-3">'
+      keys.forEach(function(k) {
+        html += '<div class="rounded-lg bg-success/10 border border-success/30 p-3">' +
+          '<div class="flex items-center gap-2 mb-1"><span class="badge badge-sm badge-success">' + esc(k.type) + ' Key</span></div>' +
+          '<code class="text-sm font-mono text-success break-all select-all">' + esc(k.hex.match(/.{1,2}/g).join(':')) + '</code>' +
+          '</div>'
+      })
+      html += '</div>'
+      html += '<div class="rounded-lg bg-info/10 border border-info/30 p-3 text-xs">' +
+        '<div class="font-semibold text-info mb-1"><i class="fa-solid fa-circle-info mr-1"></i>What you can do with this key</div>' +
+        '<ul class="list-disc pl-4 space-y-1 text-base-content/70">' +
+          '<li>Decrypt all captured Zigbee traffic from this network in Wireshark</li>' +
+          '<li>Replay encrypted commands that were captured (via a TX-capable dongle)</li>' +
+          '<li>Identify the network for further attacks (key uniquely identifies the PAN)</li>' +
+          '<li>Use with <code class="text-xs bg-base-300 px-1 rounded">zbdsniff -k KEY</code> to decrypt more captures offline</li>' +
+        '</ul></div>'
     } else {
-      out.innerHTML = errorBox(d.error || 'Extraction failed')
+      html += '<div class="rounded-lg bg-base-200/50 p-3 text-xs text-base-content/50">' +
+        '<p>No keys found in this capture. The network may use encryption that requires active probing, or no key transport was observed.</p>' +
+        '<p class="mt-2">Raw output:</p>' +
+        '<pre class="text-xs bg-base-300/50 rounded-lg p-2 mt-1 overflow-x-auto max-h-32">' + esc(d.output || '(empty)') + '</pre></div>'
     }
+    out.innerHTML = html
   } catch (e) {
     out.innerHTML = errorBox(e.message)
   }
