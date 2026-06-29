@@ -314,6 +314,12 @@ class ZigbeeAuditModule:
             if frame_type == '0x0000':
                 d['is_router'] = True
 
+        # Decrypt and identify device types via ZCL clusters (if key is available)
+        zcl_clusters = {}  # mac -> set of cluster type names
+        network_key = self._get_network_key()
+        if network_key and cap_file and os.path.exists(cap_file):
+            zcl_clusters = self._parse_zcl_clusters(cap_file, network_key)
+
         # Format for output
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
@@ -350,12 +356,6 @@ class ZigbeeAuditModule:
                 'is_encrypted': d['is_encrypted'],
                 'device_types': [self._ZCL_CLUSTER_TYPES.get(c, {'name': 'Cluster '+c, 'desc': 'Unknown cluster'}) for c in dev_clusters],
             })
-
-        # Decrypt and identify device types via ZCL clusters (if key is available)
-        zcl_clusters = {}  # mac -> set of cluster type names
-        network_key = self._get_network_key()
-        if network_key and cap_file and os.path.exists(cap_file):
-            zcl_clusters = self._parse_zcl_clusters(cap_file, network_key)
 
         # Cross-reference with coordinator's paired devices for identification
         coordinator_devices = self._get_coordinator_devices()
