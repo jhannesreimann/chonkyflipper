@@ -63,9 +63,9 @@ def zigbee_audit_flood():
     pan_id = data.get('pan_id')
     if not channel or not pan_id:
         return api_error('channel and pan_id required', 400)
-    count = data.get('count', 100)
+    duration = data.get('duration', 5)
     zb = _audit_module()
-    result = zb.assoc_flood(channel, pan_id, count=count)
+    result = zb.assoc_flood(channel, pan_id, duration=duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Flood failed'), 500)
 
 
