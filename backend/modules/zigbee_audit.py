@@ -350,6 +350,9 @@ class ZigbeeAuditModule:
                     dev_clusters = zcl_clusters[mac_pattern]
                     break
 
+            # Skip the coordinator (0x0000) — it's the user's own SONOFF dongle
+            is_own_coordinator = d['is_coordinator'] and d.get('mac_short') == '0x0000'
+
             device_list.append({
                 'mac': mac_fmt,
                 'pan': d['pan'],
@@ -359,6 +362,7 @@ class ZigbeeAuditModule:
                 'has_zigbee': 'zbee_nwk' in str(d['protocols']),
                 'has_ipv6': '6lowpan' in str(d['protocols']) or 'ipv6' in str(d['protocols']),
                 'is_encrypted': d['is_encrypted'],
+                'is_own_coordinator': is_own_coordinator,
                 'device_types': [self._ZCL_CLUSTER_TYPES.get(c, {'name': 'Cluster '+c, 'desc': 'Unknown cluster'}) for c in dev_clusters],
             })
 

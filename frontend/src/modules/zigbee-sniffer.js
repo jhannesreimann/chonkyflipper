@@ -89,10 +89,12 @@ async function doScan(body) {
         })
       }
 
-      html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
+      var extraClass = dev.is_own_coordinator ? ' opacity-60' : ''
+      html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40' + extraClass + '">' +
         '<div class="flex items-center justify-between">' +
           '<div class="min-w-0 flex-1">' +
             '<div class="flex items-center gap-2">' +
+              (dev.is_own_coordinator ? '<span class="text-[0.6rem] text-base-content/40 italic mr-1">Your dongle</span>' : '') +
               '<span class="font-semibold text-sm truncate">' + esc(label) + '</span>' +
               (dev.friendly_name ? '' : '<code class="text-[0.65rem] text-base-content/40 font-mono">' + esc(dev.mac) + '</code>') +
             '</div>' +
