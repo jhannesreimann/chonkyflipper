@@ -107,7 +107,12 @@ class ZigbeeAuditModule:
             if line and not line.startswith('zb'):
                 pans.append(line)
 
-        return {'success': len(pans) > 0 or os.path.exists(filepath),
+        if not os.path.exists(filepath) and len(pans) == 0:
+            return {'success': False,
+                    'error': f'No PANs found on channels {channels}. '
+                             f'Try different channels or longer duration.'}
+
+        return {'success': True,
                 'pans': pans, 'channels': channels, 'file': filepath,
                 'output': stdout[-1000:]}
 
@@ -129,7 +134,10 @@ class ZigbeeAuditModule:
         args.append(cap_file)
 
         stdout, stderr, rc = self._run_kb('zbreplay', *args, timeout=30)
-        return {'success': rc == 0, 'file': cap_file, 'repeat': count,
+        if rc != 0:
+            return {'success': False,
+                    'error': f'Replay failed: {stderr[:200] or stdout[:200]}'}
+        return {'success': True, 'file': cap_file, 'repeat': count,
                 'channel': channel, 'output': stdout[:500]}
 
     # ------------------------------------------------------------------
@@ -145,8 +153,30 @@ class ZigbeeAuditModule:
             'zbassocflood', '-c', str(channel), '-p', pan_id,
             '-n', str(count), timeout=30,
         )
-        return {'success': rc == 0, 'channel': channel, 'pan_id': pan_id,
+        if rc != 0:
+            return {'success': False,
+                    'error': f'Flood failed: {stderr[:200] or stdout[:200]}'}
+        return {'success': True, 'channel': channel, 'pan_id': pan_id,
                 'count': count, 'output': stdout[:500]}
+
+    # ------------------------------------------------------------------
+    # Key extraction (zbdsniff) - issue #62
+    # ------------------------------------------------------------------
+
+    def extract_keys(self, cap_file):
+        """Attempt to extract Zigbee network keys from a capture file."""
+        if not os.path.exists(cap_file):
+            return {'success': False, 'error': f'Capture file not found: {cap_file}'}
+
+        if not self._check_device():
+            return {'success': False, 'error': 'CC2531 sniffer dongle not found.'}
+
+        stdout, stderr, rc = self._run_kb('zbdsniff', cap_file, timeout=30)
+        if rc != 0:
+            return {'success': False,
+                    'error': f'Key extraction failed: {stderr[:200] or stdout[:200]}',
+                    'output': stdout[-500:]}
+        return {'success': True, 'output': stdout, 'file': cap_file}
 
     # ------------------------------------------------------------------
     # List captures

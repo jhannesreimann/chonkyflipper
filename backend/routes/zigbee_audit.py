@@ -77,6 +77,19 @@ def zigbee_audit_captures():
     return api_success(zb.list_captures())
 
 
+# ------------------------------------------------------------------ key extraction
+
+@bp.route('/api/zigbee/audit/extract-keys', methods=['POST'])
+def zigbee_audit_extract():
+    data = request.json or {}
+    cap_file = data.get('file')
+    if not cap_file:
+        return api_error('file (path to pcap) required', 400)
+    zb = _audit_module()
+    result = zb.extract_keys(cap_file)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Key extraction failed'), 500)
+
+
 # ------------------------------------------------------------------ device check
 
 @bp.route('/api/zigbee/audit/device', methods=['GET'])
