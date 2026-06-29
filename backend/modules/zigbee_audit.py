@@ -66,13 +66,20 @@ class ZigbeeAuditModule:
         filepath = os.path.join(self.captures_dir, filename)
 
         stdout, stderr, rc = self._run_kb(
-            'zbdump', '-c', str(channel), '-w', filepath, timeout=duration + 10,
+            'zbdump', '-c', str(channel), '-w', filepath, timeout=duration + 15,
         )
 
         file_exists = os.path.exists(filepath)
         file_size = os.path.getsize(filepath) if file_exists else 0
 
-        return {'success': file_exists and file_size > 0,
+        if not file_exists or file_size == 0:
+            return {'success': False,
+                    'error': f'No packets captured on channel {channel}. '
+                             f'Try a different channel or longer duration. '
+                             f'(stderr: {stderr[:200]})',
+                    'filename': filename}
+
+        return {'success': True,
                 'filename': filename, 'filepath': filepath,
                 'size_bytes': file_size, 'channel': channel, 'duration': duration}
 
