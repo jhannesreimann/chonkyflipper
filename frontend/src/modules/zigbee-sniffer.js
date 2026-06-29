@@ -60,17 +60,29 @@ async function doScan(body) {
     let html = '<div class="text-[0.65rem] text-base-content/45 mb-3">' + d.packets_analyzed + ' packets from ' + esc(d.file || 'capture') + '</div>'
     html += '<div class="flex flex-col gap-2">'
     devs.forEach(function(dev) {
-      var roleBadge = ''
-      if (dev.role === 'Coordinator/Router') roleBadge = '<span class="badge badge-sm badge-warning">coordinator</span> '
-      else if (dev.role === 'End Device') roleBadge = '<span class="badge badge-sm badge-ghost">end device</span> '
+      var roleClass = 'badge-ghost'
+      if (dev.role === 'Coordinator') roleClass = 'badge-warning'
+      else if (dev.role === 'Router') roleClass = 'badge-info'
+      else if (dev.role === 'Active End Device') roleClass = 'badge-accent'
+      else roleClass = 'badge-ghost'
+
+      var secHtml = dev.is_encrypted
+        ? '<span class="badge badge-xs badge-success gap-1" title="Traffic is encrypted with a network key"><i class="fa-solid fa-lock text-[0.5rem]"></i>Encrypted</span>'
+        : '<span class="badge badge-xs badge-error gap-1" title="Traffic is in plaintext - no encryption detected"><i class="fa-solid fa-lock-open text-[0.5rem]"></i>Plaintext</span>'
+
       var protoBadges = ''
-      if (dev.has_zigbee) protoBadges += '<span class="badge badge-xs badge-outline mr-1">Zigbee</span>'
-      if (dev.has_ipv6) protoBadges += '<span class="badge badge-xs badge-outline mr-1">IPv6</span>'
+      if (dev.has_zigbee) protoBadges += '<span class="badge badge-xs badge-outline mr-1" title="Zigbee network layer (NWK) detected">Zigbee</span>'
+      if (dev.has_ipv6) protoBadges += '<span class="badge badge-xs badge-outline mr-1" title="IPv6/6LoWPAN traffic detected">IPv6</span>'
+
       html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
         '<div class="flex items-center justify-between">' +
-          '<div><code class="text-sm font-mono font-semibold">' + esc(dev.mac) + '</code>' +
-          '<div class="text-[0.65rem] text-base-content/45 mt-0.5">PAN ' + esc(dev.pan || '?') + ' · ' + dev.packets + ' packets</div></div>' +
-          '<div class="flex items-center gap-1 mt-1">' + roleBadge + protoBadges + '</div>' +
+          '<div class="min-w-0 flex-1">' +
+            '<code class="text-sm font-mono font-semibold">' + esc(dev.mac) + '</code>' +
+            '<div class="text-[0.65rem] text-base-content/45 mt-0.5">PAN ' + esc(dev.pan || '?') + ' · ' + dev.packets + ' packets</div></div>' +
+          '<div class="flex flex-col items-end gap-1 shrink-0">' +
+            '<span class="badge badge-sm ' + roleClass + '" title="' + esc(dev.role_desc || '') + '">' + esc(dev.role) + '</span>' +
+            '<div class="flex flex-wrap gap-1 justify-end">' + secHtml + protoBadges + '</div>' +
+          '</div>' +
         '</div></div>'
     })
     html += '</div>'

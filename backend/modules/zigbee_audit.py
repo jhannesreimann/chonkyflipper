@@ -217,6 +217,7 @@ class ZigbeeAuditModule:
 
         devices = {}
         packet_count = 0
+        encrypted_count = 0
         for line in stdout.strip().split('\n'):
             line = line.strip()
             if not line:
@@ -230,7 +231,6 @@ class ZigbeeAuditModule:
             frame_type = parts[4].strip() if len(parts) > 4 else ''
 
             # Use src64 as device identifier, fallback to src16
-            # tshark already formats them: EUI-64 as colon-sep hex, short as 0xHHHH
             dev_id = src64 if src64 else src16
             if not dev_id or dev_id == '0x':
                 continue
@@ -241,34 +241,54 @@ class ZigbeeAuditModule:
                 'pan': pan,
                 'count': 0,
                 'protocols': set(),
-                'is_coordinator': False,
+                'is_coordinator': src16 == '0x0000',
+                'is_router': False,
+                'is_encrypted': False,
             })
             d['count'] += 1
             if protocols:
                 for proto in protocols.split(':'):
                     if proto.strip():
                         d['protocols'].add(proto.strip())
+                        if 'zbee_aps' in proto.strip().lower():
+                            d['is_encrypted'] = True
+                            encrypted_count += 1
             # Beacons indicate coordinator/router
             if frame_type == '0x0000':
-                d['is_coordinator'] = True
+                d['is_router'] = True
 
         # Format for output
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
             # tshark already formats MACs: EUI-64 as colon-sep, short as 0xHHHH
             mac_fmt = d['mac_long'] if d['mac_long'] else d['mac_short'] if d['mac_short'] else dev_id
-            role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
+            # Determine role
+            if d['is_coordinator']:
+                role = 'Coordinator'
+                role_desc = 'Network coordinator (trust center). Manages key distribution and device joins.'
+            elif d['is_router']:
+                role = 'Router'
+                role_desc = 'Mains-powered routing device. Relays messages for other devices.'
+            elif d['count'] >= 5:
+                role = 'Active End Device'
+                role_desc = 'Battery-powered device that communicates frequently.'
+            else:
+                role = 'End Device'
+                role_desc = 'Battery-powered device. Sleeps between transmissions to save power.'
             device_list.append({
                 'mac': mac_fmt,
                 'pan': d['pan'],
                 'packets': d['count'],
                 'role': role,
+                'role_desc': role_desc,
                 'has_zigbee': 'zbee_nwk' in str(d['protocols']),
                 'has_ipv6': '6lowpan' in str(d['protocols']) or 'ipv6' in str(d['protocols']),
+                'is_encrypted': d['is_encrypted'],
             })
 
         return {'success': True, 'devices': device_list,
                 'packets_analyzed': packet_count,
+                'encrypted_packets': encrypted_count,
                 'file': os.path.basename(cap_file)}
 
     # ------------------------------------------------------------------
