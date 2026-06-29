@@ -230,7 +230,8 @@ class ZigbeeAuditModule:
             frame_type = parts[4].strip() if len(parts) > 4 else ''
 
             # Use src64 as device identifier, fallback to src16
-            dev_id = src64 if src64 else f'0x{src16}'
+            # tshark already formats them: EUI-64 as colon-sep hex, short as 0xHHHH
+            dev_id = src64 if src64 else src16
             if not dev_id or dev_id == '0x':
                 continue
 
@@ -254,14 +255,8 @@ class ZigbeeAuditModule:
         # Format for output
         device_list = []
         for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
-            # Format MAC: long EUI-64 as colon-separated hex, short as 0xHHHH
-            if d['mac_long'] and len(d['mac_long']) >= 16:
-                raw = d['mac_long'][:16]
-                mac_fmt = ':'.join(raw[i:i+2] for i in range(0, 16, 2)).lower()
-            elif d['mac_short']:
-                mac_fmt = f'0x{d["mac_short"]}'
-            else:
-                mac_fmt = dev_id
+            # tshark already formats MACs: EUI-64 as colon-sep, short as 0xHHHH
+            mac_fmt = d['mac_long'] if d['mac_long'] else f'0x{d["mac_short"]}' if d['mac_short'] else dev_id
             role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
             device_list.append({
                 'mac': mac_fmt,
