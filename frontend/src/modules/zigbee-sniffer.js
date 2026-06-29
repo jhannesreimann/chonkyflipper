@@ -74,11 +74,20 @@ async function doScan(body) {
       if (dev.has_zigbee) protoBadges += '<span class="badge badge-xs badge-outline mr-1" title="Zigbee network layer (NWK) detected">Zigbee</span>'
       if (dev.has_ipv6) protoBadges += '<span class="badge badge-xs badge-outline mr-1" title="IPv6/6LoWPAN traffic detected">IPv6</span>'
 
+      var label = dev.friendly_name || dev.mac
+      var metaHtml = ''
+      if (dev.model) metaHtml += '<span class="mr-2">' + esc(dev.model) + '</span>'
+      if (dev.vendor) metaHtml += '<span class="text-base-content/40">' + esc(dev.vendor) + '</span>'
+      if (dev.description) metaHtml += '<span class="text-base-content/40 ml-1">(' + esc(dev.description) + ')</span>'
+
       html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
         '<div class="flex items-center justify-between">' +
           '<div class="min-w-0 flex-1">' +
-            '<code class="text-sm font-mono font-semibold">' + esc(dev.mac) + '</code>' +
-            '<div class="text-[0.65rem] text-base-content/45 mt-0.5">PAN ' + esc(dev.pan || '?') + ' · ' + dev.packets + ' packets</div></div>' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="font-semibold text-sm truncate">' + esc(label) + '</span>' +
+              (dev.friendly_name ? '' : '<code class="text-[0.65rem] text-base-content/40 font-mono">' + esc(dev.mac) + '</code>') +
+            '</div>' +
+            '<div class="text-[0.65rem] text-base-content/45 mt-0.5">PAN ' + esc(dev.pan || '?') + ' · ' + dev.packets + ' packets' + (metaHtml ? ' · ' + metaHtml : '') + '</div></div>' +
           '<div class="flex flex-col items-end gap-1 shrink-0">' +
             '<span class="badge badge-sm ' + roleClass + '" title="' + esc(dev.role_desc || '') + '">' + esc(dev.role) + '</span>' +
             '<div class="flex flex-wrap gap-1 justify-end">' + secHtml + protoBadges + '</div>' +

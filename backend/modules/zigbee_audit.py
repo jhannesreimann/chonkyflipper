@@ -286,10 +286,37 @@ class ZigbeeAuditModule:
                 'is_encrypted': d['is_encrypted'],
             })
 
+        # Cross-reference with coordinator's paired devices for identification
+        coordinator_devices = self._get_coordinator_devices()
+
+        for dev in device_list:
+            mac_clean = dev['mac'].replace(':', '').lower()
+            # Match against IEEE addresses from coordinator
+            for cd in coordinator_devices:
+                cd_addr = cd.get('ieee_address', '').replace('0x', '').lower()
+                if cd_addr and (cd_addr in mac_clean or mac_clean in cd_addr):
+                    dev['friendly_name'] = cd.get('friendly_name', '')
+                    dev['model'] = cd.get('model', '')
+                    dev['vendor'] = cd.get('vendor', '')
+                    dev['description'] = cd.get('description', '')
+                    break
+
         return {'success': True, 'devices': device_list,
                 'packets_analyzed': packet_count,
                 'encrypted_packets': encrypted_count,
                 'file': os.path.basename(cap_file)}
+
+    @staticmethod
+    def _get_coordinator_devices():
+        """Get paired device list from Zigbee2MQTT for cross-referencing."""
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request('http://127.0.0.1:5000/api/zigbee/dashboard')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = _json.loads(resp.read())
+            return data.get('devices', [])
+        except Exception:
+            return []
 
     # ------------------------------------------------------------------
     # List captures
