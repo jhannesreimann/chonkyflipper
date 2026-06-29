@@ -10,7 +10,7 @@ import subprocess
 from datetime import datetime
 from config import DATA_DIR
 
-KILLERBEE_DIR = '/tmp/killerbee'
+KILLERBEE_DIR = '/opt/chonkyflipper/killerbee'
 ZB_CAPTURES_DIR = os.path.join(DATA_DIR, 'zigbee_captures')
 os.makedirs(ZB_CAPTURES_DIR, exist_ok=True)
 
@@ -31,7 +31,7 @@ class ZigbeeAuditModule:
         if not os.path.isfile(script):
             return '', f'KillerBee tool not found: {script}', 1
 
-        cmd = ['sudo', 'python3', script] + list(args)
+        cmd = ['python3', script] + list(args)
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout, env=_KB_ENV,
@@ -43,11 +43,13 @@ class ZigbeeAuditModule:
             return '', str(e), 1
 
     def _check_device(self):
-        """Verify the CC2531 dongle is present via zbid."""
-        stdout, _, rc = self._run_kb('zbid', timeout=10)
-        if rc != 0 or 'CC2531' not in stdout:
+        """Verify the CC2531 dongle is present (fast USB check)."""
+        try:
+            import usb.core
+            dev = usb.core.find(idVendor=0x0451, idProduct=0x16AE)
+            return dev is not None
+        except Exception:
             return False
-        return True
 
     # ------------------------------------------------------------------
     # Passive capture (zbdump)
