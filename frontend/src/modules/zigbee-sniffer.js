@@ -48,24 +48,32 @@ async function scanTab(body) {
 
 async function doScan(body) {
   const out = body.querySelector('#zs-results')
-  out.innerHTML = spinner('Scanning channels 11-14 for Zigbee PANs...')
+  out.innerHTML = spinner('Capturing packets on channel 11 (15s) to discover devices...')
   try {
-    const d = await apiPost('/zigbee/audit/scan', { channels: '11-14', duration: 12 })
-    if (!d.success) { out.innerHTML = errorBox(d.error || 'Scan failed'); return }
-    // Show output
-    const pans = d.pans || []
-    let html = '<div class="text-xs text-base-content/50 mb-3">' + (d.file ? 'Results saved to ' + esc(d.file.split('/').pop()) : '') + '</div>'
-    if (pans.length > 0) {
-      html += '<div class="flex flex-col gap-2">' + pans.map((p, i) =>
-        '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
-          '<div class="flex items-center gap-2"><span class="badge badge-sm badge-primary">' + (i+1) + '</span><span class="font-mono text-xs">' + esc(String(p).substring(0,80)) + '</span></div>' +
-        '</div>'
-      ).join('') + '</div>'
-    } else if (d.output) {
-      html += '<pre class="text-xs text-base-content/60 bg-base-200/50 rounded-lg p-3 overflow-x-auto max-h-64">' + esc(d.output.substring(0,2000)) + '</pre>'
-    } else {
-      html += empty('No PANs found on channels 11-14.', 'fa-search')
-    }
+    // First capture packets on ch 11 (main Zigbee channel)
+    await apiPost('/zigbee/audit/capture', { channel: 11, duration: 15 })
+    // Then discover devices from the latest capture
+    const d = await apiPost('/zigbee/audit/discover', {})
+    if (!d.success) { out.innerHTML = errorBox(d.error || 'Discovery failed'); return }
+    const devs = d.devices || []
+    if (!devs.length) { out.innerHTML = empty('No devices found. Try capturing on a different channel.', 'fa-search'); return }
+    let html = '<div class="text-[0.65rem] text-base-content/45 mb-3">' + d.packets_analyzed + ' packets from ' + esc(d.file || 'capture') + '</div>'
+    html += '<div class="flex flex-col gap-2">'
+    devs.forEach(function(dev) {
+      var roleBadge = ''
+      if (dev.role === 'Coordinator/Router') roleBadge = '<span class="badge badge-sm badge-warning">coordinator</span> '
+      else if (dev.role === 'End Device') roleBadge = '<span class="badge badge-sm badge-ghost">end device</span> '
+      var protoBadges = ''
+      if (dev.has_zigbee) protoBadges += '<span class="badge badge-xs badge-outline mr-1">Zigbee</span>'
+      if (dev.has_ipv6) protoBadges += '<span class="badge badge-xs badge-outline mr-1">IPv6</span>'
+      html += '<div class="rounded-lg bg-base-200/50 p-3 border border-base-300/40">' +
+        '<div class="flex items-center justify-between">' +
+          '<div><code class="text-sm font-mono font-semibold">' + esc(dev.mac) + '</code>' +
+          '<div class="text-[0.65rem] text-base-content/45 mt-0.5">PAN ' + esc(dev.pan || '?') + ' · ' + dev.packets + ' packets</div></div>' +
+          '<div class="flex items-center gap-1 mt-1">' + roleBadge + protoBadges + '</div>' +
+        '</div></div>'
+    })
+    html += '</div>'
     out.innerHTML = html
   } catch (e) {
     out.innerHTML = errorBox(e.message)

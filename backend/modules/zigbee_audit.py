@@ -183,6 +183,92 @@ class ZigbeeAuditModule:
         return {'success': True, 'output': stdout, 'file': cap_file}
 
     # ------------------------------------------------------------------
+    # Device discovery (parse pcap for devices)
+    # ------------------------------------------------------------------
+
+    def discover_devices(self, cap_file=None):
+        """Parse a pcap file to discover Zigbee devices (MACs, PANs, roles)."""
+        if cap_file is None:
+            # Use the latest capture
+            captures = []
+            try:
+                for f in sorted(os.listdir(self.captures_dir), reverse=True):
+                    if f.endswith('.pcap'):
+                        cap_file = os.path.join(self.captures_dir, f)
+                        break
+            except Exception:
+                pass
+            if cap_file is None:
+                return {'success': False, 'error': 'No captures available'}
+
+        if not os.path.exists(cap_file):
+            return {'success': False, 'error': f'File not found: {cap_file}'}
+
+        stdout, stderr, rc = subprocess.run(
+            ['sudo', '-n', 'tshark', '-r', cap_file,
+             '-T', 'fields', '-e', 'wpan.src64', '-e', 'wpan.src16',
+             '-e', 'wpan.dst_pan', '-e', 'frame.protocols',
+             '-e', 'wpan.frame_type', '-E', 'header=n', '-E', 'separator=,'],
+            capture_output=True, text=True, timeout=30,
+        )
+        if rc != 0:
+            return {'success': False, 'error': f'tshark failed: {stderr[:200]}'}
+
+        devices = {}
+        packet_count = 0
+        for line in stdout.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            packet_count += 1
+            parts = line.split(',')
+            src64 = parts[0].strip() if len(parts) > 0 else ''
+            src16 = parts[1].strip() if len(parts) > 1 else ''
+            pan = parts[2].strip() if len(parts) > 2 else ''
+            protocols = parts[3].strip() if len(parts) > 3 else ''
+            frame_type = parts[4].strip() if len(parts) > 4 else ''
+
+            # Use src64 as device identifier, fallback to src16
+            dev_id = src64 if src64 else f'0x{src16}'
+            if not dev_id or dev_id == '0x':
+                continue
+
+            d = devices.setdefault(dev_id, {
+                'mac_long': src64,
+                'mac_short': src16,
+                'pan': pan,
+                'count': 0,
+                'protocols': set(),
+                'is_coordinator': False,
+            })
+            d['count'] += 1
+            if protocols:
+                for proto in protocols.split(':'):
+                    if proto.strip():
+                        d['protocols'].add(proto.strip())
+            # Beacons indicate coordinator/router
+            if frame_type == '0x0000':
+                d['is_coordinator'] = True
+
+        # Format for output
+        device_list = []
+        for dev_id, d in sorted(devices.items(), key=lambda x: -x[1]['count']):
+            mac_fmt = ':'.join(d['mac_long'][i:i+2] for i in range(0, len(d['mac_long']), 2)) if d['mac_long'] else f'0x{d["mac_short"]}'
+            role = 'Coordinator/Router' if d['is_coordinator'] else 'End Device' if d['count'] < 5 else 'Active Device'
+            device_list.append({
+                'mac': mac_fmt,
+                'pan': d['pan'],
+                'packets': d['count'],
+                'role': role,
+                'has_zigbee': 'zbee_nwk' in str(d['protocols']),
+                'has_ipv6': '6lowpan' in str(d['protocols']) or 'ipv6' in str(d['protocols']),
+            })
+
+        return {'success': True, 'devices': device_list,
+                'packets_analyzed': packet_count,
+                'file': os.path.basename(cap_file)}
+
+    # ------------------------------------------------------------------
     # List captures
     # ------------------------------------------------------------------
 

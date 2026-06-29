@@ -90,6 +90,17 @@ def zigbee_audit_extract():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Key extraction failed'), 500)
 
 
+# ------------------------------------------------------------------ device discovery
+
+@bp.route('/api/zigbee/audit/discover', methods=['POST'])
+def zigbee_audit_discover():
+    data = request.json or {}
+    cap_file = data.get('file')
+    zb = _audit_module()
+    result = zb.discover_devices(cap_file)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Discovery failed'), 500)
+
+
 # ------------------------------------------------------------------ device check
 
 @bp.route('/api/zigbee/audit/device', methods=['GET'])
