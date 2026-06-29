@@ -305,11 +305,16 @@ class ZigbeeAuditModule:
             d['count'] += 1
             if protocols:
                 for proto in protocols.split(':'):
-                    if proto.strip():
-                        d['protocols'].add(proto.strip())
-                        if 'zbee_aps' in proto.strip().lower():
+                    p = proto.strip()
+                    if p:
+                        d['protocols'].add(p)
+                        # Mark as encrypted if we see Zigbee APS or NWK security
+                        if 'zbee_aps' in p.lower():
                             d['is_encrypted'] = True
                             encrypted_count += 1
+            # Also check: if zbee_nwk or zbee_aps is present at all, traffic is likely encrypted
+            if 'zbee_nwk' in str(d['protocols']) or 'zbee_aps' in str(d['protocols']):
+                d['is_encrypted'] = True
             # Beacons indicate coordinator/router
             if frame_type == '0x0000':
                 d['is_router'] = True

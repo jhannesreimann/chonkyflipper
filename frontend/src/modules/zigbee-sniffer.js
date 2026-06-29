@@ -66,9 +66,13 @@ async function doScan(body) {
       else if (dev.role === 'Active End Device') roleClass = 'badge-accent'
       else roleClass = 'badge-ghost'
 
-      var secHtml = dev.is_encrypted
-        ? '<span class="badge badge-xs badge-success gap-1" title="Traffic is encrypted with a network key"><i class="fa-solid fa-lock text-[0.5rem]"></i>Encrypted</span>'
-        : '<span class="badge badge-xs badge-error gap-1" title="Traffic is in plaintext - no encryption detected"><i class="fa-solid fa-lock-open text-[0.5rem]"></i>Plaintext</span>'
+      var secHtml = ''
+      if (dev.is_encrypted) {
+        secHtml = '<span class="badge badge-xs badge-success gap-1" title="Zigbee encrypted traffic detected"><i class="fa-solid fa-lock text-[0.5rem]"></i>Encrypted</span>'
+      } else if (dev.has_zigbee) {
+        secHtml = '<span class="badge badge-xs badge-ghost gap-1" title="Zigbee traffic seen but encryption status unknown"><i class="fa-solid fa-question text-[0.5rem]"></i>Unknown</span>'
+      }
+      // If no Zigbee at all (raw 802.15.4 only), show nothing
 
       var protoBadges = ''
       if (dev.has_zigbee) protoBadges += '<span class="badge badge-xs badge-outline mr-1" title="Zigbee network layer (NWK) detected">Zigbee</span>'
