@@ -193,92 +193,90 @@ function spoofTab(body) {
       <p class="text-[0.7rem] text-base-content/55">Broadcast a crafted BLE advertisement. Authorized testing only.</p>
       <div id="sp-status"></div>
 
-      <label class="form-control mb-4">
-        <span class="label-text text-xs pb-1">Preset</span>
-        <select id="sp-preset" class="select select-sm select-bordered">
+      <label class="block">
+        <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Preset</span>
+        <select id="sp-preset" class="select select-sm select-bordered w-full">
           <option value="">-- manual --</option>
           ${PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}
         </select>
-        <span id="sp-preset-desc" class="text-[0.65rem] text-base-content/50 mt-1 hidden"></span>
+        <span id="sp-preset-desc" class="text-[0.65rem] text-base-content/50 mt-1.5 block hidden"></span>
       </label>
 
-      <div class="grid grid-cols-2 gap-3">
-        <label class="form-control">
-          <span class="label-text text-xs pb-1">Frame</span>
-          <select id="sp-frame" class="select select-sm select-bordered">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="block">
+          <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Frame</span>
+          <select id="sp-frame" class="select select-sm select-bordered w-full">
             <option value="custom">Custom</option>
             <option value="ibeacon">iBeacon</option>
             <option value="eddystone-url">Eddystone URL</option>
             <option value="eddystone-uid">Eddystone UID</option>
           </select>
         </label>
-        <label class="form-control">
-          <span class="label-text text-xs pb-1">Duration (s)</span>
-          <input id="sp-duration" type="number" value="60" min="1" max="600" class="input input-sm input-bordered" />
+        <label class="block">
+          <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Duration (s)</span>
+          <input id="sp-duration" type="number" value="60" min="1" max="600" class="input input-sm input-bordered w-full" />
         </label>
       </div>
 
-      <label class="form-control mb-4">
-        <span class="label-text text-xs pb-1">Device name</span>
+      <label class="block">
+        <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Device name</span>
         <input id="sp-name" type="text" placeholder="Fake Device" class="input input-sm input-bordered w-full" />
       </label>
 
       <div data-grp="custom" class="space-y-3">
-        <div class="form-control">
-          <span class="label-text text-xs pb-1">Service UUIDs</span>
-          <div class="flex gap-2">
-            <select id="sp-svc-sel" class="select select-sm select-bordered flex-1">
-              <option value="">-- add a UUID --</option>
-              ${SVC_UUIDS.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}
-              <option value="__custom__">Custom...</option>
-            </select>
-          </div>
-          <div id="sp-svc-tags" class="flex flex-wrap gap-1 mt-1.5 min-h-[1.5rem]"></div>
-          <div id="sp-svc-custom" class="mt-1.5" style="display:none;">
+        <div>
+          <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Service UUIDs</span>
+          <select id="sp-svc-sel" class="select select-sm select-bordered w-full">
+            <option value="">-- add a UUID --</option>
+            ${SVC_UUIDS.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}
+            <option value="__custom__">Custom...</option>
+          </select>
+          <div id="sp-svc-tags" class="flex flex-wrap gap-1.5 mt-2 min-h-[1.75rem]"></div>
+          <div id="sp-svc-custom" class="mt-2" style="display:none;">
             <input id="sp-uuids" type="text" placeholder="180d, feaa" class="input input-sm input-bordered w-full font-mono" />
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="form-control">
-            <span class="label-text text-xs pb-1">Manufacturer ID</span>
-            <input id="sp-mfg-id" type="number" placeholder="76" class="input input-sm input-bordered" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Manufacturer ID</span>
+            <input id="sp-mfg-id" type="number" placeholder="76" class="input input-sm input-bordered w-full" />
           </label>
-          <label class="form-control">
-            <span class="label-text text-xs pb-1">Mfg data (hex)</span>
-            <input id="sp-mfg-data" type="text" placeholder="01ff" class="input input-sm input-bordered font-mono" />
+          <label class="block">
+            <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Mfg data (hex)</span>
+            <input id="sp-mfg-data" type="text" placeholder="01ff" class="input input-sm input-bordered w-full font-mono" />
           </label>
         </div>
       </div>
 
       <div data-grp="ibeacon" class="space-y-3" style="display:none;">
-        <label class="form-control">
-          <span class="label-text text-xs pb-1">Proximity UUID (16 bytes)</span>
+        <label class="block">
+          <span class="text-xs font-medium text-base-content/70 pb-1.5 block">Proximity UUID (16 bytes)</span>
           <input id="sp-uuid" type="text" placeholder="e2c56db5dffb48d2b060d0f5a71096e0" class="input input-sm input-bordered w-full font-mono" />
         </label>
-        <div class="grid grid-cols-3 gap-3">
-          <label class="form-control"><span class="label-text text-xs pb-1">Major</span><input id="sp-major" type="number" value="0" class="input input-sm input-bordered" /></label>
-          <label class="form-control"><span class="label-text text-xs pb-1">Minor</span><input id="sp-minor" type="number" value="0" class="input input-sm input-bordered" /></label>
-          <label class="form-control"><span class="label-text text-xs pb-1">TX @1m</span><input id="sp-tx" type="number" value="-59" class="input input-sm input-bordered" /></label>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block"><span class="text-xs font-medium text-base-content/70 pb-1.5 block">Major</span><input id="sp-major" type="number" value="0" class="input input-sm input-bordered w-full" /></label>
+          <label class="block"><span class="text-xs font-medium text-base-content/70 pb-1.5 block">Minor</span><input id="sp-minor" type="number" value="0" class="input input-sm input-bordered w-full" /></label>
+          <label class="block"><span class="text-xs font-medium text-base-content/70 pb-1.5 block">TX @1m</span><input id="sp-tx" type="number" value="-59" class="input input-sm input-bordered w-full" /></label>
         </div>
       </div>
 
       <div data-grp="eddystone-url" class="space-y-3" style="display:none;">
-        <label class="form-control">
-          <span class="label-text text-xs pb-1">URL</span>
+        <label class="block">
+          <span class="text-xs font-medium text-base-content/70 pb-1.5 block">URL</span>
           <input id="sp-url" type="text" placeholder="https://example.com" class="input input-sm input-bordered w-full font-mono" />
         </label>
       </div>
 
       <div data-grp="eddystone-uid" class="space-y-3" style="display:none;">
-        <div class="grid grid-cols-2 gap-3">
-          <label class="form-control"><span class="label-text text-xs pb-1">Namespace (10 bytes)</span><input id="sp-ns" type="text" class="input input-sm input-bordered font-mono" /></label>
-          <label class="form-control"><span class="label-text text-xs pb-1">Instance (6 bytes)</span><input id="sp-inst" type="text" class="input input-sm input-bordered font-mono" /></label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block"><span class="text-xs font-medium text-base-content/70 pb-1.5 block">Namespace (10 bytes)</span><input id="sp-ns" type="text" class="input input-sm input-bordered w-full font-mono" /></label>
+          <label class="block"><span class="text-xs font-medium text-base-content/70 pb-1.5 block">Instance (6 bytes)</span><input id="sp-inst" type="text" class="input input-sm input-bordered w-full font-mono" /></label>
         </div>
       </div>
 
-      <label class="label cursor-pointer justify-start gap-2 py-1">
+      <label class="flex items-center gap-2 cursor-pointer py-1">
         <input id="sp-txp" type="checkbox" class="checkbox checkbox-sm" />
-        <span class="label-text text-xs">Include TX power</span>
+        <span class="text-xs font-medium text-base-content/70">Include TX power</span>
       </label>
 
       <div class="flex gap-2 pt-1">
@@ -662,17 +660,16 @@ function applyPreset(body, p) {
 
 function addUuidTag(body, id) {
   const tags = body.querySelector('#sp-svc-tags')
-  // Don't add duplicates.
   if (tags.querySelector(`[data-uuid="${id}"]`)) return
 
-  // Find the label for this UUID from SVC_UUIDS, or use the raw id.
   const svc = SVC_UUIDS.find((s) => s.id === id.toLowerCase())
-  const label = svc ? svc.label : id
+  const short = svc ? svc.label.split(' (')[0] : id
 
   const tag = document.createElement('span')
-  tag.className = 'badge badge-sm gap-1 cursor-pointer'
+  tag.className = 'badge badge-ghost badge-sm gap-1 pr-0.5 cursor-pointer hover:badge-error transition-colors select-none'
   tag.dataset.uuid = id
-  tag.innerHTML = `${esc(label.split(' (')[0])}<span class="text-[0.6rem] opacity-50">${id}</span>`
+  tag.title = `Remove ${short}`
+  tag.innerHTML = `<span class="text-[0.65rem]">${esc(short)}</span><span class="text-[0.55rem] opacity-50 font-mono">${id}</span><i class="fa-solid fa-xmark text-[0.55rem] ml-0.5 mr-0.5 opacity-40 hover:opacity-100"></i>`
   tag.addEventListener('click', () => tag.remove())
   tags.appendChild(tag)
 }
