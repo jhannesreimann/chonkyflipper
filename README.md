@@ -6,7 +6,7 @@ A portable penetration testing framework built on Raspberry Pi 4. This headless 
 
 ChonkyFlipper integrates multiple wireless attack vectors into a compact form factor suitable for IoT security assessments and wireless research. The device operates autonomously without requiring an external display or keyboard.
 
-Key capabilities include WiFi reconnaissance with monitor mode support, Bluetooth Low Energy scanning, infrared signal capture and replay, sub-1GHz RF analysis (433/868MHz), NFC/RFID card interaction, and USB HID emulation for physical security testing.
+Key capabilities include WiFi reconnaissance with monitor mode support, Bluetooth LE and Classic scanning with advertisement spoofing, infrared signal capture and replay, sub-1GHz RF analysis (433/868MHz), Zigbee network auditing, NFC/RFID card interaction, and USB HID emulation for physical security testing.
 
 ## Architecture
 
@@ -86,7 +86,7 @@ backend/
     |                     subghz, nfc, badusb, zigbee, network)
     modules/
         wifi.py         Alfa adapter + WiFi scanning
-        bluetooth.py    BLE scanner
+        bluetooth.py    BLE + Classic BT scanner, GATT, SDP, beacon decode, spoofing
         ir.py           IR record + transmit (LIRC kernel drivers)
         ir_protocols.py Protocol encoders (NEC, Samsung, Sony, RC5, etc.)
         ir_db.py        SQLite IR payload database (brands/devices/buttons)
@@ -136,8 +136,23 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/bluetooth/scan | Enumerate BLE devices |
-| GET | /api/bluetooth/beacons | Detect iBeacon/Eddystone |
+| GET | /api/bluetooth/scan | Enumerate BLE devices (accepts `?duration=N`) |
+| GET | /api/bluetooth/beacons | Detect iBeacon / Eddystone beacons |
+| POST | /api/bluetooth/gatt | Profile GATT services on a BLE device |
+| POST | /api/bluetooth/gatt/write | Write to a GATT characteristic |
+| POST | /api/bluetooth/capture | One-shot BLE advertisement log (accepts `duration`) |
+| POST | /api/bluetooth/log/start | Start background ad log daemon |
+| POST | /api/bluetooth/log/stop | Stop background ad log daemon |
+| GET | /api/bluetooth/log/status | Check if ad log daemon is running |
+| GET | /api/bluetooth/log/data | Read current ad log daemon data |
+| GET | /api/bluetooth/classic-scan | Discover Classic BR/EDR devices (hcitool inquiry) |
+| POST | /api/bluetooth/sdp | Enumerate SDP services on a Classic device |
+| POST | /api/bluetooth/deep-scan | Deep BLE scan via bettercap (vendor metadata) |
+| POST | /api/bluetooth/spoof | Start BLE advertisement spoofing |
+| POST | /api/bluetooth/spoof/stop | Stop advertisement spoofing |
+| GET | /api/bluetooth/spoof/status | Check if spoofing is running |
+| POST | /api/bluetooth/capture-hci | Capture raw HCI traffic (btmon, Wireshark pcap) |
+| GET | /api/bluetooth/captures | List saved HCI capture files |
 
 ### Infrared
 
@@ -185,7 +200,7 @@ All captured data (pcap files, IR signals, RF recordings, card data) stores loca
 
 **Completed:** Backend API and core driver implementations (PN532 via CircuitPython, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing.
 
-**Pending:** Zigbee2MQTT setup, USB gadget mode for BadUSB, 3D printed enclosure.
+**Pending:** 3D printed enclosure.
 
 ## Disclaimer
 

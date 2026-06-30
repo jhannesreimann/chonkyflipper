@@ -72,7 +72,7 @@ src/
   modules/
     dashboard.js   overview (system, modules, network)
     wifi.js        scan, audit, probes, attack, capture
-    bluetooth.js   BLE + beacons
+    bluetooth.js   BLE + Classic + Deep + Spoof + Capture (tabbed)
     ir.js          library browser + recorded signals (record/send/delete)
     subghz.js      CC1101 record / replay
     nfc.js         PN532 read / write / clone
