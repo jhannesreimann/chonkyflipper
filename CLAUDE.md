@@ -44,6 +44,8 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 | `/home/kali/chonkyflipper/` | Git clone (source of truth for updates) |
 | `/opt/pipower5/` | PiPower5 UPS HAT (installed from local source, NOT on PyPI) |
 | `/opt/zigbee2mqtt/` | Zigbee2MQTT Node.js app + data/config |
+| `/opt/chonkyflipper/killerbee/` | KillerBee framework for Zigbee security auditing |
+| `/opt/chonkyflipper/data/zigbee_captures/` | Zigbee sniffer pcap captures |
 | `/opt/chonkyflipper/VERSION` | Current deployed git SHA (written by update.sh) |
 
 ## Architecture
@@ -103,6 +105,18 @@ The IR functionality spans four files:
 - **User setup**: zigbee2mqtt user must have home dir at `/opt/zigbee2mqtt` (pnpm cache), dialout group for `/dev/ttyUSB0`.
 - chonky user must be in `dialout` group to access the Zigbee USB dongle.
 
+### Zigbee Security Auditing (CC2531 + KillerBee)
+- **`zigbee_audit.py`** provides passive 802.15.4 packet capture, PAN discovery, device identification, and network key extraction using KillerBee framework with a CC2531 USB dongle.
+- **Hardware**: CC2531 USB Dongle with TI packet sniffer firmware (VID:0451 PID:16AE). Pre-flashed, no CC Debugger needed.
+- **KillerBee** is cloned to `/opt/chonkyflipper/killerbee/`. Tools: `zbdump` (packet capture), `zbstumbler` (PAN discovery), `zbdsniff` (key extraction).
+- The CC2531 is RX-only (sniffer firmware). Packet injection (replay, association flood) requires a TX-capable dongle like Atmel RZUSBSTICK/ApiMote.
+- **Dependencies**: scapy, pyusb, pyserial, rangeparser (installed in venv). tshark for pcap analysis.
+- **Udev rule**: `/etc/udev/rules.d/99-cc2531.rules` with MODE=0666 so chonky user can access USB directly (no sudo needed).
+- **Device discovery**: `discover_devices()` uses tshark to parse pcap files, extracting MACs, PAN IDs, roles, and encryption status. Cross-references with Zigbee2MQTT coordinator for device names/models.
+- **ZCL identification**: Attempts decryption with Z2M network key from config, maps cluster IDs to device types (On/Off=switch, Temperature=sensor, etc.).
+- **Frontend**: `zigbee-sniffer.js` with 3 tabs (Scan, Capture, Extract). Sidebar shows expandable Zigbee entry with Coordinator (SONOFF) and Sniffer (CC2531) sub-items.
+- **Routes**: `/api/zigbee/audit/` prefix — `device`, `capture`, `scan`, `discover`, `extract-keys`, `replay`, `flood`, `captures`.
+
 ### BadUSB DuckyScript Parser
 - **`badusb.py`** parses DuckyScript payloads (`.txt` files from `payloads/badusb/`).
 - Commands: `STRING`, `DELAY`, modifier combos (`GUI r`, `CTRL SHIFT ESC`), and named keys (`ENTER`, `F5`, etc.).
@@ -151,6 +165,7 @@ WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 s
 | CC1101 | `/sys/bus/spi/devices/spi0.0` | SPI0 (CE0, MOSI, MISO, SCLK) | CC1101 module with SMA antenna |
 | PN532 | `i2cdetect -y 1` shows 0x24 | I2C1 (SDA=GPIO2, SCL=GPIO3) | PN532 NFC/RFID module |
 | Zigbee | `/dev/ttyUSB0` | USB | SONOFF Zigbee 3.0 USB Dongle Lite MG21 |
+| Zigbee Sniffer | USB (VID:0451 PID:16AE) | USB | CC2531 USB Dongle with TI sniffer fw |
 | BadUSB | `/dev/hidg0` | USB-C data port | Linux configfs USB HID gadget |
 
 See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
