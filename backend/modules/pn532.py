@@ -24,19 +24,28 @@ class PN532Module:
         self._initialized = False
 
     def _init_sensor(self):
-        if self._initialized:
+        if self._initialized and self.pn532 is not None:
             return True
-        try:
-            import board
-            import busio
-            from adafruit_pn532.i2c import PN532_I2C
-            i2c = busio.I2C(board.SCL, board.SDA)
-            self.pn532 = PN532_I2C(i2c, address=self.address)
-            self.pn532.SAM_configuration()
-            self._initialized = True
-            return True
-        except Exception:
-            return False
+        import time as _time
+        last_err = ''
+        for attempt in range(3):
+            try:
+                import board
+                import busio
+                from adafruit_pn532.i2c import PN532_I2C
+                i2c = busio.I2C(board.SCL, board.SDA)
+                self.pn532 = PN532_I2C(i2c, address=self.address)
+                self.pn532.SAM_configuration()
+                _time.sleep(0.1)  # Let PN532 settle after SAM
+                self._initialized = True
+                return True
+            except Exception as e:
+                last_err = str(e)
+                if attempt < 2:
+                    _time.sleep(0.3)
+        import sys
+        print(f'[pn532] _init_sensor failed after 3 attempts: {last_err}', file=sys.stderr, flush=True)
+        return False
 
     def read_card(self, timeout=10):
         if not self._init_sensor():
@@ -181,16 +190,17 @@ class PN532Module:
         uid = None
         deadline = __import__('time').time() + timeout
         while __import__('time').time() < deadline:
-            uid = self.pn532.read_passive_target(timeout=0.5)
+            uid = self.pn532.read_passive_target(timeout=0.8)
             if uid:
                 break
-            __import__('time').sleep(0.1)
+            __import__('time').sleep(0.3)
 
         if not uid:
             return {'success': False, 'error': 'No card found'}
 
         uid_hex = ''.join(format(b, '02x') for b in uid)
-        key_bytes = bytes.fromhex(key) if len(key) == 12 else bytes(12)
+        key_bytes = b'\xff\xff\xff\xff\xff\xff' if key == 'FFFFFFFFFFFF' else (
+            bytes.fromhex(key) if len(key) == 12 else bytes(12))
 
         sectors = {}
         failed = []
@@ -198,7 +208,7 @@ class PN532Module:
             block = sector * 4  # First block of sector (trailer = block + 3)
             try:
                 if not self.pn532.mifare_classic_authenticate_block(
-                    uid, block, adafruit_pn532.MIFARE_CMD_AUTH_A, key_bytes
+                    uid, block_number=block, key_number=0x60, key=key_bytes,
                 ):
                     failed.append(sector)
                     continue
@@ -243,16 +253,17 @@ class PN532Module:
         uid = None
         deadline = __import__('time').time() + timeout
         while __import__('time').time() < deadline:
-            uid = self.pn532.read_passive_target(timeout=0.5)
+            uid = self.pn532.read_passive_target(timeout=0.8)
             if uid:
                 break
-            __import__('time').sleep(0.1)
+            __import__('time').sleep(0.3)
 
         if not uid:
             return {'success': False, 'error': 'No card found'}
 
         uid_hex = ''.join(format(b, '02x') for b in uid)
-        key_bytes = bytes.fromhex(key) if len(key) == 12 else bytes(12)
+        key_bytes = b'\xff\xff\xff\xff\xff\xff' if key == 'FFFFFFFFFFFF' else (
+            bytes.fromhex(key) if len(key) == 12 else bytes(12))
         written = {}
         failed = {}
 
@@ -262,7 +273,7 @@ class PN532Module:
             auth_block = sector * 4
             try:
                 if not self.pn532.mifare_classic_authenticate_block(
-                    uid, auth_block, adafruit_pn532.MIFARE_CMD_AUTH_A, key_bytes
+                    uid, block_number=auth_block, key_number=0x60, key=key_bytes,
                 ):
                     failed[sector_str] = 'auth failed'
                     continue
