@@ -17,10 +17,10 @@ This table mirrors the physical layout of the 40-pin header on your Raspberry Pi
 | Left Side (Odd Pins) | Pin # | Pin # | Right Side (Even Pins) |
 | :--- | :---: | :---: | :--- |
 | 🟡 **3.3V Power** (Breadboard Rail) | **1** | **2** | 🔴 **5.0V Power** (Breadboard Rail) |
-| 🔵 **GPIO 2** (I2C1 SDA - PN532 SDA) | **3** | **4** | 🔴 **5.0V Power** (Direct to Cooling Fan VCC) |
-| 🔵 **GPIO 3** (I2C1 SCL - PN532 SCL) | **5** | **6** | ⚫ **GND** (Breadboard Common GND) |
-| GPIO 4 | **7** | **8** | GPIO 14 |
-| ⚫ **GND** (Unallocated) | **9** | **10** | GPIO 15 |
+| GPIO 2 | **3** | **4** | 🔴 **5.0V Power** (Direct to Cooling Fan VCC) |
+| GPIO 3 | **5** | **6** | ⚫ **GND** (Breadboard Common GND) |
+| GPIO 4 | **7** | **8** | 🔵 **GPIO 14** (UART TXD - PN532 RXD) |
+| ⚫ **GND** (Unallocated) | **9** | **10** | 🔵 **GPIO 15** (UART RXD - PN532 TXD) |
 | 🔵 **GPIO 17** (LIRC IR-TX - KY-005 DAT) | **11** | **12** | GPIO 18 |
 | 🔵 **GPIO 27** (LIRC IR-RX - KY-022 OUT)| **13** | **14** | ⚫ **GND** (Unallocated) |
 | GPIO 22 | **15** | **16** | GPIO 23 |
@@ -43,7 +43,7 @@ This table mirrors the physical layout of the 40-pin header on your Raspberry Pi
 
 This unified schematic shows all hardware modules connected simultaneously in their exact, factually correct physical wiring:
 * **Cooling Fan:** Connected directly to the Pi's GPIO pins (Pins 4, 32, 34). Bypasses the breadboard completely.
-* **PN532 (NFC/RFID):** Powered by the 3.3V Breadboard Rail, Ground to the Breadboard GND Rail, and SDA/SCL lines wired directly to the Pi.
+* **PN532 (NFC/RFID):** Powered by the 3.3V Breadboard Rail, Ground to the Breadboard GND Rail, and TXD/RXD lines wired directly to Pi UART (GPIO 14/15). Module is in HSU mode (both switches OFF).
 * **CC1101 (Sub-GHz):** Powered by the 3.3V Breadboard Rail, Ground to the Breadboard GND Rail, and SPI/GD0/GD2 lines wired directly to the Pi.
 * **KY-005 IR Transmitter:** Powered by the 5.0V Breadboard Rail, Ground to the Breadboard GND Rail, and signal line wired to Pin 11.
 * **KY-022 IR Receiver:** Powered by the 5.0V Breadboard Rail, Ground to the Breadboard GND Rail, and signal line wired to Pin 13.
@@ -58,6 +58,8 @@ graph LR
         PIN4[Pin 4: 5.0V Fan VCC]
         PIN5[Pin 5: GPIO 3 SCL]
         PIN6[Pin 6: GND Common]
+        PIN8_UART[Pin 8: GPIO 14 TXD]
+        PIN10_UART[Pin 10: GPIO 15 RXD]
         PIN11[Pin 11: GPIO 17 IR-TX]
         PIN13[Pin 13: GPIO 27 IR-RX]
         PIN18[Pin 18: GPIO 24 GD2]
@@ -81,8 +83,8 @@ graph LR
     subgraph NFC [NFC/RFID - PN532]
         PN_VCC[VCC]
         PN_GND[GND]
-        PN_SDA[SDA]
-        PN_SCL[SCL]
+        PN_TXD[TXD]
+        PN_RXD[RXD]
     end
 
     subgraph SubGHz [Sub-GHz - CC1101]
@@ -124,11 +126,11 @@ graph LR
     PIN34 ===> Fan_GND
     PIN32 ===> Fan_PWM
 
-    %% PN532 Connections (Power/GND via Breadboard, Signals from Pi)
+    %% PN532 Connections (Power/GND via Breadboard, UART from Pi GPIO 14/15)
     VCC3 ---> PN_VCC
     GND ---> PN_GND
-    PIN3 ---> PN_SDA
-    PIN5 ---> PN_SCL
+    PIN8_UART[Pin 8: GPIO 14 TXD] ---> PN_RXD
+    PIN10_UART[Pin 10: GPIO 15 RXD] ---> PN_TXD
 
     %% CC1101 Connections (Power/GND via Breadboard, Signals from Pi)
     VCC3 ---> CC_VCC
@@ -208,9 +210,9 @@ graph LR
 |--------------|----------|------|----------|--------------|-----------|
 | **Pin 1** | - | Power | 3.3V Power Out | Mini Breadboard 3.3V Rail | 3.3V Rail |
 | **Pin 2** | - | Power | 5.0V Power Out | Mini Breadboard 5.0V Rail | 5.0V Rail |
-| **Pin 3** | GPIO 2 | I2C1 | SDA (Data) | PN532 SDA Pin | Direct Pi Pin |
+| **Pin 3** | GPIO 2 | - | Unallocated | - | - |
 | **Pin 4** | - | Power | 5.0V Power Out | Connected directly to Fan VCC | Direct Pi Pin |
-| **Pin 5** | GPIO 3 | I2C1 | SCL (Clock) | PN532 SCL Pin | Direct Pi Pin |
+| **Pin 5** | GPIO 3 | - | Unallocated | - | - |
 | **Pin 6** | - | GND | Ground | Mini Breadboard Common GND Rail | GND Rail |
 | **Pin 11** | GPIO 17 | Output | IR-TX Signal | KY-005 DAT Pin | Direct Pi Pin |
 | **Pin 13** | GPIO 27 | Input | IR-RX Signal | KY-022 OUT Pin | Direct Pi Pin |
@@ -242,8 +244,8 @@ The SunFounder PiPower 5 UPS HAT supplies system-wide 5V power over the stacking
 Verify that your physical connections are perfectly wired by running these commands on the Pi:
 
 ```bash
-# 1. Verify RFID/NFC PN532 (must list '24' on the I2C bus)
-sudo i2cdetect -y 1
+# 1. Verify NFC PN532 via libnfc (must show pn532_uart device)
+nfc-list
 
 # 2. Verify CC1101 (must show spidev0.0)
 ls -la /dev/spidev*

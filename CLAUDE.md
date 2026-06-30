@@ -117,6 +117,17 @@ The IR functionality spans four files:
 - **Frontend**: `zigbee-sniffer.js` with 3 tabs (Scan, Capture, Extract). Sidebar shows expandable Zigbee entry with Coordinator (SONOFF) and Sniffer (CC2531) sub-items.
 - **Routes**: `/api/zigbee/audit/` prefix -- `device`, `capture`, `scan`, `discover`, `extract-keys`, `replay`, `flood`, `captures`.
 
+### NFC / RFID (PN532 + libnfc)
+- **`pn532.py`** wraps libnfc CLI tools (`nfc-list`, `nfc-mfclassic`, `mfoc`) for card read, block write, full sector dump/clone, and key recovery.
+- **Hardware**: PN532 NFC module in HSU (UART) mode. Switches: both OFF. Connected to Pi UART on GPIO 14 (TXD) and GPIO 15 (RXD) via `/dev/ttyAMA0`.
+- **UART config**: `enable_uart=1` and `dtoverlay=miniuart-bt` in `/boot/firmware/config.txt`. libnfc configured at `/etc/nfc/libnfc.conf` with `pn532_uart:/dev/ttyAMA0`.
+- **libnfc tools**: `nfc-list` (card detection), `nfc-mfclassic r a u` (full dump), `nfc-mfclassic w a u` (full clone), `mfoc -O` (key recovery). All installed via `apt install mfoc mfcuk libnfc-bin`.
+- **Card types**: Mifare Classic 1K/4K detected via ATQA/SAK. Read/write block 4 with default key. Dump auto-falls back from nfc-mfclassic (default keys) to mfoc (key recovery) when sectors fail auth.
+- **Clone workflow**: Dump saves full sector data to cards directory as JSON. Saved cards with full dumps get a clone button in the frontend that writes all sectors to a magic card via `nfc-mfclassic w a u`.
+- **Limitations**: mfoc needs a genuine Mifare Classic card (not magic/gen2). Mifare Ultralight/NTAG/DESFire not supported by current tools. Card emulation not implemented (PN532 target mode not exposed in libnfc-bin).
+- **Frontend**: `nfc.js` with Read & Dump, Write/Clone form, Advanced (mfoc), and Saved cards history section.
+- **Routes**: `/api/nfc/read`, `/api/nfc/write`, `/api/nfc/dump`, `/api/nfc/clone`, `/api/nfc/mfoc`.
+
 ### BadUSB DuckyScript Parser
 - **`badusb.py`** parses DuckyScript payloads (`.txt` files from `payloads/badusb/`).
 - Commands: `STRING`, `DELAY`, modifier combos (`GUI r`, `CTRL SHIFT ESC`), and named keys (`ENTER`, `F5`, etc.).
@@ -163,7 +174,7 @@ WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 s
 | Bluetooth | `/sys/class/bluetooth/hci0` | Built-in UART | Pi 4 internal Bluetooth 5.0 |
 | IR | `/dev/lirc0` | GPIO 17 (TX), GPIO 27 (RX) | KY-005 TX + KY-022 RX |
 | CC1101 | `/sys/bus/spi/devices/spi0.0` | SPI0 (CE0, MOSI, MISO, SCLK) | CC1101 module with SMA antenna |
-| PN532 | `i2cdetect -y 1` shows 0x24 | I2C1 (SDA=GPIO2, SCL=GPIO3) | PN532 NFC/RFID module |
+| PN532 | `nfc-list` shows pn532_uart | UART (TXD=GPIO15 Pin10, RXD=GPIO14 Pin8) | PN532 NFC/RFID module in HSU mode |
 | Zigbee | `/dev/ttyUSB0` | USB | SONOFF Zigbee 3.0 USB Dongle Lite MG21 |
 | Zigbee Sniffer | USB (VID:0451 PID:16AE) | USB | CC2531 USB Dongle, stock TI sniffer fw (bcd 25.17), pre-flashed, RX-only |
 | BadUSB | `/dev/hidg0` | USB-C data port | Linux configfs USB HID gadget |
