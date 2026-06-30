@@ -33,7 +33,6 @@ apt-get install -y \
     nmap \
     bluetooth \
     bluez \
-    libbluetooth-dev \
     i2c-tools \
     hostapd \
     dnsmasq \

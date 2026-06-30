@@ -115,15 +115,96 @@ function captureTab(body) {
 }
 
 // ------------------------------------------------------------------ Spoof tab
+//
+// Known manufacturer IDs (Bluetooth SIG assigned company identifiers)
+const MFG = { Apple: 76, Google: 224, Microsoft: 6, Samsung: 117 }
+
+// Common GATT service UUIDs.  The "other" entry lets the user type arbitrary ones.
+const SVC_UUIDS = [
+  { id: '1800', label: 'Generic Access (0x1800)' },
+  { id: '1801', label: 'Generic Attribute (0x1801)' },
+  { id: '180a', label: 'Device Information (0x180A)' },
+  { id: '180d', label: 'Heart Rate (0x180D)' },
+  { id: '180f', label: 'Battery (0x180F)' },
+  { id: '1812', label: 'Human Interface Device (0x1812)' },
+  { id: 'feaa', label: 'Eddystone (0xFEAA)' },
+  { id: 'fd6f', label: 'Google Fast Pair (0xFD6F)' },
+  { id: 'fe2c', label: 'Apple Continuity (0xFE2C)' },
+]
+
+// Preset templates  --  based on publicly documented BLE advertisement formats
+// from the AppleBLE, EvilAppleJuice, and Bluetooth-LE-Spam projects (2025-2026).
+const PRESETS = [
+  {
+    id: 'airpods-pro', label: 'Apple AirPods Pro',
+    desc: 'Triggers AirPods pairing popup on nearby iPhones (Apple Continuity).',
+    frame: 'custom', name: 'Chonky AirPods Pro', service_uuids: [], manufacturer_id: MFG.Apple, manufacturer_data: '07190c0ea0000000', duration: 120,
+  },
+  {
+    id: 'apple-tv', label: 'Apple TV',
+    desc: 'Triggers Apple TV setup / remote popup on nearby iPhones.',
+    frame: 'custom', name: 'Chonky Apple TV', service_uuids: ['fe2c'], manufacturer_id: MFG.Apple, manufacturer_data: '0915000000', duration: 120,
+  },
+  {
+    id: 'homepod', label: 'HomePod',
+    desc: 'Triggers HomePod setup notification on nearby iPhones.',
+    frame: 'custom', name: 'Chonky HomePod', service_uuids: ['fe2c'], manufacturer_id: MFG.Apple, manufacturer_data: '0b15000000', duration: 120,
+  },
+  {
+    id: 'apple-action', label: 'Apple Nearby Action',
+    desc: 'Broadcasts Apple Continuity Nearby Action -- may trigger iOS action modals on older iOS versions (< 17.2).',
+    frame: 'custom', name: '', service_uuids: ['fe2c'], manufacturer_id: MFG.Apple, manufacturer_data: '054000000000000000000000000000000000', duration: 120,
+  },
+  {
+    id: 'google-fastpair', label: 'Google Fast Pair',
+    desc: 'Triggers Fast Pair discovery popup on nearby Android phones (cool-down ~15 min per device).',
+    frame: 'custom', name: 'Chonky Pixel Buds', service_uuids: ['fd6f', 'fe2c'], manufacturer_id: MFG.Google, manufacturer_data: '0100000000000000000000000000000000000000', duration: 120,
+  },
+  {
+    id: 'microsoft-swiftpair', label: 'Microsoft Swift Pair',
+    desc: 'Triggers Swift Pair notification on nearby Windows 10/11 machines.',
+    frame: 'custom', name: 'Chonky Surface Headphones', service_uuids: [], manufacturer_id: MFG.Microsoft, manufacturer_data: '0100000000000000000000000000000000000000', duration: 120,
+  },
+  {
+    id: 'samsung-buds', label: 'Samsung Galaxy Buds',
+    desc: 'Triggers Easy Setup popup on nearby Samsung Galaxy devices.',
+    frame: 'custom', name: 'Chonky Galaxy Buds', service_uuids: [], manufacturer_id: MFG.Samsung, manufacturer_data: '0100000000000000000000000000000000000000', duration: 120,
+  },
+  {
+    id: 'fitness-tracker', label: 'Fitness Tracker (Heart Rate)',
+    desc: 'Impersonates a BLE fitness tracker advertising heart-rate service.',
+    frame: 'custom', name: 'Chonky Band', service_uuids: ['180d', '180f', '180a'], manufacturer_id: null, manufacturer_data: '', duration: 60,
+  },
+  {
+    id: 'ibeacon-applestore', label: 'iBeacon - Apple Store',
+    desc: 'Spoofs an iBeacon using Apple\'s retail proximity UUID.',
+    frame: 'ibeacon', name: '', uuid: 'e2c56db5dffb48d2b060d0f5a71096e0', major: 0, minor: 0, tx_power: -59, duration: 120,
+  },
+  {
+    id: 'ens-covid', label: 'iBeacon - COVID ENS',
+    desc: 'Spoofs a COVID-19 Exposure Notification beacon (commonly used for testing BLE privacy mechanisms).',
+    frame: 'ibeacon', name: '', uuid: '00000000000000000000000000000000', major: 0, minor: 0, tx_power: -59, duration: 60,
+  },
+]
+
 function spoofTab(body) {
   body.innerHTML = card(`
-    <div class="rounded-xl bg-base-200/40 p-4 space-y-3">
+    <div class="rounded-xl bg-base-200/40 p-4 space-y-4">
       <p class="text-[0.7rem] text-base-content/55">Broadcast a crafted BLE advertisement. Authorized testing only.</p>
       <div id="sp-status"></div>
 
-      <div class="grid grid-cols-2 gap-2">
+      <label class="form-control mb-4">
+        <span class="label-text text-xs pb-1">Preset</span>
+        <select id="sp-preset" class="select select-sm select-bordered">
+          <option value="">-- manual --</option>
+          ${PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}
+        </select>
+        <span id="sp-preset-desc" class="text-[0.65rem] text-base-content/50 mt-1 hidden"></span>
+      </label>
+
+      <div class="grid grid-cols-2 gap-3">
         <label class="form-control">
-          <span class="label-text text-xs">Frame</span>
+          <span class="label-text text-xs pb-1">Frame</span>
           <select id="sp-frame" class="select select-sm select-bordered">
             <option value="custom">Custom</option>
             <option value="ibeacon">iBeacon</option>
@@ -132,57 +213,75 @@ function spoofTab(body) {
           </select>
         </label>
         <label class="form-control">
-          <span class="label-text text-xs">Duration (s)</span>
+          <span class="label-text text-xs pb-1">Duration (s)</span>
           <input id="sp-duration" type="number" value="60" min="1" max="600" class="input input-sm input-bordered" />
         </label>
       </div>
 
-      <label class="form-control">
-        <span class="label-text text-xs">Device name</span>
+      <label class="form-control mb-4">
+        <span class="label-text text-xs pb-1">Device name</span>
         <input id="sp-name" type="text" placeholder="Fake Device" class="input input-sm input-bordered w-full" />
       </label>
 
-      <div data-grp="custom" class="space-y-2">
-        <label class="form-control">
-          <span class="label-text text-xs">Service UUIDs (comma-separated)</span>
-          <input id="sp-uuids" type="text" placeholder="180d, feaa" class="input input-sm input-bordered w-full font-mono" />
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="form-control"><span class="label-text text-xs">Manufacturer ID</span><input id="sp-mfg-id" type="number" placeholder="76" class="input input-sm input-bordered" /></label>
-          <label class="form-control"><span class="label-text text-xs">Mfg data (hex)</span><input id="sp-mfg-data" type="text" placeholder="01ff" class="input input-sm input-bordered font-mono" /></label>
+      <div data-grp="custom" class="space-y-3">
+        <div class="form-control">
+          <span class="label-text text-xs pb-1">Service UUIDs</span>
+          <div class="flex gap-2">
+            <select id="sp-svc-sel" class="select select-sm select-bordered flex-1">
+              <option value="">-- add a UUID --</option>
+              ${SVC_UUIDS.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}
+              <option value="__custom__">Custom...</option>
+            </select>
+          </div>
+          <div id="sp-svc-tags" class="flex flex-wrap gap-1 mt-1.5 min-h-[1.5rem]"></div>
+          <div id="sp-svc-custom" class="mt-1.5" style="display:none;">
+            <input id="sp-uuids" type="text" placeholder="180d, feaa" class="input input-sm input-bordered w-full font-mono" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="form-control">
+            <span class="label-text text-xs pb-1">Manufacturer ID</span>
+            <input id="sp-mfg-id" type="number" placeholder="76" class="input input-sm input-bordered" />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs pb-1">Mfg data (hex)</span>
+            <input id="sp-mfg-data" type="text" placeholder="01ff" class="input input-sm input-bordered font-mono" />
+          </label>
         </div>
       </div>
 
-      <div data-grp="ibeacon" class="space-y-2" style="display:none;">
+      <div data-grp="ibeacon" class="space-y-3" style="display:none;">
         <label class="form-control">
-          <span class="label-text text-xs">Proximity UUID (16 bytes)</span>
+          <span class="label-text text-xs pb-1">Proximity UUID (16 bytes)</span>
           <input id="sp-uuid" type="text" placeholder="e2c56db5dffb48d2b060d0f5a71096e0" class="input input-sm input-bordered w-full font-mono" />
         </label>
-        <div class="grid grid-cols-3 gap-2">
-          <label class="form-control"><span class="label-text text-xs">Major</span><input id="sp-major" type="number" value="0" class="input input-sm input-bordered" /></label>
-          <label class="form-control"><span class="label-text text-xs">Minor</span><input id="sp-minor" type="number" value="0" class="input input-sm input-bordered" /></label>
-          <label class="form-control"><span class="label-text text-xs">TX @1m</span><input id="sp-tx" type="number" value="-59" class="input input-sm input-bordered" /></label>
+        <div class="grid grid-cols-3 gap-3">
+          <label class="form-control"><span class="label-text text-xs pb-1">Major</span><input id="sp-major" type="number" value="0" class="input input-sm input-bordered" /></label>
+          <label class="form-control"><span class="label-text text-xs pb-1">Minor</span><input id="sp-minor" type="number" value="0" class="input input-sm input-bordered" /></label>
+          <label class="form-control"><span class="label-text text-xs pb-1">TX @1m</span><input id="sp-tx" type="number" value="-59" class="input input-sm input-bordered" /></label>
         </div>
       </div>
 
-      <div data-grp="eddystone-url" class="space-y-2" style="display:none;">
+      <div data-grp="eddystone-url" class="space-y-3" style="display:none;">
         <label class="form-control">
-          <span class="label-text text-xs">URL</span>
+          <span class="label-text text-xs pb-1">URL</span>
           <input id="sp-url" type="text" placeholder="https://example.com" class="input input-sm input-bordered w-full font-mono" />
         </label>
       </div>
 
-      <div data-grp="eddystone-uid" class="grid grid-cols-2 gap-2" style="display:none;">
-        <label class="form-control"><span class="label-text text-xs">Namespace (10 bytes)</span><input id="sp-ns" type="text" class="input input-sm input-bordered font-mono" /></label>
-        <label class="form-control"><span class="label-text text-xs">Instance (6 bytes)</span><input id="sp-inst" type="text" class="input input-sm input-bordered font-mono" /></label>
+      <div data-grp="eddystone-uid" class="space-y-3" style="display:none;">
+        <div class="grid grid-cols-2 gap-3">
+          <label class="form-control"><span class="label-text text-xs pb-1">Namespace (10 bytes)</span><input id="sp-ns" type="text" class="input input-sm input-bordered font-mono" /></label>
+          <label class="form-control"><span class="label-text text-xs pb-1">Instance (6 bytes)</span><input id="sp-inst" type="text" class="input input-sm input-bordered font-mono" /></label>
+        </div>
       </div>
 
-      <label class="label cursor-pointer justify-start gap-2">
+      <label class="label cursor-pointer justify-start gap-2 py-1">
         <input id="sp-txp" type="checkbox" class="checkbox checkbox-sm" />
         <span class="label-text text-xs">Include TX power</span>
       </label>
 
-      <div class="flex gap-2">
+      <div class="flex gap-2 pt-1">
         <button id="sp-start" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-tower-broadcast"></i>Start</button>
         <button id="sp-stop" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-stop"></i>Stop</button>
       </div>
@@ -196,6 +295,31 @@ function spoofTab(body) {
   }
   frame.addEventListener('change', showGroups)
   showGroups()
+
+  // Preset -- fill form fields when a preset is selected.
+  const presetEl = body.querySelector('#sp-preset')
+  const presetDesc = body.querySelector('#sp-preset-desc')
+  presetEl.addEventListener('change', () => {
+    const p = PRESETS.find((x) => x.id === presetEl.value)
+    if (!p) { presetDesc.classList.add('hidden'); return }
+    presetDesc.textContent = p.desc
+    presetDesc.classList.remove('hidden')
+    applyPreset(body, p)
+  })
+
+  // UUID dropdown -- add/remove tags.
+  const svcSel = body.querySelector('#sp-svc-sel')
+  svcSel.addEventListener('change', () => {
+    const val = svcSel.value
+    if (!val) return
+    if (val === '__custom__') {
+      body.querySelector('#sp-svc-custom').style.display = ''
+    } else {
+      addUuidTag(body, val)
+    }
+    svcSel.value = '' // reset
+  })
+
   body.querySelector('#sp-start').addEventListener('click', () => startSpoof(body))
   body.querySelector('#sp-stop').addEventListener('click', () => stopSpoof(body))
   refreshSpoofStatus(body)
@@ -509,7 +633,65 @@ async function deepScan(body) {
   }
 }
 
-// ---------------------------------------------------------------- advertisement spoofing
+// ---------------------------------------------------------------- spoof helpers
+
+function applyPreset(body, p) {
+  body.querySelector('#sp-frame').value = p.frame || 'custom'
+  body.querySelector('#sp-frame').dispatchEvent(new Event('change'))
+  body.querySelector('#sp-duration').value = p.duration || 60
+  body.querySelector('#sp-name').value = p.name || ''
+
+  // Clear existing UUID tags and add preset UUIDs.
+  const tags = body.querySelector('#sp-svc-tags')
+  tags.innerHTML = ''
+  if (p.service_uuids && p.service_uuids.length) {
+    p.service_uuids.forEach((id) => addUuidTag(body, id))
+  }
+
+  body.querySelector('#sp-mfg-id').value = p.manufacturer_id != null ? p.manufacturer_id : ''
+  body.querySelector('#sp-mfg-data').value = p.manufacturer_data || ''
+
+  // iBeacon fields
+  if (p.frame === 'ibeacon') {
+    if (p.uuid) body.querySelector('#sp-uuid').value = p.uuid
+    if (p.major != null) body.querySelector('#sp-major').value = p.major
+    if (p.minor != null) body.querySelector('#sp-minor').value = p.minor
+    if (p.tx_power != null) body.querySelector('#sp-tx').value = p.tx_power
+  }
+}
+
+function addUuidTag(body, id) {
+  const tags = body.querySelector('#sp-svc-tags')
+  // Don't add duplicates.
+  if (tags.querySelector(`[data-uuid="${id}"]`)) return
+
+  // Find the label for this UUID from SVC_UUIDS, or use the raw id.
+  const svc = SVC_UUIDS.find((s) => s.id === id.toLowerCase())
+  const label = svc ? svc.label : id
+
+  const tag = document.createElement('span')
+  tag.className = 'badge badge-sm gap-1 cursor-pointer'
+  tag.dataset.uuid = id
+  tag.innerHTML = `${esc(label.split(' (')[0])}<span class="text-[0.6rem] opacity-50">${id}</span>`
+  tag.addEventListener('click', () => tag.remove())
+  tags.appendChild(tag)
+}
+
+function getUuids(body) {
+  const ids = []
+  body.querySelectorAll('#sp-svc-tags [data-uuid]').forEach((tag) => {
+    ids.push(tag.dataset.uuid)
+  })
+  // Also include any custom UUIDs typed in the text field.
+  const raw = body.querySelector('#sp-uuids').value
+  if (raw.trim()) {
+    raw.split(/[,;\s]+/).forEach((s) => {
+      const id = s.trim().toLowerCase()
+      if (id && !ids.includes(id)) ids.push(id)
+    })
+  }
+  return ids
+}
 async function startSpoof(body) {
   const v = (id) => body.querySelector('#' + id).value.trim()
   const frame = v('sp-frame')
@@ -520,8 +702,8 @@ async function startSpoof(body) {
     include_tx_power: body.querySelector('#sp-txp').checked,
   }
   if (frame === 'custom') {
-    const uuids = v('sp-uuids')
-    if (uuids) params.service_uuids = uuids.split(',').map((s) => s.trim()).filter(Boolean)
+    const uuids = getUuids(body)
+    if (uuids.length) params.service_uuids = uuids
     if (v('sp-mfg-id')) params.manufacturer_id = parseInt(v('sp-mfg-id'), 10)
     if (v('sp-mfg-data')) params.manufacturer_data = v('sp-mfg-data')
   } else if (frame === 'ibeacon') {
