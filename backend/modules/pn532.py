@@ -215,6 +215,10 @@ class PN532Module:
             except Exception:
                 failed.append(sector)
 
+        # Save the dump so it appears in saved cards history
+        self.save_card(uid_hex, {'dump': sectors}, name=f'dump_{uid_hex}',
+                       card_type='Mifare Classic (full dump)')
+
         return {
             'success': True,
             'uid': uid_hex,
