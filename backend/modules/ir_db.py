@@ -250,11 +250,15 @@ class IRPayloadDB:
                 btn['raw_pulses'] = json.loads(btn['raw_pulses'])
             except (json.JSONDecodeError, TypeError):
                 btn['raw_pulses'] = []
+        else:
+            btn['raw_pulses'] = []
         if btn.get('raw_spaces'):
             try:
                 btn['raw_spaces'] = json.loads(btn['raw_spaces'])
             except (json.JSONDecodeError, TypeError):
                 btn['raw_spaces'] = []
+        else:
+            btn['raw_spaces'] = []
 
         return btn
 

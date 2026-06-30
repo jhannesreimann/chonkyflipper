@@ -109,6 +109,19 @@ def ir_library_send(device_id):
     pulses = btn.get('raw_pulses', [])
     spaces = btn.get('raw_spaces', [])
 
+    # Fall back to protocol-based encoding when raw data is missing
+    if not pulses and not spaces:
+        protocol = btn.get('protocol', '')
+        if not protocol:
+            return api_error('No raw pulses and no protocol for encoding', 400)
+        from modules.ir_protocols import encode as proto_encode
+        encoded, error = proto_encode(protocol,
+                                      address=btn.get('address', 0),
+                                      command=btn.get('command', 0))
+        if error:
+            return api_error(f'Protocol encode failed: {error}', 400)
+        pulses, spaces = encoded
+
     pairs = []
     for i, pulse in enumerate(pulses):
         pairs.append({'type': 'pulse', 'duration_us': pulse})

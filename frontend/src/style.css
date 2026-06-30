@@ -88,9 +88,12 @@
 }
 
 @layer base {
+  html {
+    @apply bg-base-200;
+  }
   html,
   body {
-    height: 100%;
+    min-height: 100%;
   }
   body {
     @apply bg-base-200 text-base-content font-sans antialiased;

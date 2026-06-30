@@ -212,6 +212,23 @@ def encode_rc5(address, command, toggle=0,
     return pulses, spaces
 
 
+# --- Protocol Aliases (Flipper-IRDB naming conventions) ------
+
+@register('Samsung32', carrier=38000)
+def encode_samsung32(address, command):
+    """Samsung32 is NEC with 4500us header and non-inverted address byte."""
+    return encode_nec(address, command, header_pulse=4500, samsung32=True)
+
+@register('SIRC20', carrier=40000)
+def encode_sirc20(command, address=0):
+    """SIRC20 is Sony SIRC 20-bit variant (Flipper-IRDB naming)."""
+    return encode_sony_20(command, address)
+
+@register('NECext', carrier=38000)
+def encode_necext(address, command):
+    """NECext is standard NEC with extended addressing (timing idential to NEC)."""
+    return encode_nec(address, command)
+
 # --- Raw Passthrough ----------------------------------------
 
 @register('raw', carrier=38000)
