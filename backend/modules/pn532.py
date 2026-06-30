@@ -71,7 +71,7 @@ class PN532Module:
                     'block_data': block_data, 'timestamp': datetime.now().isoformat(),
                 }
                 self.save_card(uid_hex, {'block_4': block_data} if block_data else {},
-                               name=f'scanned_{uid_hex}')
+                               name=f'scanned_{uid_hex}', card_type=card_type)
                 return result
 
             return {'success': False, 'error': 'No card detected within timeout'}
@@ -126,14 +126,15 @@ class PN532Module:
         except Exception as e:
             return {'success': False, 'error': f'Error writing card: {str(e)}'}
 
-    def save_card(self, uid, data, name=None):
+    def save_card(self, uid, data, name=None, card_type=None):
         if name is None:
             name = f'card_{uid}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
 
         filepath = os.path.join(self.cards_dir, f'{name}.json')
         card_data = {
             'name': name, 'uid': uid,
-            'timestamp': datetime.now().isoformat(), 'data': data, 'type': 'unknown',
+            'timestamp': datetime.now().isoformat(), 'data': data,
+            'type': card_type or 'Unknown',
         }
         with open(filepath, 'w') as f:
             json.dump(card_data, f, indent=2)
@@ -157,3 +158,134 @@ class PN532Module:
         except Exception as e:
             return {'error': str(e)}
         return {'cards': cards}
+
+    # ------------------------------------------------------------------
+    # Full Mifare Classic dump (all accessible sectors via default key)
+    # ------------------------------------------------------------------
+
+    def dump_card(self, key='FFFFFFFFFFFF', timeout=30):
+        """Read all 16 sectors of a Mifare Classic 1K card using a known key.
+        Returns sector data keyed by sector number (0-15), each with 3 data
+        blocks (0-2) per sector.  Block 3 of each sector is the trailer (keys
+        + access bits) and is skipped for safety.
+
+        Only sectors that authenticate successfully are included.  Use mfoc
+        or mfcuk for key recovery on sectors that fail."""
+        if not self._init_sensor():
+            return {'success': False, 'error': 'PN532 not detected'}
+        try:
+            import adafruit_pn532
+        except ImportError:
+            return {'success': False, 'error': 'adafruit_pn532 not installed'}
+
+        uid = None
+        deadline = __import__('time').time() + timeout
+        while __import__('time').time() < deadline:
+            uid = self.pn532.read_passive_target(timeout=0.5)
+            if uid:
+                break
+            __import__('time').sleep(0.1)
+
+        if not uid:
+            return {'success': False, 'error': 'No card found'}
+
+        uid_hex = ''.join(format(b, '02x') for b in uid)
+        key_bytes = bytes.fromhex(key) if len(key) == 12 else bytes(12)
+
+        sectors = {}
+        failed = []
+        for sector in range(16):
+            block = sector * 4  # First block of sector (trailer = block + 3)
+            try:
+                if not self.pn532.mifare_classic_authenticate_block(
+                    uid, block, adafruit_pn532.MIFARE_CMD_AUTH_A, key_bytes
+                ):
+                    failed.append(sector)
+                    continue
+                # Read data blocks 0-2 (skip trailer at block+3)
+                sector_data = {}
+                for b in range(3):
+                    blk = block + b
+                    try:
+                        data = self.pn532.mifare_classic_read_block(blk)
+                        sector_data[str(blk)] = ''.join(format(x, '02x') for x in data)
+                    except Exception:
+                        sector_data[str(blk)] = None
+                sectors[str(sector)] = sector_data
+            except Exception:
+                failed.append(sector)
+
+        return {
+            'success': True,
+            'uid': uid_hex,
+            'sectors_read': len(sectors),
+            'sectors_failed': failed,
+            'sectors': sectors,
+        }
+
+    def clone_dump(self, dump_data, key='FFFFFFFFFFFF', timeout=30):
+        """Write a previously captured sector dump back to a magic Mifare
+        Classic card.  dump_data should be a dict like {'0': {'4': 'hex...', '5': ..., '6': ...}, ...}.
+
+        Only sectors present in dump_data are written.  A magic (UID-changeable)
+        card is required for writing sector 0 blocks."""
+        if not self._init_sensor():
+            return {'success': False, 'error': 'PN532 not detected'}
+        try:
+            import adafruit_pn532
+        except ImportError:
+            return {'success': False, 'error': 'adafruit_pn532 not installed'}
+
+        uid = None
+        deadline = __import__('time').time() + timeout
+        while __import__('time').time() < deadline:
+            uid = self.pn532.read_passive_target(timeout=0.5)
+            if uid:
+                break
+            __import__('time').sleep(0.1)
+
+        if not uid:
+            return {'success': False, 'error': 'No card found'}
+
+        uid_hex = ''.join(format(b, '02x') for b in uid)
+        key_bytes = bytes.fromhex(key) if len(key) == 12 else bytes(12)
+        written = {}
+        failed = {}
+
+        for sector_str, blocks in dump_data.items():
+            sector = int(sector_str)
+            trailer_block = sector * 4 + 3
+            auth_block = sector * 4
+            try:
+                if not self.pn532.mifare_classic_authenticate_block(
+                    uid, auth_block, adafruit_pn532.MIFARE_CMD_AUTH_A, key_bytes
+                ):
+                    failed[sector_str] = 'auth failed'
+                    continue
+                sector_written = {}
+                for blk_str, hex_data in blocks.items():
+                    blk = int(blk_str)
+                    if blk == trailer_block:
+                        continue  # Never write sector trailers via this path
+                    if not hex_data or len(hex_data) != 32:
+                        continue
+                    try:
+                        payload = bytes.fromhex(hex_data)
+                        self.pn532.mifare_classic_write_block(blk, payload)
+                        # Verify
+                        verify = self.pn532.mifare_classic_read_block(blk)
+                        v_hex = ''.join(format(x, '02x') for x in verify)
+                        sector_written[blk_str] = v_hex == hex_data.lower()
+                    except Exception as e:
+                        sector_written[blk_str] = False
+                written[sector_str] = sector_written
+            except Exception as e:
+                failed[sector_str] = str(e)
+
+        return {
+            'success': True,
+            'target_uid': uid_hex,
+            'sectors_written': len(written),
+            'sectors_failed': failed,
+            'blocks': written,
+        }
