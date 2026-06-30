@@ -350,7 +350,7 @@ class ZigbeeAuditModule:
                     dev_clusters = zcl_clusters[mac_pattern]
                     break
 
-            # Skip the coordinator (0x0000) — it's the user's own SONOFF dongle
+            # Skip the coordinator (0x0000) -- it's the user's own SONOFF dongle
             is_own_coordinator = d['is_coordinator'] and d.get('mac_short') == '0x0000'
 
             device_list.append({

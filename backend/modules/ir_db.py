@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-IR Payload Database — SQLite storage for IR signal library.
-Provides hierarchical browsing (brands → devices → buttons) and raw signal retrieval.
+IR Payload Database -- SQLite storage for IR signal library.
+Provides hierarchical browsing (brands -> devices -> buttons) and raw signal retrieval.
 """
 
 import sqlite3

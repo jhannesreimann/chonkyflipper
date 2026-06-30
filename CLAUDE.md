@@ -84,7 +84,7 @@ def get_module(name):
 ```
 Modules are instantiated on first use via `__import__`. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
 
-The `__init__.py` only lists `__all__` — no eager imports. Use `from modules.ir import IRModule` inside the venv to import specific modules directly when testing.
+The `__init__.py` only lists `__all__` -- no eager imports. Use `from modules.ir import IRModule` inside the venv to import specific modules directly when testing.
 
 ### IR Library System (multi-file subsystem)
 The IR functionality spans four files:
@@ -107,7 +107,7 @@ The IR functionality spans four files:
 
 ### Zigbee Security Auditing (CC2531 + KillerBee)
 - **`zigbee_audit.py`** provides passive 802.15.4 packet capture, PAN discovery, device identification, and network key extraction using KillerBee framework with a CC2531 USB dongle.
-- **Hardware**: CC2531 USB Dongle with TI packet sniffer firmware (VID:0451 PID:16AE). Pre-flashed, no CC Debugger needed.
+- **Hardware**: CC2531 USB Dongle with stock Texas Instruments packet sniffer firmware (VID:0451 PID:16AE, bcdDevice 25.17). Pre-flashed from the factory -- no custom firmware or CC Debugger needed. This is the standard TI CC2531EMK evaluation kit firmware; KillerBee supports it natively for sniffing without any reflashing.
 - **KillerBee** is cloned to `/opt/chonkyflipper/killerbee/`. Tools: `zbdump` (packet capture), `zbstumbler` (PAN discovery), `zbdsniff` (key extraction).
 - The CC2531 is RX-only (sniffer firmware). Packet injection (replay, association flood) requires a TX-capable dongle like Atmel RZUSBSTICK/ApiMote.
 - **Dependencies**: scapy, pyusb, pyserial, rangeparser (installed in venv). tshark for pcap analysis.
@@ -115,7 +115,7 @@ The IR functionality spans four files:
 - **Device discovery**: `discover_devices()` uses tshark to parse pcap files, extracting MACs, PAN IDs, roles, and encryption status. Cross-references with Zigbee2MQTT coordinator for device names/models.
 - **ZCL identification**: Attempts decryption with Z2M network key from config, maps cluster IDs to device types (On/Off=switch, Temperature=sensor, etc.).
 - **Frontend**: `zigbee-sniffer.js` with 3 tabs (Scan, Capture, Extract). Sidebar shows expandable Zigbee entry with Coordinator (SONOFF) and Sniffer (CC2531) sub-items.
-- **Routes**: `/api/zigbee/audit/` prefix — `device`, `capture`, `scan`, `discover`, `extract-keys`, `replay`, `flood`, `captures`.
+- **Routes**: `/api/zigbee/audit/` prefix -- `device`, `capture`, `scan`, `discover`, `extract-keys`, `replay`, `flood`, `captures`.
 
 ### BadUSB DuckyScript Parser
 - **`badusb.py`** parses DuckyScript payloads (`.txt` files from `payloads/badusb/`).
@@ -138,8 +138,8 @@ WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 s
 - **`src/toast.js`**: transient toasts (`notify()`) + persistent task handles (`startTask()` with `.done()`/`.fail()`/`.update()`). Tracks active task count shown in the header.
 - **`src/style.css`**: Tailwind entry point, `chonky` / `chonky-dark` DaisyUI themes, `.nav-link` / `.surface` / `.console` component classes.
 - **`src/modules/*.js`**: one file per hardware module, each exporting a `renderXxx(root)` function called by the router.
-- **Local dev**: `cd frontend && npm install && CHONKY_API=http://192.168.178.78 npm run dev` → `http://localhost:5173`, `/api` proxied to the Pi.
-- **Production**: `npm run build` → `frontend/dist/`, copied to `/var/www/html/` by `update.sh`. nginx serves the static files and proxies `/api` to gunicorn.
+- **Local dev**: `cd frontend && npm install && CHONKY_API=http://192.168.178.78 npm run dev` -> `http://localhost:5173`, `/api` proxied to the Pi.
+- **Production**: `npm run build` -> `frontend/dist/`, copied to `/var/www/html/` by `update.sh`. nginx serves the static files and proxies `/api` to gunicorn.
 
 ## Network Interfaces (current state)
 | Interface | Type | IP | Purpose |
@@ -165,7 +165,7 @@ WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 s
 | CC1101 | `/sys/bus/spi/devices/spi0.0` | SPI0 (CE0, MOSI, MISO, SCLK) | CC1101 module with SMA antenna |
 | PN532 | `i2cdetect -y 1` shows 0x24 | I2C1 (SDA=GPIO2, SCL=GPIO3) | PN532 NFC/RFID module |
 | Zigbee | `/dev/ttyUSB0` | USB | SONOFF Zigbee 3.0 USB Dongle Lite MG21 |
-| Zigbee Sniffer | USB (VID:0451 PID:16AE) | USB | CC2531 USB Dongle with TI sniffer fw |
+| Zigbee Sniffer | USB (VID:0451 PID:16AE) | USB | CC2531 USB Dongle, stock TI sniffer fw (bcd 25.17), pre-flashed, RX-only |
 | BadUSB | `/dev/hidg0` | USB-C data port | Linux configfs USB HID gadget |
 
 See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
@@ -196,7 +196,7 @@ See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
 - **Fixing mixed ownership**: `sudo chown -R kali:kali /home/kali/chonkyflipper/.git`
 - **VERSION file**: Written by update.sh (root), must be chowned to `chonky:chonky` so the API can read it.
 - **Venv ownership**: The venv at `/opt/chonkyflipper/venv` must be `chonky:chonky`. If root-owned, pip install during updates will fail with permission errors.
-- **Deploying manually**: If update.sh skips because git HEAD matches, run the copy steps manually — backend files → `/opt/chonkyflipper/`, `cd frontend && npm run build && cp -r dist/* /var/www/html/`, payloads, systemctl restart.
+- **Deploying manually**: If update.sh skips because git HEAD matches, run the copy steps manually -- backend files -> `/opt/chonkyflipper/`, `cd frontend && npm run build && cp -r dist/* /var/www/html/`, payloads, systemctl restart.
 
 ## DNS
 - dnsmasq serves BOTH `chonkyflipper.pi` AND `chonkyflipper.local` pointing to 192.168.4.1
@@ -213,4 +213,4 @@ See `WIRING.md` for the complete GPIO pinout and physical wiring schematic.
 - Mosquitto listens on 127.0.0.1:1883 only (localhost), not exposed to external networks
 - Zigbee2MQTT's pnpm requires a writable home directory for the zigbee2mqtt user -- set to `/opt/zigbee2mqtt` in `/etc/passwd`
 - Zigbee network map generation via API may time out on large networks; the API has a 15s timeout
-- **PiPower5 shutdown**: Kali lacks `raspi-config` and `rpi-eeprom-update`, so `POWER_OFF_ON_HALT=1` cannot be set in the EEPROM. The SDSIG jumper stays on **PI3V3**. A systemd-shutdown hook at `/lib/systemd/system-shutdown/pipower-shutdown` sends an I2C command `[0xAC, 0x03, 0x00, 0xAE]` to the PiPower5 MCU (address 0x5C) to disable output. This hook runs AFTER all filesystems are unmounted and synced by systemd-shutdown — confirmed clean (zero journal corruption). Do NOT use `dtoverlay=gpio-poweroff,gpio_pin=26` — GPIO 26 defaults to LOW during early boot (internal pull-down), causing immediate power-cut (boot-loop). Both the UI "Power Off" button and 2s button press work: Pi shuts down cleanly, systemd-shutdown syncs filesystems, then the I2C hook tells the HAT to cut battery power.
+- **PiPower5 shutdown**: Kali lacks `raspi-config` and `rpi-eeprom-update`, so `POWER_OFF_ON_HALT=1` cannot be set in the EEPROM. The SDSIG jumper stays on **PI3V3**. A systemd-shutdown hook at `/lib/systemd/system-shutdown/pipower-shutdown` sends an I2C command `[0xAC, 0x03, 0x00, 0xAE]` to the PiPower5 MCU (address 0x5C) to disable output. This hook runs AFTER all filesystems are unmounted and synced by systemd-shutdown -- confirmed clean (zero journal corruption). Do NOT use `dtoverlay=gpio-poweroff,gpio_pin=26` -- GPIO 26 defaults to LOW during early boot (internal pull-down), causing immediate power-cut (boot-loop). Both the UI "Power Off" button and 2s button press work: Pi shuts down cleanly, systemd-shutdown syncs filesystems, then the I2C hook tells the HAT to cut battery power.

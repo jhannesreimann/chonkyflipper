@@ -84,7 +84,7 @@ def encode_nec(address, command, header_pulse=9000, header_space=4500,
 #   Bit 1:   ~430 us mark, ~1300 us space
 #   Frame:   48 bits (16-bit address + 32-bit data)
 
-PANASONIC_ADDRESS = 0x4004  # 16388 — standard for Panasonic AV devices
+PANASONIC_ADDRESS = 0x4004  # 16388 -- standard for Panasonic AV devices
 
 @register('Panasonic', carrier=38000)
 def encode_panasonic(address=PANASONIC_ADDRESS, command=0,

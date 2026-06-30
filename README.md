@@ -27,6 +27,7 @@ The system uses a three tier architecture: physical hardware layer (GPIO/SPI/I2C
 * Alfa AWUS036ACS (RTL8811AU) for WiFi analysis
 * Internal Pi 4 Bluetooth 5.0 for BLE operations
 * SONOFF Zigbee 3.0 USB Dongle (EFR32MG21)
+* CC2531 USB Dongle (TI packet sniffer firmware) for Zigbee security auditing
 * CC1101 SPI module with SMA antenna (433/868MHz)
 * PN532 I2C module for NFC/RFID
 
@@ -83,7 +84,7 @@ backend/
     config.py           Centralized paths and constants
     utils.py            API response helpers (api_success / api_error)
     routes/             Flask blueprints (status, wifi, bluetooth, ir,
-    |                     subghz, nfc, badusb, zigbee, network)
+    |                     subghz, nfc, badusb, zigbee, zigbee_audit, network)
     modules/
         wifi.py         Alfa adapter + WiFi scanning
         bluetooth.py    BLE + Classic BT scanner, GATT, SDP, beacon decode, spoofing
@@ -94,18 +95,31 @@ backend/
         cc1101.py       Sub-1GHz transceiver (SPI)
         pn532.py        NFC/RFID reader/writer (I2C)
         zigbee.py       Zigbee2MQTT bridge (MQTT)
+        zigbee_audit.py Zigbee security auditing (CC2531 + KillerBee)
         badusb.py       USB HID DuckyScript emulation
     requirements.txt
 
 frontend/
-    index.html          Mobile dashboard
-    style.css           Dark theme UI
-    js/
-        api.js          Fetch wrappers (apiGet / apiPost)
-        utils.js        Escape helpers, log, spinner
-        main.js         Init, status polling, module panel switching
-        modules.js      Module panels (WiFi, BLE, IR, SubGHz, NFC, BadUSB)
-        settings.js     Network status, WiFi connect, power, updates
+    index.html          Mobile dashboard shell
+    src/
+        main.js         App shell: header, sidebar, hash router, theme toggle
+        state.js        Central polling store (/status, /system, /network, /version)
+        api.js          Fetch wrappers (apiGet / apiPost / apiDelete)
+        toast.js        Toast notifications + persistent task handles
+        ui.js           Shared presentational fragments (pageHead, card, tabBar, etc.)
+        util.js         Escaping + small DOM/format helpers
+        style.css       Tailwind entry, chonky / chonky-dark DaisyUI themes
+        modules/
+            dashboard.js   System overview (temperature, uptime, module status)
+            wifi.js        Scan, monitor mode, packet capture, deauth
+            bluetooth.js   BLE + Classic scanning, GATT, spoofing, HCI capture
+            ir.js          IR library browser (brands/devices/buttons), record/send
+            subghz.js      CC1101 record / replay (433/868 MHz)
+            nfc.js         PN532 read / write / clone
+            badusb.js      DuckyScript payload list + execute
+            zigbee.js      Zigbee2MQTT devices, events, bridge info, network map
+            zigbee-sniffer.js  CC2531 sniffer: PAN scan, packet capture, key extraction
+            settings.js    WiFi connect, network status, power, system update
 
 payloads/
     ir/                 Bootstrap IR JSON payloads (seed DB offline)
@@ -181,6 +195,34 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 |--------|----------|-------------|
 | GET | /api/badusb/payloads | List available payloads |
 | POST | /api/badusb/execute | Run HID emulation script |
+
+### Zigbee Bridge (Zigbee2MQTT)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/zigbee/bridge | Bridge info and state |
+| GET | /api/zigbee/devices | Raw device registry |
+| GET | /api/zigbee/dashboard | Combined device view (registry + live state) |
+| GET | /api/zigbee/events?limit=N | Recent lifecycle and state events |
+| GET | /api/zigbee/networkmap | Network topology (nodes + links) |
+| POST | /api/zigbee/permit_join | Enable pairing mode |
+| GET | /api/zigbee/device/\<name\> | Device live state |
+| POST | /api/zigbee/device/\<name\>/set | Control device (e.g. on/off) |
+| POST | /api/zigbee/device/\<name\>/rename | Rename a device |
+| DELETE | /api/zigbee/device/\<name\> | Force-remove a device |
+
+### Zigbee Auditing (CC2531 + KillerBee)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/zigbee/audit/device | Check if CC2531 dongle is connected |
+| POST | /api/zigbee/audit/capture | Capture packets on a channel to pcap |
+| POST | /api/zigbee/audit/scan | Passive PAN discovery (zbstumbler) |
+| POST | /api/zigbee/audit/discover | Parse pcap for devices (MACs, roles, encryption) |
+| POST | /api/zigbee/audit/extract-keys | Extract network keys from capture (zbdsniff) |
+| POST | /api/zigbee/audit/replay | Replay captured packets (requires TX dongle) |
+| POST | /api/zigbee/audit/flood | Association flood DoS (requires TX dongle) |
+| GET | /api/zigbee/audit/captures | List saved pcap capture files |
 
 ## Usage Workflow
 

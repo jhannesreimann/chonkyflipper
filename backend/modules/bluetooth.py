@@ -365,7 +365,7 @@ class BluetoothModule:
             if not m:
                 continue
             d = {'mac': m.group(1).upper(), 'name': None, 'rssi': None}
-            # Class of Device — e.g. "class: 0x0c043c"
+            # Class of Device -- e.g. "class: 0x0c043c"
             cm = re.search(r'class:\s*(0x[0-9a-fA-F]+)', line)
             if cm:
                 d['type'] = self._cod_major(cm.group(1))

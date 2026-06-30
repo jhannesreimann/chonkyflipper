@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-IR Database Sync Engine — keeps the local IR payload DB in sync with Flipper-IRDB.
+IR Database Sync Engine -- keeps the local IR payload DB in sync with Flipper-IRDB.
 Uses git for efficient incremental updates (avoids GitHub API rate limits).
 """
 
@@ -13,7 +13,7 @@ from datetime import datetime
 
 
 class IRDBSync:
-    """Sync engine for Flipper-IRDB → local SQLite database."""
+    """Sync engine for Flipper-IRDB -> local SQLite database."""
 
     IRDB_REPO = 'https://github.com/logickworkshop/Flipper-IRDB.git'
     DEVICE_TYPE_MAP = {
@@ -110,7 +110,7 @@ class IRDBSync:
             self.db.set_sync_state('last_sync_at', datetime.now().isoformat())
             return {'success': True, 'action': 'cloned', 'sha': sha}
 
-        # Already cloned — pull updates
+        # Already cloned -- pull updates
         stdout, stderr, rc = self._run(['git', 'fetch', 'origin', 'main'])
         if rc != 0:
             return {'success': False, 'error': f'Fetch failed: {stderr}'}
@@ -216,7 +216,7 @@ class IRDBSync:
         if old_sha and new_sha:
             changed = self._get_changed_files(old_sha, new_sha)
         else:
-            # Full clone — import everything
+            # Full clone -- import everything
             changed = self._find_all_ir_files()
 
         if not changed:
@@ -357,7 +357,7 @@ class IRDBSync:
             if not line or line.startswith('Filetype:') or line.startswith('Version:'):
                 continue
 
-            # Comment line — save as description
+            # Comment line -- save as description
             if line.startswith('#') and not current:
                 continue
 
