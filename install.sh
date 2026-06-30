@@ -49,7 +49,10 @@ apt-get install -y \
     swig \
     python3-dev \
     ir-keytable \
-    bettercap
+    bettercap \
+    libnfc-bin \
+    mfoc \
+    mfcuk
 
 # Note: pigpio daemon compilation fails on newer kernels
 # The Python pigpio library will be installed via pip for client mode
@@ -529,9 +532,30 @@ systemctl daemon-reload
 # Enable but do not start — requires Zigbee USB dongle to be present first
 systemctl enable zigbee2mqtt
 
+# Enable UART for PN532 NFC module in HSU mode (GPIO 14/15 via /dev/ttyAMA0)
+echo ""
+echo "Step 18: Enabling UART for PN532 NFC module..."
+if ! grep -q '^enable_uart=1' "$BOOT_CONFIG" 2>/dev/null; then
+	echo 'enable_uart=1' >> "$BOOT_CONFIG"
+fi
+if ! grep -q '^dtoverlay=miniuart-bt' "$BOOT_CONFIG" 2>/dev/null; then
+	echo 'dtoverlay=miniuart-bt' >> "$BOOT_CONFIG"
+fi
+# Remove serial console so it doesn't interfere with PN532
+sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt 2>/dev/null || true
+sed -i 's/console=ttyS0,115200 //' /boot/firmware/cmdline.txt 2>/dev/null || true
+
+# libnfc configuration for PN532 over UART
+mkdir -p /etc/nfc
+cat > /etc/nfc/libnfc.conf << 'EOF'
+# PN532 via UART on GPIO 14/15 (PL011)
+device.name = "pn532_uart"
+device.connstring = "pn532_uart:/dev/ttyAMA0"
+EOF
+
 # Install CC2531 Zigbee Sniffer support (KillerBee framework)
 echo ""
-echo "Step 18: Installing CC2531 Zigbee Sniffer support..."
+echo "Step 19: Installing CC2531 Zigbee Sniffer support..."
 # KillerBee framework
 if [ ! -d "$INSTALL_DIR/killerbee" ]; then
     git clone --depth 1 https://github.com/riverloopsec/killerbee.git "$INSTALL_DIR/killerbee" 2>&1 | tail -2
@@ -578,7 +602,14 @@ echo "     If not /dev/ttyUSB0, update: /opt/zigbee2mqtt/data/configuration.yaml
 echo "  9. Start Zigbee2MQTT: sudo systemctl start zigbee2mqtt"
 echo "     API: GET /api/zigbee/devices  POST /api/zigbee/permit_join"
 echo ""
-echo "  NOTE: A reboot is required for I2C/SPI/fan/shutdown changes to take effect."
+echo "  NFC:"
+echo "  7. Wire PN532 in HSU mode: switches both OFF"
+echo "     TXD (blue)  -> Pin 10 (GPIO 15, Pi RXD)"
+echo "     RXD (green) -> Pin 8  (GPIO 14, Pi TXD)"
+echo "     VCC -> Pin 1 (3.3V), GND -> Pin 6"
+echo "  8. Verify: nfc-list (should show pn532_uart)"
+echo ""
+echo "  NOTE: A reboot is required for I2C/SPI/UART/fan/shutdown changes to take effect."
 echo "  Run: sudo reboot"
 echo ""
 echo "Logs: /opt/chonkyflipper/logs/"
