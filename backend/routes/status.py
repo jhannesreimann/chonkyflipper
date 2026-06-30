@@ -63,7 +63,7 @@ def _detect_modules():
             'available': os.path.exists('/sys/bus/spi/devices/spi0.0'),
             'spi': '0.0',
         },
-        'pn532': {'available': False, 'i2c': '0x24'},
+        'pn532': {'available': False, 'uart': 'ttyAMA0'},
         'zigbee': {
             'available': bool(
                 __import__('glob').glob('/dev/ttyUSB*')
@@ -77,17 +77,13 @@ def _detect_modules():
         },
     }
 
-    # PN532: check I2C bus
+    # PN532: check libnfc via UART
     try:
-        i2c_out = subprocess.check_output(
-            ['sudo', '-n', 'i2cdetect', '-y', '1'],
-            text=True, stderr=subprocess.DEVNULL, timeout=3,
+        nfc_out = subprocess.check_output(
+            ['nfc-list'], text=True, stderr=subprocess.DEVNULL, timeout=5,
         )
-        if '24' in i2c_out:
-            for line in i2c_out.split('\n'):
-                if line.startswith('20:') and '24' in line.split():
-                    module_status['pn532']['available'] = True
-                    break
+        if 'pn532' in nfc_out.lower():
+            module_status['pn532']['available'] = True
     except Exception:
         pass
 

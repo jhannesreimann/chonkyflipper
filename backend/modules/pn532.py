@@ -1,96 +1,157 @@
 #!/usr/bin/env python3
 """
-PN532 Module - RFID/NFC Reader/Writer
-I2C interface, using adafruit-circuitpython-pn532
-Supports: Mifare Classic, Ultralight, DESFire, FeliCa
+NFC Module - PN532 via libnfc (UART/HSU mode on GPIO 14/15).
+Provides card read, block write, full sector dump/clone, and mfoc key recovery.
+Depends on: libnfc-bin, mfoc (installed via apt).
 """
 
 import os
 import json
-import time
+import subprocess
+import tempfile
 from datetime import datetime
 from config import CARDS_DIR
 
+os.makedirs(CARDS_DIR, exist_ok=True)
+
+# Known default keys that mfoc tests
+COMMON_KEYS = [
+    'FFFFFFFFFFFF', 'A0A1A2A3A4A5', 'D3F7D3F7D3F7', '000000000000',
+    'B0B1B2B3B4B5', '4D3A99C351DD', '1A982C7E459A', 'AABBCCDDEEFF',
+    '714C5C886E97', '587EE5F9350F', 'A0478CC39091', '533CB6C723F6',
+    '8FD0A4F256E9',
+]
+
 
 class PN532Module:
-    """PN532 NFC/RFID module via I2C, GPIO 2 (SDA) / GPIO 3 (SCL)"""
+    """NFC reader/writer via PN532 in HSU (UART) mode using libnfc tools."""
 
-    def __init__(self, i2c_bus=1, address=0x24):
-        self.i2c_bus = i2c_bus
-        self.address = address
+    def __init__(self):
         self.cards_dir = CARDS_DIR
-        os.makedirs(self.cards_dir, exist_ok=True)
-        self.pn532 = None
-        self._initialized = False
 
-    def _init_sensor(self):
-        if self._initialized and self.pn532 is not None:
-            return True
-        import time as _time
-        last_err = ''
-        for attempt in range(3):
-            try:
-                import board
-                import busio
-                from adafruit_pn532.i2c import PN532_I2C
-                i2c = busio.I2C(board.SCL, board.SDA)
-                self.pn532 = PN532_I2C(i2c, address=self.address)
-                self.pn532.SAM_configuration()
-                _time.sleep(0.1)  # Let PN532 settle after SAM
-                self._initialized = True
-                return True
-            except Exception as e:
-                last_err = str(e)
-                if attempt < 2:
-                    _time.sleep(0.3)
-        import sys
-        print(f'[pn532] _init_sensor failed after 3 attempts: {last_err}', file=sys.stderr, flush=True)
-        return False
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _run(cmd, timeout=30):
+        """Run a command, return (stdout, stderr, returncode)."""
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return r.stdout, r.stderr, r.returncode
+        except subprocess.TimeoutExpired:
+            return '', 'timed out', 1
+        except FileNotFoundError:
+            return '', f'{cmd[0]} not found', 1
+
+    @classmethod
+    def check_device(cls):
+        """Return True if the PN532 is reachable via libnfc (UART)."""
+        stdout, _, rc = cls._run(['nfc-list'], timeout=5)
+        return rc == 0 and 'pn532' in stdout.lower()
+
+    @staticmethod
+    def _parse_nfc_list(stdout):
+        """Extract UID, ATQA, SAK from nfc-list output."""
+        uid = ''
+        atqa = ''
+        sak = ''
+        for line in stdout.split('\n'):
+            line = line.strip()
+            if line.startswith('UID (NFCID1):'):
+                uid = ''.join(line.split(':')[1].strip().split())
+            elif line.startswith('ATQA'):
+                atqa = ''.join(line.split(':')[1].strip().split())
+            elif line.startswith('SAK'):
+                sak = ''.join(line.split(':')[1].strip().split())
+        return uid, atqa, sak
+
+    @staticmethod
+    def _parse_mfclassic_output(stdout):
+        """Parse nfc-mfclassic output into blocks dict {block_num: hex_data}."""
+        blocks = {}
+        for line in stdout.split('\n'):
+            parts = line.strip().split(':')
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                blk = int(parts[0].strip())
+                data = parts[1].strip().replace(' ', '')
+                if len(data) == 32:
+                    blocks[blk] = data
+        return blocks
+
+    @staticmethod
+    def _blocks_to_sectors(blocks):
+        """Group 64 blocks into 16 sectors of 4 blocks each."""
+        sectors = {}
+        for blk, data in blocks.items():
+            sector = blk // 4
+            if str(sector) not in sectors:
+                sectors[str(sector)] = {}
+            sectors[str(sector)][str(blk)] = data
+        # Remove trailer blocks (block % 4 == 3) for safety
+        for s in sectors:
+            sectors[s] = {k: v for k, v in sectors[s].items()
+                          if int(k) % 4 != 3}
+        return sectors
+
+    def _detect_card_type(self, uid, atqa, sak):
+        """Guess card type from ATQA/SAK."""
+        if atqa == '0004' and sak == '08':
+            return 'Mifare Classic 1K'
+        if atqa == '0002' and sak == '18':
+            return 'Mifare Classic 4K'
+        if sak == '00':
+            return 'Mifare Ultralight / NTAG'
+        if uid and len(uid) == 8:
+            return 'Mifare Classic (4-byte UID)'
+        if uid and len(uid) == 14:
+            return 'Mifare Classic (7-byte UID)'
+        return 'NFC Tag'
+
+    # ------------------------------------------------------------------
+    # Read card (nfc-list)
+    # ------------------------------------------------------------------
 
     def read_card(self, timeout=10):
-        if not self._init_sensor():
-            return {'success': False, 'error': 'PN532 could not be initialized. Check I2C bus wiring and permissions.'}
-
-        try:
-            uid = self.pn532.read_passive_target(timeout=0.5)
-            start_time = time.time()
-            while uid is None and (time.time() - start_time) < timeout:
-                uid = self.pn532.read_passive_target(timeout=0.5)
-                time.sleep(0.1)
-
-            if uid is not None:
-                uid_hex = ''.join([f'{x:02x}' for x in uid])
-                card_type = 'Mifare Classic' if len(uid) == 4 else 'NFC Tag'
-
-                block_data = None
-                try:
-                    key = b'\xFF\xFF\xFF\xFF\xFF\xFF'
-                    if len(uid) == 4:
-                        if self.pn532.mifare_classic_authenticate_block(
-                            uid, block_number=4, key_number=0x60, key=key,
-                        ):
-                            data = self.pn532.mifare_classic_read_block(4)
-                            if data:
-                                block_data = data.hex()
-                except Exception:
-                    pass
-
-                result = {
-                    'success': True, 'uid': uid_hex, 'card_type': card_type,
-                    'block_data': block_data, 'timestamp': datetime.now().isoformat(),
-                }
-                self.save_card(uid_hex, {'block_4': block_data} if block_data else {},
-                               name=f'scanned_{uid_hex}', card_type=card_type)
-                return result
-
+        """Detect a card and return UID, type, ATQA, SAK."""
+        stdout, stderr, rc = self._run(['nfc-list'], timeout=timeout)
+        if rc != 0:
+            return {'success': False,
+                    'error': f'nfc-list failed: {stderr.strip() or "PN532 not found"}'}
+        if 'No NFC device found' in stdout or 'pn532' not in stdout.lower():
+            return {'success': False, 'error': 'PN532 not detected via libnfc'}
+        if 'passive target(s) found' not in stdout:
             return {'success': False, 'error': 'No card detected within timeout'}
-        except Exception as e:
-            return {'success': False, 'error': f'Error reading card: {str(e)}'}
+
+        uid, atqa, sak = self._parse_nfc_list(stdout)
+        if not uid:
+            return {'success': False, 'error': 'Card detected but no UID read'}
+
+        card_type = self._detect_card_type(uid, atqa, sak)
+
+        # Try a quick read of block 4 via nfc-mfclassic
+        block_data = None
+        out, _, _ = self._run(
+            ['nfc-mfclassic', 'r', 'a', 'u', '/dev/null'], timeout=10)
+        if out:
+            blocks = self._parse_mfclassic_output(out)
+            block_data = blocks.get(4)
+
+        result = {
+            'success': True, 'uid': uid,
+            'card_type': card_type, 'atqa': atqa, 'sak': sak,
+            'block_data': block_data, 'timestamp': datetime.now().isoformat(),
+        }
+        self.save_card(uid, {'block_4': block_data} if block_data else {},
+                       name=f'scanned_{uid}', card_type=card_type)
+        return result
+
+    # ------------------------------------------------------------------
+    # Write block (nfc-mfclassic single block)
+    # ------------------------------------------------------------------
 
     def write_card(self, uid=None, payload=None, sector=1, block=4):
-        if not self._init_sensor():
-            return {'success': False, 'error': 'PN532 could not be initialized. Check I2C bus wiring.'}
-
+        """Write 16 bytes to a specific block using the default key."""
         if not payload:
             return {'success': False, 'error': 'Payload data is required'}
 
@@ -107,38 +168,198 @@ class PN532Module:
                 payload_bytes += b'\x00' * (16 - len(payload_bytes))
             elif len(payload_bytes) > 16:
                 payload_bytes = payload_bytes[:16]
+        except Exception as e:
+            return {'success': False, 'error': f'Payload encoding error: {e}'}
 
-            detected_uid = self.pn532.read_passive_target(timeout=5.0)
-            if detected_uid is None:
-                return {'success': False, 'error': 'No card detected to write to'}
+        # Write as hex to a temp mfd file, then use nfc-mfclassic
+        hex_data = payload_bytes.hex()
+        # Build a minimal .mfd with only the target block filled in
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.mfd', delete=False)
+        try:
+            # nfc-mfclassic w a u reads a complete .mfd file.
+            # Build a proper 1K .mfd (64 blocks of 16 bytes).
+            with open(tmp.name, 'w') as f:
+                for b in range(64):
+                    if b == block:
+                        f.write(hex_data + '\n')
+                    else:
+                        f.write('00000000000000000000000000000000\n')
 
-            detected_uid_hex = ''.join([f'{x:02x}' for x in detected_uid])
-            if uid and detected_uid_hex != uid:
-                return {'success': False, 'error': f'UID mismatch! Expected {uid}, got {detected_uid_hex}'}
+            stdout, stderr, rc = self._run(
+                ['nfc-mfclassic', 'w', 'a', 'u', tmp.name], timeout=20)
 
-            key = b'\xFF\xFF\xFF\xFF\xFF\xFF'
-            authenticated = self.pn532.mifare_classic_authenticate_block(
-                detected_uid, block_number=block, key_number=0x60, key=key,
-            )
-            if not authenticated:
-                return {'success': False, 'error': f'Failed to authenticate block {block} with default Key A'}
+            if rc != 0:
+                return {'success': False,
+                        'error': f'Write failed: {stderr.strip()[:200] or stdout[:200]}'}
 
-            self.pn532.mifare_classic_write_block(block, payload_bytes)
-            verified_data = self.pn532.mifare_classic_read_block(block)
+            # Verify by reading back
+            verify_out, _, _ = self._run(
+                ['nfc-mfclassic', 'r', 'a', 'u', '/dev/null'], timeout=10)
+            v_blocks = self._parse_mfclassic_output(verify_out)
+            verified = v_blocks.get(block) == hex_data
 
             return {
                 'success': True, 'status': 'Write successful',
-                'target_uid': detected_uid_hex, 'block_written': block,
-                'payload_size': len(payload_bytes),
-                'verified': verified_data == payload_bytes,
+                'target_uid': uid or 'detected',
+                'block_written': block, 'payload_size': 16,
+                'verified': verified,
             }
-        except Exception as e:
-            return {'success': False, 'error': f'Error writing card: {str(e)}'}
+        finally:
+            os.unlink(tmp.name)
+
+    # ------------------------------------------------------------------
+    # Full dump (nfc-mfclassic)
+    # ------------------------------------------------------------------
+
+    def dump_card(self, key='FFFFFFFFFFFF', timeout=30):
+        """Read all 64 blocks of a Mifare Classic 1K using nfc-mfclassic.
+        Falls back to mfoc for key recovery if the default key fails."""
+        tmp = tempfile.NamedTemporaryFile(suffix='.mfd', delete=False)
+        tmp.close()
+        try:
+            stdout, stderr, rc = self._run(
+                ['nfc-mfclassic', 'r', 'a', 'u', tmp.name], timeout=timeout)
+
+            if rc == 0 and os.path.exists(tmp.name):
+                with open(tmp.name, 'r') as f:
+                    mfd_out = f.read()
+                blocks = self._parse_mfclassic_output(mfd_out)
+                if blocks:
+                    uid_hex = self._uid_from_blocks(blocks)
+                    sectors = self._blocks_to_sectors(blocks)
+                    self.save_card(uid_hex, {'dump': sectors},
+                                   name=f'dump_{uid_hex}',
+                                   card_type='Mifare Classic 1K (full dump)')
+                    return {
+                        'success': True, 'uid': uid_hex,
+                        'sectors_read': len(sectors), 'sectors_failed': [],
+                        'sectors': sectors,
+                    }
+        except Exception:
+            pass  # Fall through to mfoc
+        finally:
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
+
+        # Default key failed — try mfoc
+        return self.mfoc_dump(timeout=timeout)
+
+    # ------------------------------------------------------------------
+    # mfoc key recovery + dump
+    # ------------------------------------------------------------------
+
+    def mfoc_dump(self, timeout=60):
+        """Run mfoc to recover keys and dump all sectors."""
+        tmp = tempfile.NamedTemporaryFile(suffix='.mfd', delete=False)
+        tmp.close()
+        try:
+            stdout, stderr, rc = self._run(
+                ['mfoc', '-O', tmp.name], timeout=timeout + 15)
+
+            if rc != 0 and not os.path.exists(tmp.name):
+                return {'success': False,
+                        'error': f'mfoc failed: {stderr[:300] or stdout[:300]}'}
+
+            if os.path.exists(tmp.name) and os.path.getsize(tmp.name) > 0:
+                # .mfd files are binary (16 bytes per block)
+                with open(tmp.name, 'rb') as f:
+                    mfd_data = f.read()
+                blocks = {}
+                for i in range(0, len(mfd_data), 16):
+                    chunk = mfd_data[i:i+16]
+                    if len(chunk) == 16:
+                        blocks[i // 16] = chunk.hex()
+                if not blocks:
+                    return {'success': False, 'error': 'mfoc produced empty dump'}
+                uid_hex = self._uid_from_blocks(blocks)
+                sectors = self._blocks_to_sectors(blocks)
+
+                # Parse which sectors were recovered
+                failed = []
+                for s in range(16):
+                    if str(s) not in sectors or not sectors[str(s)]:
+                        failed.append(s)
+
+                self.save_card(uid_hex, {'dump': sectors},
+                               name=f'mfoc_{uid_hex}',
+                               card_type='Mifare Classic 1K (mfoc dump)')
+                return {
+                    'success': True, 'uid': uid_hex,
+                    'sectors_read': len(sectors) - len(failed),
+                    'sectors_failed': failed, 'sectors': sectors,
+                    'stdout': stdout[-2000:],
+                }
+            return {'success': False, 'error': 'mfoc did not produce output file'}
+        finally:
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
+
+    # ------------------------------------------------------------------
+    # Clone full dump
+    # ------------------------------------------------------------------
+
+    def clone_dump(self, dump_data, key='FFFFFFFFFFFF', timeout=30):
+        """Write a full sector dump to a magic Mifare Classic card.
+        dump_data: {'0': {'0': 'hex...', '1': ..., '2': ...}, ...}"""
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.mfd', delete=False)
+        try:
+            # Build a complete 64-block .mfd from dump_data
+            all_blocks = {}
+            for sector_str, blocks in dump_data.items():
+                for blk_str, hex_data in blocks.items():
+                    if hex_data and len(hex_data) == 32:
+                        all_blocks[int(blk_str)] = hex_data
+            with open(tmp.name, 'w') as f:
+                for b in range(64):
+                    f.write(all_blocks.get(b, '00000000000000000000000000000000') + '\n')
+
+            stdout, stderr, rc = self._run(
+                ['nfc-mfclassic', 'w', 'a', 'u', tmp.name], timeout=timeout)
+
+            if rc != 0:
+                return {'success': False,
+                        'error': f'Clone failed: {stderr.strip()[:200] or stdout[:200]}'}
+
+            # Verify
+            verify_out, _, _ = self._run(
+                ['nfc-mfclassic', 'r', 'a', 'u', '/dev/null'], timeout=10)
+            v_blocks = self._parse_mfclassic_output(verify_out)
+
+            written = {}
+            failed = {}
+            for blk, expected in all_blocks.items():
+                actual = v_blocks.get(blk, '')
+                sector = str(blk // 4)
+                if actual == expected:
+                    written.setdefault(sector, {})[str(blk)] = True
+                else:
+                    failed.setdefault(sector, {})[str(blk)] = False
+
+            return {
+                'success': True,
+                'target_uid': self._uid_from_blocks(v_blocks) or 'detected',
+                'sectors_written': len(written),
+                'sectors_failed': failed,
+                'blocks': written,
+            }
+        finally:
+            os.unlink(tmp.name)
+
+    @staticmethod
+    def _uid_from_blocks(blocks):
+        """Extract UID from block 0 data."""
+        b0 = blocks.get(0, '')
+        if len(b0) >= 8:
+            return b0[:8]
+        return ''
+
+    # ------------------------------------------------------------------
+    # Card storage (same as before)
+    # ------------------------------------------------------------------
 
     def save_card(self, uid, data, name=None, card_type=None):
         if name is None:
             name = f'card_{uid}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-
         filepath = os.path.join(self.cards_dir, f'{name}.json')
         card_data = {
             'name': name, 'uid': uid,
@@ -147,7 +368,6 @@ class PN532Module:
         }
         with open(filepath, 'w') as f:
             json.dump(card_data, f, indent=2)
-
         return {'success': True, 'name': name, 'filepath': filepath, 'uid': uid}
 
     def list_saved_cards(self):
@@ -167,140 +387,3 @@ class PN532Module:
         except Exception as e:
             return {'error': str(e)}
         return {'cards': cards}
-
-    # ------------------------------------------------------------------
-    # Full Mifare Classic dump (all accessible sectors via default key)
-    # ------------------------------------------------------------------
-
-    def dump_card(self, key='FFFFFFFFFFFF', timeout=30):
-        """Read all 16 sectors of a Mifare Classic 1K card using a known key.
-        Returns sector data keyed by sector number (0-15), each with 3 data
-        blocks (0-2) per sector.  Block 3 of each sector is the trailer (keys
-        + access bits) and is skipped for safety.
-
-        Only sectors that authenticate successfully are included.  Use mfoc
-        or mfcuk for key recovery on sectors that fail."""
-        if not self._init_sensor():
-            return {'success': False, 'error': 'PN532 not detected'}
-        try:
-            import adafruit_pn532
-        except ImportError:
-            return {'success': False, 'error': 'adafruit_pn532 not installed'}
-
-        uid = None
-        deadline = __import__('time').time() + timeout
-        while __import__('time').time() < deadline:
-            uid = self.pn532.read_passive_target(timeout=0.8)
-            if uid:
-                break
-            __import__('time').sleep(0.3)
-
-        if not uid:
-            return {'success': False, 'error': 'No card found'}
-
-        uid_hex = ''.join(format(b, '02x') for b in uid)
-        key_bytes = b'\xff\xff\xff\xff\xff\xff' if key == 'FFFFFFFFFFFF' else (
-            bytes.fromhex(key) if len(key) == 12 else bytes(12))
-
-        sectors = {}
-        failed = []
-        for sector in range(16):
-            block = sector * 4  # First block of sector (trailer = block + 3)
-            try:
-                if not self.pn532.mifare_classic_authenticate_block(
-                    uid, block_number=block, key_number=0x60, key=key_bytes,
-                ):
-                    failed.append(sector)
-                    continue
-                # Read data blocks 0-2 (skip trailer at block+3)
-                sector_data = {}
-                for b in range(3):
-                    blk = block + b
-                    try:
-                        data = self.pn532.mifare_classic_read_block(blk)
-                        sector_data[str(blk)] = ''.join(format(x, '02x') for x in data)
-                    except Exception:
-                        sector_data[str(blk)] = None
-                sectors[str(sector)] = sector_data
-            except Exception:
-                failed.append(sector)
-
-        # Save the dump so it appears in saved cards history
-        self.save_card(uid_hex, {'dump': sectors}, name=f'dump_{uid_hex}',
-                       card_type='Mifare Classic (full dump)')
-
-        return {
-            'success': True,
-            'uid': uid_hex,
-            'sectors_read': len(sectors),
-            'sectors_failed': failed,
-            'sectors': sectors,
-        }
-
-    def clone_dump(self, dump_data, key='FFFFFFFFFFFF', timeout=30):
-        """Write a previously captured sector dump back to a magic Mifare
-        Classic card.  dump_data should be a dict like {'0': {'4': 'hex...', '5': ..., '6': ...}, ...}.
-
-        Only sectors present in dump_data are written.  A magic (UID-changeable)
-        card is required for writing sector 0 blocks."""
-        if not self._init_sensor():
-            return {'success': False, 'error': 'PN532 not detected'}
-        try:
-            import adafruit_pn532
-        except ImportError:
-            return {'success': False, 'error': 'adafruit_pn532 not installed'}
-
-        uid = None
-        deadline = __import__('time').time() + timeout
-        while __import__('time').time() < deadline:
-            uid = self.pn532.read_passive_target(timeout=0.8)
-            if uid:
-                break
-            __import__('time').sleep(0.3)
-
-        if not uid:
-            return {'success': False, 'error': 'No card found'}
-
-        uid_hex = ''.join(format(b, '02x') for b in uid)
-        key_bytes = b'\xff\xff\xff\xff\xff\xff' if key == 'FFFFFFFFFFFF' else (
-            bytes.fromhex(key) if len(key) == 12 else bytes(12))
-        written = {}
-        failed = {}
-
-        for sector_str, blocks in dump_data.items():
-            sector = int(sector_str)
-            trailer_block = sector * 4 + 3
-            auth_block = sector * 4
-            try:
-                if not self.pn532.mifare_classic_authenticate_block(
-                    uid, block_number=auth_block, key_number=0x60, key=key_bytes,
-                ):
-                    failed[sector_str] = 'auth failed'
-                    continue
-                sector_written = {}
-                for blk_str, hex_data in blocks.items():
-                    blk = int(blk_str)
-                    if blk == trailer_block:
-                        continue  # Never write sector trailers via this path
-                    if not hex_data or len(hex_data) != 32:
-                        continue
-                    try:
-                        payload = bytes.fromhex(hex_data)
-                        self.pn532.mifare_classic_write_block(blk, payload)
-                        # Verify
-                        verify = self.pn532.mifare_classic_read_block(blk)
-                        v_hex = ''.join(format(x, '02x') for x in verify)
-                        sector_written[blk_str] = v_hex == hex_data.lower()
-                    except Exception as e:
-                        sector_written[blk_str] = False
-                written[sector_str] = sector_written
-            except Exception as e:
-                failed[sector_str] = str(e)
-
-        return {
-            'success': True,
-            'target_uid': uid_hex,
-            'sectors_written': len(written),
-            'sectors_failed': failed,
-            'blocks': written,
-        }
