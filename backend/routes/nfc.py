@@ -60,31 +60,40 @@ def nfc_clone():
 
 @bp.route('/api/nfc/mfoc', methods=['POST'])
 def nfc_mfoc():
-    """Run mfoc (Mifare Offline Cracker) for key recovery on a Mifare Classic.
-    Requires a USB NFC reader supported by libnfc, or may work with the PN532
-    if it is configured for libnfc access."""
+    """Run mfoc (Mifare Offline Cracker) for key recovery on a Mifare Classic."""
     import subprocess, os, tempfile
     data = request.json or {}
-    timeout = data.get('timeout', 60)
+    timeout_sec = data.get('timeout', 120)
 
     tmpdir = tempfile.mkdtemp(prefix='nfc-mfoc-')
     outfile = os.path.join(tmpdir, 'dump.mfd')
     try:
+        # Use timeout command wrapper so the entire process tree is killed,
+        # preventing UART device lockup from orphaned libnfc processes.
         proc = subprocess.run(
-            ['mfoc', '-O', outfile],
-            capture_output=True, text=True, timeout=timeout + 10,
+            ['timeout', '--signal=KILL', str(timeout_sec),
+             'mfoc', '-O', outfile],
+            capture_output=True, text=True, timeout=timeout_sec + 15,
         )
-        result = {'success': True, 'stdout': proc.stdout[-2000:], 'stderr': proc.stderr[:500]}
-        if os.path.exists(outfile) and os.path.getsize(outfile) > 0:
+        # Exit code 137 = killed by SIGKILL (timeout)
+        killed = proc.returncode == 137
+        dump_ok = os.path.exists(outfile) and os.path.getsize(outfile) > 0
+        result = {
+            'success': dump_ok or not killed,
+            'stdout': proc.stdout[-3000:],
+            'stderr': proc.stderr[:500],
+            'timed_out': killed,
+        }
+        if dump_ok:
             result['dump_file'] = outfile
             result['dump_size'] = os.path.getsize(outfile)
-        else:
-            result['warning'] = 'mfoc completed but no dump file was produced'
-        if proc.returncode != 0:
+        elif killed:
+            result['error'] = f'mfoc timed out after {timeout_sec}s. Try again with card in sweet spot.'
+        elif proc.returncode != 0:
             result['success'] = False
             result['error'] = f'mfoc exited with code {proc.returncode}: {proc.stderr[:300] or proc.stdout[-300:]}'
     except subprocess.TimeoutExpired:
-        return api_error(f'mfoc timed out after {timeout}s', 500)
+        return api_error(f'mfoc timed out after {timeout_sec}s', 500)
     except FileNotFoundError:
         return api_error('mfoc not installed. Run: sudo apt install mfoc', 500)
     except Exception as e:

@@ -168,7 +168,7 @@ async function startMfoc(root) {
   out.innerHTML = spinner('Running mfoc (key recovery, up to 60s)...')
   const task = startTask('mfoc key recovery', 'Keep card on reader')
   try {
-    const d = await apiPost('/nfc/mfoc', { timeout: 60 }, { timeout: 90000 })
+    const d = await apiPost('/nfc/mfoc', { timeout: 120 }, { timeout: 150000 })
     if (!d.success) throw new Error(d.error || 'mfoc failed')
     task.done('mfoc complete', d.dump_file ? `Dump saved: ${d.dump_size} bytes` : 'No dump produced')
     out.innerHTML = infoBox('mfoc completed. Check the Pi for the dump file.', 'fa-circle-check')
