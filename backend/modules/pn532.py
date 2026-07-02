@@ -146,7 +146,7 @@ class PN532Module:
             'card_type': card_type, 'atqa': atqa, 'sak': sak,
             'block_data': block_data, 'timestamp': datetime.now().isoformat(),
         }
-        self.save_card(uid, {'block_4': block_data} if block_data else {},
+        self.save_card(uid, {'block_4': block_data, 'atqa': atqa, 'sak': sak} if block_data else {'atqa': atqa, 'sak': sak},
                        name=f'scanned_{uid}', card_type=card_type)
         return result
 

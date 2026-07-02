@@ -72,11 +72,10 @@ async function read(root) {
     out.innerHTML = `
       <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
         <dt class="text-base-content/50">UID</dt><dd class="font-mono font-semibold break-all">${esc(d.uid)}</dd>
-        <dt class="text-base-content/50">Type</dt><dd>${cardTypeBadge(d)}</dd>
-        <dt class="text-base-content/50">ATQA / SAK</dt><dd class="font-mono text-xs">${esc(d.atqa || '-')} / ${esc(d.sak || '-')}</dd>
+        <dt class="text-base-content/50">Type</dt><dd>${cardTypeBadge(d)} <span class="text-[0.65rem] text-base-content/50 ml-1">ATQA ${esc(d.atqa || '?')} &middot; SAK ${esc(d.sak || '?')}</span></dd>
+        <dt class="text-base-content/50">Security</dt><dd class="text-xs flex items-center gap-1.5">${securityBadge(d)}</dd>
         <dt class="text-base-content/50">Block 4</dt><dd class="font-mono text-xs break-all">${esc(d.block_data || '-')}</dd>
         ${d.block_data ? `<dt class="text-base-content/50">ASCII</dt><dd class="font-mono text-xs break-all">${esc(hexToAscii(d.block_data))}</dd>` : ''}
-        <dt class="text-base-content/50">Security</dt><dd class="text-xs">${securityInfo(d)}</dd>
       </dl>`
     loadHistory(root)
   } catch (e) {
@@ -275,19 +274,25 @@ function historyRow(file, data) {
   const block4 = data?.data?.block_4 || data?.data?.block_data || '-'
   const ascii = block4 !== '-' ? hexToAscii(block4) : null
   const hasDump = data?.data?.dump && Object.keys(data.data.dump).some((k) => /^\d+$/.test(k))
+  const atqa = data?.data?.atqa || ''
+  const sak = data?.data?.sak || ''
+  // Build a fake read-result object for the badge helpers
+  const badgeData = { card_type: cardType, atqa: atqa, sak: sak }
   return `
   <div class="rounded-lg bg-base-200/50 border border-base-300/40 p-3 mb-2">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <span class="font-mono font-semibold text-sm">${esc(uid)}</span>
-          <span class="badge badge-xs badge-ghost">${esc(cardType)}</span>
+          ${cardTypeBadge(badgeData)}
           ${hasDump ? '<span class="badge badge-xs badge-success">full dump</span>' : ''}
         </div>
-        <div class="text-[0.65rem] text-base-content/45 mt-0.5">
-          Block 4: <code class="text-[0.6rem] bg-base-300/50 px-1 rounded">${esc(block4)}</code>
-          ${ascii ? '&middot; ASCII: <code class="text-[0.6rem] bg-base-300/50 px-1 rounded">' + esc(ascii) + '</code>' : ''}
+        <div class="text-[0.65rem] text-base-content/45 mt-0.5 flex items-center gap-2 flex-wrap">
+          ${atqa ? '<span class="font-mono">ATQA ' + esc(atqa) + ' / SAK ' + esc(sak) + '</span>' : ''}
+          <span>Block 4: <code class="text-[0.6rem] bg-base-300/50 px-1 rounded">${esc(block4)}</code></span>
+          ${ascii ? '<span>&middot; ASCII: <code class="text-[0.6rem] bg-base-300/50 px-1 rounded">' + esc(ascii) + '</code></span>' : ''}
         </div>
+        <div class="mt-1">${securityBadge(badgeData)}</div>
       </div>
       <div class="flex items-center gap-1 shrink-0">
         <button class="btn btn-ghost btn-xs gap-1" data-action="clone-block" data-uid="${esc(uid)}" data-block4="${esc(block4)}" title="Copy block 4 to write form"><i class="fa-solid fa-copy"></i></button>
@@ -306,24 +311,38 @@ function historyRow(file, data) {
 function cardTypeBadge(d) {
   const t = d.card_type || ''
   let cls = 'badge badge-xs '
-  if (t.includes('DESFire')) cls += 'badge-error'
-  else if (t.includes('Classic')) cls += 'badge-info'
-  else if (t.includes('Ultralight')) cls += 'badge-warning'
-  else cls += 'badge-ghost'
-  return `<span class="${cls}">${esc(t)}</span>`
+  let tip = ''
+  if (t.includes('DESFire')) {
+    cls += 'badge-success'
+    tip = 'AES-128 encrypted, ISO 14443-4. Cannot crack with mfoc.'
+  } else if (t.includes('Classic')) {
+    cls += 'badge-warning'
+    tip = 'Crypto-1 cipher (broken). Can dump/clone with default keys or mfoc.'
+  } else if (t.includes('Ultralight')) {
+    cls += 'badge-ghost'
+    tip = 'No encryption. Plaintext read/write.'
+  } else {
+    cls += 'badge-ghost'
+    tip = 'Type unknown. May not be readable.'
+  }
+  return `<span class="${cls}" title="${esc(tip)}">${esc(t)}</span>`
 }
 
-function securityInfo(d) {
+function securityBadge(d) {
   const t = d.card_type || ''
-  const sak = d.sak || ''
   if (t.includes('DESFire')) {
-    if (t.includes('EV1')) return 'AES-128 encrypted · ISO 14443-4 · up to 847 kbps · locked'
-    return 'AES/DES encrypted · ISO 14443-4 · locked'
+    return `<span class="badge badge-xs badge-success" title="AES-128 encrypted, cannot crack with available tools"><i class="fa-solid fa-lock text-[0.5rem] mr-1"></i>Locked</span>
+      <span class="text-[0.65rem] text-base-content/50">AES-128 · ISO 14443-4 · not crackable</span>`
   }
-  if (t.includes('Classic')) return 'Crypto-1 cipher · default key may be readable'
-  if (t.includes('Ultralight')) return 'No encryption · plaintext read/write'
-  if (sak === '20') return 'ISO 14443-4 compliant · encrypted'
-  return 'Unknown'
+  if (t.includes('Classic')) {
+    return `<span class="badge badge-xs badge-warning" title="Crypto-1 cipher is cryptographically broken"><i class="fa-solid fa-shield-halved text-[0.5rem] mr-1"></i>Vulnerable</span>
+      <span class="text-[0.65rem] text-base-content/50">Crypto-1 cipher · crackable with mfoc</span>`
+  }
+  if (t.includes('Ultralight')) {
+    return `<span class="badge badge-xs badge-ghost" title="No encryption at all"><i class="fa-solid fa-lock-open text-[0.5rem] mr-1"></i>Open</span>
+      <span class="text-[0.65rem] text-base-content/50">No encryption · plaintext read/write</span>`
+  }
+  return `<span class="text-[0.65rem] text-base-content/50">Unknown</span>`
 }
 
 function hexToAscii(hex) {
