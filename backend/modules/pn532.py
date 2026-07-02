@@ -148,13 +148,31 @@ class PN532Module:
     # Read card (nfc-list)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _recover_uart():
+        """Kill any process holding /dev/ttyAMA0.  Needed after mfoc or other
+        libnfc tools crash without closing the UART device."""
+        import subprocess as _sp
+        _sp.run(['fuser', '-k', '/dev/ttyAMA0'], capture_output=True, timeout=2)
+
+    def _nfc_list_with_retry(self, timeout=10):
+        """Run nfc-list -v, recovering the UART and retrying once on failure."""
+        stdout, stderr, rc = self._run(['nfc-list', '-v'], timeout=timeout)
+        if rc == 0 and 'pn532' in stdout.lower():
+            return stdout, stderr, rc
+        # UART might be locked — try recovery and retry
+        self._recover_uart()
+        import time as _time
+        _time.sleep(0.5)
+        return self._run(['nfc-list', '-v'], timeout=timeout)
+
     def read_card(self, timeout=10):
         """Detect a card and return UID, type, ATQA, SAK."""
-        stdout, stderr, rc = self._run(['nfc-list', '-v'], timeout=timeout)
+        stdout, stderr, rc = self._nfc_list_with_retry(timeout=timeout)
         if rc != 0:
             return {'success': False,
                     'error': f'nfc-list failed: {stderr.strip() or "PN532 not found"}'}
-        if 'No NFC device found' in stdout or 'pn532' not in stdout.lower():
+        if 'pn532' not in stdout.lower():
             return {'success': False, 'error': 'PN532 not detected via libnfc'}
         if 'passive target(s) found' not in stdout:
             return {'success': False, 'error': 'No card detected within timeout'}
