@@ -52,10 +52,17 @@ class PN532Module:
 
     @staticmethod
     def _parse_nfc_list(stdout):
-        """Extract UID, ATQA, SAK from nfc-list output."""
+        """Extract UID, ATQA, SAK, ATS, and capabilities from nfc-list -v output."""
         uid = ''
         atqa = ''
         sak = ''
+        ats = ''
+        speeds = []
+        fingerprint = []
+        max_frame = ''
+        fwt = ''
+        uid_size = ''
+        iso14443_4 = False
         for line in stdout.split('\n'):
             line = line.strip()
             if line.startswith('UID (NFCID1):'):
@@ -64,7 +71,32 @@ class PN532Module:
                 atqa = ''.join(line.split(':')[1].strip().split())
             elif line.startswith('SAK'):
                 sak = ''.join(line.split(':')[1].strip().split())
-        return uid, atqa, sak
+            elif line.startswith('ATS:'):
+                ats = line.split(':', 1)[1].strip().replace(' ', '')
+            elif 'bitrate' in line.lower() and 'kbits/s' in line:
+                match = __import__('re').search(r'(\d+)\s*kbits/s', line)
+                if match:
+                    speeds.append(int(match.group(1)))
+            elif 'Max Frame Size' in line:
+                match = __import__('re').search(r'(\d+)\s*bytes', line)
+                if match:
+                    max_frame = match.group(1)
+            elif 'Frame Waiting Time' in line:
+                parts = line.split(':')
+                if len(parts) > 1:
+                    fwt = parts[1].strip()
+            elif 'UID size' in line:
+                uid_size = line.replace('*', '').replace('UID size:', '').strip()
+            elif 'Compliant with ISO/IEC 14443-4' in line:
+                iso14443_4 = True
+            elif line.startswith('* MIFARE') or line.startswith('* Mifare'):
+                fingerprint.append(line.replace('*', '').strip())
+        caps = {
+            'ats': ats, 'speeds': sorted(set(speeds)),
+            'max_frame': max_frame, 'fwt': fwt, 'uid_size': uid_size,
+            'iso14443_4': iso14443_4, 'fingerprint': fingerprint,
+        }
+        return uid, atqa, sak, caps
 
     @staticmethod
     def _parse_mfclassic_output(stdout):
@@ -127,26 +159,28 @@ class PN532Module:
         if 'passive target(s) found' not in stdout:
             return {'success': False, 'error': 'No card detected within timeout'}
 
-        uid, atqa, sak = self._parse_nfc_list(stdout)
+        uid, atqa, sak, caps = self._parse_nfc_list(stdout)
         if not uid:
             return {'success': False, 'error': 'Card detected but no UID read'}
 
         card_type = self._detect_card_type(uid, atqa, sak)
 
-        # Try a quick read of block 4 via nfc-mfclassic
+        # Try a quick read of block 4 via nfc-mfclassic (Classic only)
         block_data = None
-        out, _, _ = self._run(
-            ['nfc-mfclassic', 'r', 'a', 'u', '/dev/null'], timeout=10)
-        if out:
-            blocks = self._parse_mfclassic_output(out)
-            block_data = blocks.get(4)
+        if not caps.get('iso14443_4'):
+            out, _, _ = self._run(
+                ['nfc-mfclassic', 'r', 'a', 'u', '/dev/null'], timeout=10)
+            if out:
+                blocks = self._parse_mfclassic_output(out)
+                block_data = blocks.get(4)
 
         result = {
             'success': True, 'uid': uid,
             'card_type': card_type, 'atqa': atqa, 'sak': sak,
             'block_data': block_data, 'timestamp': datetime.now().isoformat(),
+            'capabilities': caps,
         }
-        self.save_card(uid, {'block_4': block_data, 'atqa': atqa, 'sak': sak} if block_data else {'atqa': atqa, 'sak': sak},
+        self.save_card(uid, {'block_4': block_data, 'atqa': atqa, 'sak': sak, 'caps': caps},
                        name=f'scanned_{uid}', card_type=card_type)
         return result
 

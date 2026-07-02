@@ -69,13 +69,16 @@ async function read(root) {
     if (!d.uid) throw new Error(d.error || 'No card detected')
     lastRead = d
     task.done('Card read', d.uid)
+    const caps = d.capabilities || {}
     out.innerHTML = `
       <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
         <dt class="text-base-content/50">UID</dt><dd class="font-mono font-semibold break-all">${esc(d.uid)}</dd>
         <dt class="text-base-content/50">Type</dt><dd>${cardTypeBadge(d)} <span class="text-[0.65rem] text-base-content/50 ml-1">ATQA ${esc(d.atqa || '?')} &middot; SAK ${esc(d.sak || '?')}</span></dd>
         <dt class="text-base-content/50">Security</dt><dd class="text-xs flex items-center gap-1.5">${securityBadge(d)}</dd>
+        ${caps.speeds && caps.speeds.length ? `<dt class="text-base-content/50">Speed</dt><dd class="font-mono text-xs">${speedDisplay(caps)}</dd>` : ''}
         <dt class="text-base-content/50">Block 4</dt><dd class="font-mono text-xs break-all">${esc(d.block_data || '-')}</dd>
         ${d.block_data ? `<dt class="text-base-content/50">ASCII</dt><dd class="font-mono text-xs break-all">${esc(hexToAscii(d.block_data))}</dd>` : ''}
+        ${techDetails(caps)}
       </dl>`
     loadHistory(root)
   } catch (e) {
@@ -343,6 +346,27 @@ function securityBadge(d) {
       <span class="text-[0.65rem] text-base-content/50">No encryption · plaintext read/write</span>`
   }
   return `<span class="text-[0.65rem] text-base-content/50">Unknown</span>`
+}
+
+function speedDisplay(caps) {
+  const speeds = caps.speeds || []
+  if (!speeds.length) return '-'
+  return speeds.join(' / ') + ' kbps'
+}
+
+function techDetails(caps) {
+  if (!caps || !Object.keys(caps).length) return ''
+  const parts = []
+  if (caps.ats) parts.push(`<span class="text-base-content/50">ATS</span> <code class="font-mono text-[0.65rem]">${esc(caps.ats)}</code>`)
+  if (caps.max_frame) parts.push(`<span class="text-base-content/50">Frame</span> ${esc(caps.max_frame)} bytes`)
+  if (caps.fwt) parts.push(`<span class="text-base-content/50">FWT</span> ${esc(caps.fwt)}`)
+  if (caps.uid_size) parts.push(`<span class="text-base-content/50">UID size</span> ${esc(caps.uid_size)}`)
+  if (caps.iso14443_4) parts.push(`<span class="text-base-content/50">ISO</span> 14443-4`)
+  if (caps.fingerprint && caps.fingerprint.length) {
+    parts.push(`<span class="text-base-content/50">Fingerprint</span> <span class="text-[0.65rem]">${esc(caps.fingerprint.join(' · '))}</span>`)
+  }
+  if (!parts.length) return ''
+  return `<dt class="text-base-content/50 mt-1">Details</dt><dd class="text-xs flex flex-wrap gap-x-3 gap-y-0.5">${parts.join('')}</dd>`
 }
 
 function hexToAscii(hex) {
