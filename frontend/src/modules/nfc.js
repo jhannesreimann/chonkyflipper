@@ -72,9 +72,11 @@ async function read(root) {
     out.innerHTML = `
       <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
         <dt class="text-base-content/50">UID</dt><dd class="font-mono font-semibold break-all">${esc(d.uid)}</dd>
-        <dt class="text-base-content/50">Type</dt><dd>${esc(d.card_type || 'Unknown')}</dd>
+        <dt class="text-base-content/50">Type</dt><dd>${cardTypeBadge(d)}</dd>
+        <dt class="text-base-content/50">ATQA / SAK</dt><dd class="font-mono text-xs">${esc(d.atqa || '-')} / ${esc(d.sak || '-')}</dd>
         <dt class="text-base-content/50">Block 4</dt><dd class="font-mono text-xs break-all">${esc(d.block_data || '-')}</dd>
         ${d.block_data ? `<dt class="text-base-content/50">ASCII</dt><dd class="font-mono text-xs break-all">${esc(hexToAscii(d.block_data))}</dd>` : ''}
+        <dt class="text-base-content/50">Security</dt><dd class="text-xs">${securityInfo(d)}</dd>
       </dl>`
     loadHistory(root)
   } catch (e) {
@@ -300,6 +302,29 @@ function historyRow(file, data) {
 }
 
 // ---------------------------------------------------------------- Helpers
+
+function cardTypeBadge(d) {
+  const t = d.card_type || ''
+  let cls = 'badge badge-xs '
+  if (t.includes('DESFire')) cls += 'badge-error'
+  else if (t.includes('Classic')) cls += 'badge-info'
+  else if (t.includes('Ultralight')) cls += 'badge-warning'
+  else cls += 'badge-ghost'
+  return `<span class="${cls}">${esc(t)}</span>`
+}
+
+function securityInfo(d) {
+  const t = d.card_type || ''
+  const sak = d.sak || ''
+  if (t.includes('DESFire')) {
+    if (t.includes('EV1')) return 'AES-128 encrypted · ISO 14443-4 · up to 847 kbps · locked'
+    return 'AES/DES encrypted · ISO 14443-4 · locked'
+  }
+  if (t.includes('Classic')) return 'Crypto-1 cipher · default key may be readable'
+  if (t.includes('Ultralight')) return 'No encryption · plaintext read/write'
+  if (sak === '20') return 'ISO 14443-4 compliant · encrypted'
+  return 'Unknown'
+}
 
 function hexToAscii(hex) {
   if (!hex) return ''

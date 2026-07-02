@@ -100,6 +100,10 @@ class PN532Module:
             return 'Mifare Classic 1K'
         if atqa == '0002' and sak == '18':
             return 'Mifare Classic 4K'
+        if sak == '20':
+            if atqa == '0344':
+                return 'MIFARE DESFire EV1'
+            return 'MIFARE DESFire'
         if sak == '00':
             return 'Mifare Ultralight / NTAG'
         if uid and len(uid) == 8:
