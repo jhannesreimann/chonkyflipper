@@ -150,7 +150,7 @@ class PN532Module:
 
     def read_card(self, timeout=10):
         """Detect a card and return UID, type, ATQA, SAK."""
-        stdout, stderr, rc = self._run(['nfc-list'], timeout=timeout)
+        stdout, stderr, rc = self._run(['nfc-list', '-v'], timeout=timeout)
         if rc != 0:
             return {'success': False,
                     'error': f'nfc-list failed: {stderr.strip() or "PN532 not found"}'}

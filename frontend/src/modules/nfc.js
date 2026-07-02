@@ -358,12 +358,11 @@ function techDetails(caps) {
   if (!caps || !Object.keys(caps).length) return ''
   const parts = []
   if (caps.ats) parts.push(`<span class="text-base-content/50">ATS</span> <code class="font-mono text-[0.65rem]">${esc(caps.ats)}</code>`)
-  if (caps.max_frame) parts.push(`<span class="text-base-content/50">Frame</span> ${esc(caps.max_frame)} bytes`)
-  if (caps.fwt) parts.push(`<span class="text-base-content/50">FWT</span> ${esc(caps.fwt)}`)
-  if (caps.uid_size) parts.push(`<span class="text-base-content/50">UID size</span> ${esc(caps.uid_size)}`)
+  if (caps.max_frame) parts.push(`<span class="text-base-content/50">Max frame</span> ${esc(caps.max_frame)} bytes`)
+  if (caps.uid_size) parts.push(`<span class="text-base-content/50">UID</span> ${esc(caps.uid_size)}`)
   if (caps.iso14443_4) parts.push(`<span class="text-base-content/50">ISO</span> 14443-4`)
   if (caps.fingerprint && caps.fingerprint.length) {
-    parts.push(`<span class="text-base-content/50">Fingerprint</span> <span class="text-[0.65rem]">${esc(caps.fingerprint.join(' · '))}</span>`)
+    parts.push(`<span class="text-base-content/50">Chip</span> <span class="text-[0.65rem]">${esc(caps.fingerprint.join(' or '))}</span>`)
   }
   if (!parts.length) return ''
   return `<dt class="text-base-content/50 mt-1">Details</dt><dd class="text-xs flex flex-wrap gap-x-3 gap-y-0.5">${parts.join('')}</dd>`
