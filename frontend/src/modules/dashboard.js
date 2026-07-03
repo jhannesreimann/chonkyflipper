@@ -61,8 +61,12 @@ export default function renderDashboard(root) {
         const tone = pct >= 60 ? 'text-success' : pct >= 20 ? 'text-warning' : 'text-error'
         battEl.className = `text-lg font-bold tracking-tight ${tone}`
         battEl.innerHTML = `${pct}%${st.power.is_charging ? ' <i class="fa-solid fa-bolt text-warning text-sm"></i>' : ''}`
-      } else {
+      } else if (st.power?.ups_active) {
+        battEl.className = 'text-lg font-bold tracking-tight'
         battEl.textContent = 'UPS active'
+      } else {
+        battEl.className = 'text-lg font-bold tracking-tight text-base-content/40'
+        battEl.textContent = 'No UPS'
       }
     }
 

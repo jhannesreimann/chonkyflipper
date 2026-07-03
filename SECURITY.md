@@ -99,12 +99,6 @@ can land on a different worker than the one that started a task, so status may b
 reported inconsistently. Not a security issue, but it affects reliability and
 would be fixed by sharing state (single worker, or an external store).
 
-### Misleading UPS status
-`_get_power_data()` in `routes/status.py` returns `ups_active: True` even inside
-the exception branch, so if reading the PiPower5 HAT fails the API still claims
-the UPS is active (with null battery fields). The exception branch should report
-`ups_active: False` (or `None`) so the UI can distinguish "no UPS" from "UPS read
-failed". Left unchanged for now since it is a behavioural change.
 
 ### maintenance-mode.sh invoked without sudo
 `/api/network/maintenance` and `/api/network/apmode` call

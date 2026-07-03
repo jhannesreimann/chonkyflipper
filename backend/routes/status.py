@@ -41,7 +41,7 @@ def _get_power_data():
             'battery_percentage': None,
             'battery_voltage': None,
             'is_charging': None,
-            'ups_active': True,
+            'ups_active': False,
         }
 
 
