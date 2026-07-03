@@ -5,7 +5,6 @@
 #
 # Internet can come from:
 #   - eth0 (LAN cable)              ← seamless: AP stays up
-#   - wlan0 client (maintenance mode) ← requires WiFi switching
 #   - usb0 (USB tether)
 #
 # Run as root: sudo /opt/chonkyflipper/update.sh
@@ -42,8 +41,7 @@ if ! ping -c 1 -W 3 github.com &>/dev/null; then
     echo ""
     echo "   Options:"
     echo "   1. Connect Ethernet cable (LAN)  --  seamless, AP stays up"
-    echo "   2. Enable maintenance mode from the dashboard"
-    echo "   3. USB tether: sudo /opt/chonkyflipper/maintenance-mode.sh usb-tether"
+    echo "   2. USB tether: sudo /opt/chonkyflipper/maintenance-mode.sh usb-tether"
     exit 1
 fi
 echo "✅ Internet: reachable"

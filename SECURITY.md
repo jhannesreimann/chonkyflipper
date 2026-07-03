@@ -99,11 +99,3 @@ can land on a different worker than the one that started a task, so status may b
 reported inconsistently. Not a security issue, but it affects reliability and
 would be fixed by sharing state (single worker, or an external store).
 
-
-### maintenance-mode.sh invoked without sudo
-`/api/network/maintenance` and `/api/network/apmode` call
-`/opt/chonkyflipper/maintenance-mode.sh` directly (`routes/network.py`), while
-every other privileged operation uses `sudo -n`. If the script needs root (it
-reconfigures hostapd/wpa_supplicant), this is inconsistent and likely only works
-because of some other privilege path. Worth confirming what the script actually
-requires and making the invocation consistent with the rest of the code base.

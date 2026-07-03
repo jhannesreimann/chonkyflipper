@@ -1,5 +1,5 @@
 """
-Network status, WiFi client management, and maintenance mode endpoints.
+Network status and WiFi client management endpoints.
 """
 
 import os
@@ -97,51 +97,6 @@ def network_status():
             'internet_available': internet,
             'internet_source': internet_source,
         })
-    except Exception as e:
-        return api_error(str(e), 500)
-
-
-@bp.route('/network/maintenance', methods=['POST'])
-def enable_maintenance_mode():
-    data = request.json or {}
-    ssid = data.get('ssid')
-    password = data.get('password')
-
-    if not ssid or not password:
-        return api_error('SSID and password required', 400)
-
-    try:
-        config_file = '/opt/chonkyflipper/config/maintenance-network.conf'
-        with open(config_file, 'w') as f:
-            f.write(f'SSID={ssid}\nPASSWORD={password}\n')
-        os.chmod(config_file, 0o600)
-
-        result = subprocess.run(
-            ['/opt/chonkyflipper/maintenance-mode.sh', 'enable', ssid, password],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            return api_success({
-                'message': 'Maintenance mode enabled', 'ssid': ssid, 'output': result.stdout,
-            })
-        return api_error(result.stderr, 500)
-    except Exception as e:
-        return api_error(str(e), 500)
-
-
-@bp.route('/network/apmode', methods=['POST'])
-def enable_ap_mode():
-    try:
-        result = subprocess.run(
-            ['/opt/chonkyflipper/maintenance-mode.sh', 'disable'],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            return api_success({
-                'message': 'AP mode restored',
-                'ssid': AP_SSID, 'ip': AP_IP,
-            })
-        return api_error(result.stderr, 500)
     except Exception as e:
         return api_error(str(e), 500)
 
