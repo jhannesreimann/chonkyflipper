@@ -3,43 +3,37 @@ Bluetooth scanning endpoints.
 """
 
 from flask import Blueprint, request
+from hardware import get_module
 from utils import api_success, api_error
 
-bp = Blueprint('bluetooth', __name__)
+bp = Blueprint('bluetooth', __name__, url_prefix='/api')
 
 
-def _bt_module():
-    import sys
-    sys.path.insert(0, '/opt/chonkyflipper')
-    from modules.bluetooth import BluetoothModule
-    return BluetoothModule()
-
-
-@bp.route('/api/bluetooth/scan', methods=['GET'])
+@bp.route('/bluetooth/scan', methods=['GET'])
 def bluetooth_scan():
     try:
         duration = int(request.args.get('duration', 8))
     except (TypeError, ValueError):
         duration = 8
     duration = max(1, min(duration, 120))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.scan_ble(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
-@bp.route('/api/bluetooth/beacons', methods=['GET'])
+@bp.route('/bluetooth/beacons', methods=['GET'])
 def bluetooth_beacons():
     try:
         duration = int(request.args.get('duration', 8))
     except (TypeError, ValueError):
         duration = 8
     duration = max(1, min(duration, 120))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.scan_beacons(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
-@bp.route('/api/bluetooth/capture', methods=['POST'])
+@bp.route('/bluetooth/capture', methods=['POST'])
 def bluetooth_capture():
     data = request.json or {}
     try:
@@ -47,23 +41,23 @@ def bluetooth_capture():
     except (TypeError, ValueError):
         return api_error('duration must be an integer (seconds)', 400)
     duration = max(1, min(duration, 120))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.log_advertisements(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Capture failed'), 500)
 
 
-@bp.route('/api/bluetooth/gatt', methods=['POST'])
+@bp.route('/bluetooth/gatt', methods=['POST'])
 def bluetooth_gatt():
     data = request.json or {}
     mac = data.get('mac')
     if not mac:
         return api_error('mac required', 400)
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.profile_device(mac)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'GATT profiling failed'), 500)
 
 
-@bp.route('/api/bluetooth/gatt/write', methods=['POST'])
+@bp.route('/bluetooth/gatt/write', methods=['POST'])
 def bluetooth_gatt_write():
     data = request.json or {}
     mac = data.get('mac')
@@ -71,12 +65,12 @@ def bluetooth_gatt_write():
     value = data.get('value')
     if not mac or not char_uuid or value is None:
         return api_error('mac, char_uuid, and value are required', 400)
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.write_characteristic(mac, char_uuid, value, data.get('without_response'))
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Write failed'), 500)
 
 
-@bp.route('/api/bluetooth/capture-hci', methods=['POST'])
+@bp.route('/bluetooth/capture-hci', methods=['POST'])
 def bluetooth_capture_hci():
     data = request.json or {}
     try:
@@ -84,38 +78,38 @@ def bluetooth_capture_hci():
     except (TypeError, ValueError):
         return api_error('duration must be an integer (seconds)', 400)
     duration = max(1, min(duration, 300))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.capture_hci(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'HCI capture failed'), 500)
 
 
-@bp.route('/api/bluetooth/captures', methods=['GET'])
+@bp.route('/bluetooth/captures', methods=['GET'])
 def bluetooth_captures():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.list_hci_captures())
 
 
-@bp.route('/api/bluetooth/spoof', methods=['POST'])
+@bp.route('/bluetooth/spoof', methods=['POST'])
 def bluetooth_spoof():
     params = request.json or {}
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.spoof_advertisement(params)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Spoof failed'), 500)
 
 
-@bp.route('/api/bluetooth/spoof/stop', methods=['POST'])
+@bp.route('/bluetooth/spoof/stop', methods=['POST'])
 def bluetooth_spoof_stop():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.stop_spoof())
 
 
-@bp.route('/api/bluetooth/spoof/status', methods=['GET'])
+@bp.route('/bluetooth/spoof/status', methods=['GET'])
 def bluetooth_spoof_status():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.spoof_status())
 
 
-@bp.route('/api/bluetooth/deep-scan', methods=['POST'])
+@bp.route('/bluetooth/deep-scan', methods=['POST'])
 def bluetooth_deep_scan():
     data = request.json or {}
     try:
@@ -123,56 +117,56 @@ def bluetooth_deep_scan():
     except (TypeError, ValueError):
         return api_error('duration must be an integer (seconds)', 400)
     duration = max(1, min(duration, 120))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.deep_scan(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Deep scan failed'), 500)
 
 
-@bp.route('/api/bluetooth/classic-scan', methods=['GET'])
+@bp.route('/bluetooth/classic-scan', methods=['GET'])
 def bluetooth_classic_scan():
     try:
         duration = int(request.args.get('duration', 10))
     except (TypeError, ValueError):
         duration = 10
     duration = max(1, min(duration, 60))
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.scan_classic(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Classic scan failed'), 500)
 
 
-@bp.route('/api/bluetooth/sdp', methods=['POST'])
+@bp.route('/bluetooth/sdp', methods=['POST'])
 def bluetooth_sdp():
     data = request.json or {}
     mac = data.get('mac')
     if not mac:
         return api_error('mac required', 400)
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.enumerate_services(mac)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'SDP enumeration failed'), 500)
 
 
-# ------------------------------------------------------------------ background ad log daemon
+# background ad log daemon
 
-@bp.route('/api/bluetooth/log/start', methods=['POST'])
+@bp.route('/bluetooth/log/start', methods=['POST'])
 def bluetooth_log_start():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     result = bt.start_advert_log()
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed to start logger'), 500)
 
 
-@bp.route('/api/bluetooth/log/stop', methods=['POST'])
+@bp.route('/bluetooth/log/stop', methods=['POST'])
 def bluetooth_log_stop():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.stop_advert_log())
 
 
-@bp.route('/api/bluetooth/log/status', methods=['GET'])
+@bp.route('/bluetooth/log/status', methods=['GET'])
 def bluetooth_log_status():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.advert_log_status())
 
 
-@bp.route('/api/bluetooth/log/data', methods=['GET'])
+@bp.route('/bluetooth/log/data', methods=['GET'])
 def bluetooth_log_data():
-    bt = _bt_module()
+    bt = get_module('bluetooth')
     return api_success(bt.advert_log_data())

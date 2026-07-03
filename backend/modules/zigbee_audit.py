@@ -51,9 +51,7 @@ class ZigbeeAuditModule:
         except Exception:
             return False
 
-    # ------------------------------------------------------------------
     # Passive capture (zbdump)
-    # ------------------------------------------------------------------
 
     def capture_packets(self, channel=11, duration=30):
         """Capture raw 802.15.4 frames to pcap file."""
@@ -83,9 +81,7 @@ class ZigbeeAuditModule:
                 'filename': filename, 'filepath': filepath,
                 'size_bytes': file_size, 'channel': channel, 'duration': duration}
 
-    # ------------------------------------------------------------------
     # PAN discovery (zbstumbler)
-    # ------------------------------------------------------------------
 
     def scan_channels(self, channels='11-26', duration=30):
         """Passively scan for Zigbee PANs across channels."""
@@ -117,9 +113,7 @@ class ZigbeeAuditModule:
                 'pans': pans, 'channels': channels, 'file': filepath,
                 'output': stdout[-1000:]}
 
-    # ------------------------------------------------------------------
     # Replay attack (zbreplay)
-    # ------------------------------------------------------------------
 
     def replay_packets(self, cap_file, count=1, channel=None):
         """Replay captured packets for command injection.
@@ -141,9 +135,7 @@ class ZigbeeAuditModule:
         return {'success': True, 'file': cap_file, 'repeat': count,
                 'channel': channel, 'output': stdout[:500]}
 
-    # ------------------------------------------------------------------
     # Association flood (zbassocflood)
-    # ------------------------------------------------------------------
 
     def assoc_flood(self, channel, pan_id, duration=5):
         """Flood a PAN with association requests (DoS).
@@ -163,9 +155,7 @@ class ZigbeeAuditModule:
         return {'success': True, 'channel': channel, 'pan_id': pan_id,
                 'duration': duration, 'output': stdout[:500]}
 
-    # ------------------------------------------------------------------
-    # Key extraction (zbdsniff) - issue #62
-    # ------------------------------------------------------------------
+    # Key extraction (zbdsniff)
 
     def extract_keys(self, cap_file):
         """Attempt to extract Zigbee network keys from a capture file."""
@@ -182,9 +172,7 @@ class ZigbeeAuditModule:
                     'output': stdout[-500:]}
         return {'success': True, 'output': stdout, 'file': cap_file}
 
-    # ------------------------------------------------------------------
     # Device discovery (parse pcap for devices, with ZCL cluster identification)
-    # ------------------------------------------------------------------
 
     # ZCL cluster ID -> human-readable device type
     _ZCL_CLUSTER_TYPES = {
@@ -350,7 +338,7 @@ class ZigbeeAuditModule:
                     dev_clusters = zcl_clusters[mac_pattern]
                     break
 
-            # Skip the coordinator (0x0000) -- it's the user's own SONOFF dongle
+            # Skip the coordinator (0x0000) - it's the user's own SONOFF dongle
             is_own_coordinator = d['is_coordinator'] and d.get('mac_short') == '0x0000'
 
             device_list.append({
@@ -421,9 +409,7 @@ class ZigbeeAuditModule:
         except Exception:
             return []
 
-    # ------------------------------------------------------------------
     # List captures
-    # ------------------------------------------------------------------
 
     def list_captures(self):
         """List all saved Zigbee capture files."""

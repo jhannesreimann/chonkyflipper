@@ -66,7 +66,7 @@ class HidBackend:
 
 
 class DryRunBackend:
-    """Records actions instead of typing -- used for previews and tests."""
+    """Records actions instead of typing - used for previews and tests."""
 
     def __init__(self, layout='us'):
         self.layout = layout

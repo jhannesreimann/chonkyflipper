@@ -27,9 +27,7 @@ class ZigbeeModule:
         self._connect_event = threading.Event()
         self._event_log = deque(maxlen=200)
 
-    # ------------------------------------------------------------------
     # Internal MQTT plumbing
-    # ------------------------------------------------------------------
 
     def _connect(self):
         try:
@@ -144,9 +142,7 @@ class ZigbeeModule:
             return None, f'Timeout waiting for {res_topic}'
         return result, None
 
-    # ------------------------------------------------------------------
     # Public API
-    # ------------------------------------------------------------------
 
     def get_bridge_info(self):
         if not self._ensure_connected():

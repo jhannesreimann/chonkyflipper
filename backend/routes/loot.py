@@ -8,7 +8,7 @@ from flask import Blueprint, request, send_from_directory
 from config import CAPTURES_DIR, HCI_CAPTURES_DIR, SIGNALS_IR, SIGNALS_SUBGHZ, CARDS_DIR
 from utils import api_success, api_error
 
-bp = Blueprint('loot', __name__)
+bp = Blueprint('loot', __name__, url_prefix='/api')
 
 # Whitelisted categories -> (label, absolute directory). Only these dirs are
 # ever served, and filenames are reduced to their basename, so there is no way
@@ -47,7 +47,7 @@ def _list_dir(category, label, directory):
     return files
 
 
-@bp.route('/api/loot', methods=['GET'])
+@bp.route('/loot', methods=['GET'])
 def loot_list():
     items = []
     for category, (label, directory) in LOOT_CATEGORIES.items():
@@ -56,7 +56,7 @@ def loot_list():
     return api_success({'files': items, 'count': len(items)})
 
 
-@bp.route('/api/loot/download', methods=['GET'])
+@bp.route('/loot/download', methods=['GET'])
 def loot_download():
     directory = _category_dir(request.args.get('category'))
     name = request.args.get('name')
@@ -68,7 +68,7 @@ def loot_download():
     return send_from_directory(directory, safe_name, as_attachment=True)
 
 
-@bp.route('/api/loot', methods=['DELETE'])
+@bp.route('/loot', methods=['DELETE'])
 def loot_delete():
     directory = _category_dir(request.args.get('category'))
     name = request.args.get('name')

@@ -1,9 +1,9 @@
 # ChonkyFlipper Backend Modules
 # IoT Pentesting Hardware Controllers
 #
-# Imports here are LAZY -- we do not eagerly import modules that require
+# Imports here are LAZY - we do not eagerly import modules that require
 # hardware-specific libraries (spidev, board, adafruit_pn532, RPi.GPIO).
-# The get_module() factory in app.py handles instantiation on first use.
+# The get_module() factory in hardware.py handles instantiation on first use.
 #
 # Module files can still be imported directly when you know the hardware is
 # present (e.g. from within the venv on the Pi):

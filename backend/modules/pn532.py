@@ -29,9 +29,7 @@ class PN532Module:
     def __init__(self):
         self.cards_dir = CARDS_DIR
 
-    # ------------------------------------------------------------------
     # Helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _run(cmd, timeout=30):
@@ -144,9 +142,7 @@ class PN532Module:
             return 'Mifare Classic (7-byte UID)'
         return 'NFC Tag'
 
-    # ------------------------------------------------------------------
     # Read card (nfc-list)
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _recover_uart():
@@ -160,7 +156,7 @@ class PN532Module:
         stdout, stderr, rc = self._run(['nfc-list', '-v'], timeout=timeout)
         if rc == 0 and 'pn532' in stdout.lower():
             return stdout, stderr, rc
-        # UART might be locked — try recovery and retry
+        # UART might be locked, try recovery and retry
         self._recover_uart()
         import time as _time
         _time.sleep(0.5)
@@ -202,9 +198,7 @@ class PN532Module:
                        name=f'scanned_{uid}', card_type=card_type)
         return result
 
-    # ------------------------------------------------------------------
     # Write block (nfc-mfclassic single block)
-    # ------------------------------------------------------------------
 
     def write_card(self, uid=None, payload=None, sector=1, block=4):
         """Write 16 bytes to a specific block using the default key."""
@@ -263,9 +257,7 @@ class PN532Module:
         finally:
             os.unlink(tmp.name)
 
-    # ------------------------------------------------------------------
     # Full dump (nfc-mfclassic)
-    # ------------------------------------------------------------------
 
     def dump_card(self, key='FFFFFFFFFFFF', timeout=30):
         """Read all 64 blocks of a Mifare Classic 1K using nfc-mfclassic.
@@ -297,12 +289,10 @@ class PN532Module:
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
 
-        # Default key failed — try mfoc
+        # Default key failed, try mfoc
         return self.mfoc_dump(timeout=timeout)
 
-    # ------------------------------------------------------------------
     # mfoc key recovery + dump
-    # ------------------------------------------------------------------
 
     def mfoc_dump(self, timeout=60):
         """Run mfoc to recover keys and dump all sectors."""
@@ -350,9 +340,7 @@ class PN532Module:
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
 
-    # ------------------------------------------------------------------
     # Clone full dump
-    # ------------------------------------------------------------------
 
     def clone_dump(self, dump_data, key='FFFFFFFFFFFF', timeout=30):
         """Write a full sector dump to a magic Mifare Classic card.
@@ -409,9 +397,7 @@ class PN532Module:
             return b0[:8]
         return ''
 
-    # ------------------------------------------------------------------
     # Card storage (same as before)
-    # ------------------------------------------------------------------
 
     def save_card(self, uid, data, name=None, card_type=None):
         if name is None:

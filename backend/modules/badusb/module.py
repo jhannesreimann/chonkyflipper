@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BadUSB module -- USB HID keyboard emulation via /dev/hidg0.
+BadUSB module - USB HID keyboard emulation via /dev/hidg0.
 
 Thin wrapper around the shared DuckyScript interpreter: it locates payloads,
 runs them through a HID backend, and reports what happened (statements run,
@@ -112,7 +112,7 @@ class BadUSBModule:
         }
 
     def dry_run_payload(self, payload_name, layout=None):
-        """Execute against a recording backend -- returns the action log."""
+        """Execute against a recording backend - returns the action log."""
         text, err = self._read(payload_name)
         if err:
             return {'success': False, 'error': err}

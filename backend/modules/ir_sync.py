@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-IR Database Sync Engine -- keeps the local IR payload DB in sync with Flipper-IRDB.
+IR Database Sync Engine - keeps the local IR payload DB in sync with Flipper-IRDB.
 Uses git for efficient incremental updates (avoids GitHub API rate limits).
 """
 
@@ -80,7 +80,7 @@ class IRDBSync:
                     break
         self.repo_dir = repo_dir
 
-    # --- Repo Management ---------------------------------
+    # Repo Management
 
     def _run(self, cmd, cwd=None, timeout=120):
         try:
@@ -110,7 +110,7 @@ class IRDBSync:
             self.db.set_sync_state('last_sync_at', datetime.now().isoformat())
             return {'success': True, 'action': 'cloned', 'sha': sha}
 
-        # Already cloned -- pull updates
+        # Already cloned - pull updates
         stdout, stderr, rc = self._run(['git', 'fetch', 'origin', 'main'])
         if rc != 0:
             return {'success': False, 'error': f'Fetch failed: {stderr}'}
@@ -142,7 +142,7 @@ class IRDBSync:
             return []
         return [f for f in stdout.split('\n') if f.endswith('.ir')]
 
-    # --- Check for Updates ------------------------------
+    # Check for Updates
 
     def check_for_updates(self):
         """Check if upstream has new commits. Returns {has_updates, ...}."""
@@ -181,7 +181,7 @@ class IRDBSync:
             'remote_sha': remote_sha
         }
 
-    # --- Sync -------------------------------------------
+    # Sync
 
     def sync(self, progress_callback=None):
         """
@@ -216,7 +216,7 @@ class IRDBSync:
         if old_sha and new_sha:
             changed = self._get_changed_files(old_sha, new_sha)
         else:
-            # Full clone -- import everything
+            # Full clone - import everything
             changed = self._find_all_ir_files()
 
         if not changed:
@@ -336,7 +336,7 @@ class IRDBSync:
         """Convert a signal name to a safe button_id string."""
         return re.sub(r'[^a-z0-9_]', '_', name.lower().replace(' ', '_'))
 
-    # --- .ir File Parser --------------------------------
+    # .ir File Parser
 
     def parse_ir_file(self, filepath):
         """
@@ -357,7 +357,7 @@ class IRDBSync:
             if not line or line.startswith('Filetype:') or line.startswith('Version:'):
                 continue
 
-            # Comment line -- save as description
+            # Comment line - save as description
             if line.startswith('#') and not current:
                 continue
 

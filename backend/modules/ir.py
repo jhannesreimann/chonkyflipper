@@ -51,9 +51,7 @@ class IRModule:
         except subprocess.TimeoutExpired:
             return '', 'Command timed out', 1
 
-    # ------------------------------------------------------------------
     # Recording
-    # ------------------------------------------------------------------
 
     def record_signal(self, duration=5, name=None):
         if name is None:
@@ -121,9 +119,7 @@ class IRModule:
             'preview': f'{protocol["name"]} signal, {len(pulses)} pulses',
         }
 
-    # ------------------------------------------------------------------
     # Transmission
-    # ------------------------------------------------------------------
 
     def transmit_signal(self, signal_id):
         filepath = os.path.join(self.signals_dir, f'{signal_id}.json')
@@ -180,9 +176,7 @@ class IRModule:
         finally:
             os.remove(tmpfile)
 
-    # ------------------------------------------------------------------
     # Signal management
-    # ------------------------------------------------------------------
 
     def list_signals(self):
         signals = []
@@ -211,9 +205,7 @@ class IRModule:
             return {'success': True, 'deleted': signal_id}
         return {'success': False, 'error': 'Signal not found'}
 
-    # ------------------------------------------------------------------
     # Protocol detection
-    # ------------------------------------------------------------------
 
     def detect_protocol(self, pulses, spaces=None):
         from modules.ir_protocols import detect_protocol as _detect

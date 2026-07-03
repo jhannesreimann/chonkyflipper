@@ -2,19 +2,13 @@
 IR signal recording, library browser, Flipper-IRDB sync, and device discovery.
 """
 
-import os
 import threading
 from flask import Blueprint, request
+from config import PAYLOADS_DIR
+from hardware import get_module
 from utils import api_success, api_error
 
-bp = Blueprint('ir', __name__)
-
-
-def _ir_module():
-    import sys
-    sys.path.insert(0, '/opt/chonkyflipper')
-    from modules.ir import IRModule
-    return IRModule()
+bp = Blueprint('ir', __name__, url_prefix='/api')
 
 
 def _ir_db():
@@ -23,7 +17,7 @@ def _ir_db():
     db = IRPayloadDB()
     db.init_db()
     if db.get_stats().get('brands', 0) == 0:
-        db.seed_from_json('/opt/chonkyflipper/payloads')
+        db.seed_from_json(PAYLOADS_DIR)
     return db
 
 
@@ -32,48 +26,48 @@ _sync_lock = threading.Lock()
 _sync_task = {'running': False, 'progress': 0, 'total': 0, 'current': ''}
 
 
-# ------------------------------------------------------------------ recording
+# recording
 
-@bp.route('/api/ir/record', methods=['POST'])
+@bp.route('/ir/record', methods=['POST'])
 def ir_record():
     data = request.json or {}
     duration = data.get('duration', 5)
-    ir = _ir_module()
+    ir = get_module('ir')
     return api_success(ir.record_signal(duration=duration))
 
 
-@bp.route('/api/ir/transmit', methods=['POST'])
+@bp.route('/ir/transmit', methods=['POST'])
 def ir_transmit():
     data = request.json or {}
     signal_id = data.get('signal_id')
-    ir = _ir_module()
+    ir = get_module('ir')
     result = ir.transmit_signal(signal_id)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 400)
 
 
-@bp.route('/api/ir/signals', methods=['GET'])
+@bp.route('/ir/signals', methods=['GET'])
 def ir_list_signals():
-    ir = _ir_module()
+    ir = get_module('ir')
     return api_success(ir.list_signals())
 
 
-@bp.route('/api/ir/signals/<signal_id>', methods=['DELETE'])
+@bp.route('/ir/signals/<signal_id>', methods=['DELETE'])
 def ir_delete_signal(signal_id):
-    ir = _ir_module()
+    ir = get_module('ir')
     result = ir.delete_signal(signal_id)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Not found'), 404)
 
 
-# ------------------------------------------------------------------ library browser
+# library browser
 
-@bp.route('/api/ir/library/brands', methods=['GET'])
+@bp.route('/ir/library/brands', methods=['GET'])
 def ir_library_brands():
     db = _ir_db()
     brands = db.get_brands()
     return api_success({'brands': brands, 'total': len(brands)})
 
 
-@bp.route('/api/ir/library/brands/<slug>/devices', methods=['GET'])
+@bp.route('/ir/library/brands/<slug>/devices', methods=['GET'])
 def ir_library_devices(slug):
     db = _ir_db()
     brand = db.get_brand_by_slug(slug)
@@ -83,7 +77,7 @@ def ir_library_devices(slug):
     return api_success({'brand': brand, 'devices': devices})
 
 
-@bp.route('/api/ir/library/devices/<int:device_id>/buttons', methods=['GET'])
+@bp.route('/ir/library/devices/<int:device_id>/buttons', methods=['GET'])
 def ir_library_buttons(device_id):
     db = _ir_db()
     device = db.get_device(device_id)
@@ -93,7 +87,7 @@ def ir_library_buttons(device_id):
     return api_success({'device': device, 'buttons': buttons})
 
 
-@bp.route('/api/ir/library/devices/<int:device_id>/send', methods=['POST'])
+@bp.route('/ir/library/devices/<int:device_id>/send', methods=['POST'])
 def ir_library_send(device_id):
     data = request.json or {}
     button_id = data.get('button_id')
@@ -105,7 +99,7 @@ def ir_library_send(device_id):
     if not btn:
         return api_error('Button not found', 404)
 
-    ir = _ir_module()
+    ir = get_module('ir')
     pulses = btn.get('raw_pulses', [])
     spaces = btn.get('raw_spaces', [])
 
@@ -132,7 +126,7 @@ def ir_library_send(device_id):
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
-@bp.route('/api/ir/library/search', methods=['GET'])
+@bp.route('/ir/library/search', methods=['GET'])
 def ir_library_search():
     query = request.args.get('q', '').strip()
     if not query:
@@ -143,15 +137,15 @@ def ir_library_search():
     return api_success({'results': results, 'total': total, 'query': query})
 
 
-@bp.route('/api/ir/library/stats', methods=['GET'])
+@bp.route('/ir/library/stats', methods=['GET'])
 def ir_library_stats():
     db = _ir_db()
     return api_success(db.get_stats())
 
 
-# ------------------------------------------------------------------ Flipper-IRDB sync
+# Flipper-IRDB sync
 
-@bp.route('/api/ir/sync/check', methods=['POST'])
+@bp.route('/ir/sync/check', methods=['POST'])
 def ir_sync_check():
     from modules.ir_sync import IRDBSync
     db = _ir_db()
@@ -159,7 +153,7 @@ def ir_sync_check():
     return api_success(syncer.check_for_updates())
 
 
-@bp.route('/api/ir/sync/start', methods=['POST'])
+@bp.route('/ir/sync/start', methods=['POST'])
 def ir_sync_start():
     global _sync_task
     with _sync_lock:
@@ -191,7 +185,7 @@ def ir_sync_start():
     return api_success({'status': 'started'})
 
 
-@bp.route('/api/ir/sync/status', methods=['GET'])
+@bp.route('/ir/sync/status', methods=['GET'])
 def ir_sync_status():
     with _sync_lock:
         return api_success(dict(_sync_task))

@@ -3,7 +3,7 @@
 DuckyScript interpreter.
 
 Implements a DuckyScript 3.0-flavoured dialect on top of the semantic backend
-interface (see backends.py). This is NOT the proprietary Hak5 compiler -- it is
+interface (see backends.py). This is NOT the proprietary Hak5 compiler - it is
 an independent interpreter for a compatible subset:
 
   Keystrokes : STRING, STRINGLN, named keys (ENTER, F5, ...), modifier combos
@@ -28,9 +28,7 @@ import re
 from . import keymaps
 
 
-# ----------------------------------------------------------------------------
 # Expression engine
-# ----------------------------------------------------------------------------
 
 _TOKEN_RE = re.compile(r'''\s*(?:
       (?P<hex>0[xX][0-9a-fA-F]+)
@@ -187,9 +185,7 @@ def eval_ast(ast, env):
     raise ValueError('bad expression node')
 
 
-# ----------------------------------------------------------------------------
-# Statement parser -- turns lines into a tree of nodes with control flow
-# ----------------------------------------------------------------------------
+# Statement parser - turns lines into a tree of nodes with control flow
 # Node shapes:
 #   ('cmd', command, rest, lineno)
 #   ('assign', name, expr_ast, lineno)
@@ -306,9 +302,7 @@ def parse(text):
     return _StmtParser(_logical_lines(text)).parse_block(set())
 
 
-# ----------------------------------------------------------------------------
 # Executor
-# ----------------------------------------------------------------------------
 
 class Interpreter:
     MAX_LOOPS = 100000      # guard against runaway WHILE locking a worker
@@ -326,11 +320,11 @@ class Interpreter:
         self.skipped_chars = 0
         self._expr_cache = {}
 
-    # -- public --------------------------------------------------------------
+    # public
     def run(self, text):
         self.exec_nodes(parse(text))
 
-    # -- node walking --------------------------------------------------------
+    # node walking
     def exec_nodes(self, nodes):
         for node in nodes:
             self.exec_node(node)
@@ -359,7 +353,7 @@ class Interpreter:
                     raise RuntimeError(
                         f'WHILE at line {lineno} exceeded {self.MAX_LOOPS} iterations')
 
-    # -- command dispatch ----------------------------------------------------
+    # command dispatch
     def exec_cmd(self, node):
         _, cmd, rest, lineno = node
         self.stmt_count += 1
@@ -418,7 +412,7 @@ class Interpreter:
         self.warn(lineno, f'unknown command {cmd!r}')
         return False
 
-    # -- helpers -------------------------------------------------------------
+    # helpers
     def _type(self, text, lineno):
         for ch in text:
             if self.b.char(ch):

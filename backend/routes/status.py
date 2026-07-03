@@ -3,13 +3,18 @@ System status, version, and update endpoints.
 """
 
 import os
+import glob
 import time
 import subprocess
 from flask import Blueprint, request
-from config import VERSION_FILE, REPO_DIR
+from config import (
+    VERSION_FILE, REPO_DIR,
+    WLAN1_PATH, HCI0_PATH, LIRC0_PATH, SPI0_PATH,
+    CC2531_VID, CC2531_PID,
+)
 from utils import api_success, api_error
 
-bp = Blueprint('status', __name__)
+bp = Blueprint('status', __name__, url_prefix='/api')
 
 # Module detection cache (avoids running i2cdetect on every 5s poll)
 _status_cache = {'data': None, 'time': 0}
@@ -48,26 +53,25 @@ def _detect_modules():
 
     module_status = {
         'wifi': {
-            'available': os.path.exists('/sys/class/net/wlan1'),
+            'available': os.path.exists(WLAN1_PATH),
             'interface': 'wlan1',
         },
         'bluetooth': {
-            'available': os.path.exists('/sys/class/bluetooth/hci0'),
+            'available': os.path.exists(HCI0_PATH),
             'interface': 'hci0',
         },
         'ir': {
-            'available': os.path.exists('/dev/lirc0'),
+            'available': os.path.exists(LIRC0_PATH),
             'gpio': '17/27',
         },
         'cc1101': {
-            'available': os.path.exists('/sys/bus/spi/devices/spi0.0'),
+            'available': os.path.exists(SPI0_PATH),
             'spi': '0.0',
         },
         'pn532': {'available': False, 'uart': 'ttyAMA0'},
         'zigbee': {
             'available': bool(
-                __import__('glob').glob('/dev/ttyUSB*')
-                or __import__('glob').glob('/dev/ttyACM*')
+                glob.glob('/dev/ttyUSB*') or glob.glob('/dev/ttyACM*')
             ),
             'usb': 'ttyUSB0',
         },
@@ -90,7 +94,7 @@ def _detect_modules():
     # CC2531 sniffer: check USB
     try:
         import usb.core
-        dev = usb.core.find(idVendor=0x0451, idProduct=0x16AE)
+        dev = usb.core.find(idVendor=CC2531_VID, idProduct=CC2531_PID)
         module_status['zigbee-audit']['available'] = dev is not None
     except Exception:
         pass
@@ -100,9 +104,9 @@ def _detect_modules():
     return module_status
 
 
-# ------------------------------------------------------------------ routes
+# routes
 
-@bp.route('/api/status', methods=['GET'])
+@bp.route('/status', methods=['GET'])
 def get_status():
     return api_success({
         'hostname': 'chonkyflipper',
@@ -111,7 +115,7 @@ def get_status():
     })
 
 
-@bp.route('/api/system/info', methods=['GET'])
+@bp.route('/system/info', methods=['GET'])
 def get_system_info():
     try:
         uptime = subprocess.check_output(['uptime', '-p']).decode().strip()
@@ -125,7 +129,7 @@ def get_system_info():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/system/version', methods=['GET'])
+@bp.route('/system/version', methods=['GET'])
 def system_version():
     try:
         if os.path.isfile(VERSION_FILE):
@@ -150,7 +154,7 @@ def system_version():
         return api_success({'sha': 'unknown'})
 
 
-@bp.route('/api/system/update', methods=['POST'])
+@bp.route('/system/update', methods=['POST'])
 def system_update():
     try:
         # Check internet
@@ -188,7 +192,7 @@ def system_update():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/system/poweroff', methods=['POST'])
+@bp.route('/system/poweroff', methods=['POST'])
 def system_poweroff():
     try:
         subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
@@ -197,7 +201,7 @@ def system_poweroff():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/system/power/shutdown-percentage', methods=['GET'])
+@bp.route('/system/power/shutdown-percentage', methods=['GET'])
 def get_shutdown_percentage():
     try:
         global _pipower
@@ -210,7 +214,7 @@ def get_shutdown_percentage():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/system/power/shutdown-percentage', methods=['POST'])
+@bp.route('/system/power/shutdown-percentage', methods=['POST'])
 def set_shutdown_percentage():
     data = request.json or {}
     pct = data.get('percentage')

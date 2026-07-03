@@ -32,9 +32,23 @@ MQTT_PORT = 1883
 # Service user for sudo -n commands
 SERVICE_USER = 'chonky'
 
+# WiFi access point (Chonky_Control)
+AP_SSID = 'Chonky_Control'
+AP_IP = '192.168.4.1'
+
+# Network interfaces
+ETH_IFACE = 'eth0'
+WLAN_AP_IFACE = 'wlan0'
+WLAN_CLIENT_IFACE = 'wlan1'
+HCI_IFACE = 'hci0'
+
+# Zigbee sniffer (CC2531) USB identifiers
+CC2531_VID = 0x0451
+CC2531_PID = 0x16AE
+
 # Hardware detection paths
-WLAN1_PATH = '/sys/class/net/wlan1'
-HCI0_PATH = '/sys/class/bluetooth/hci0'
+WLAN1_PATH = f'/sys/class/net/{WLAN_CLIENT_IFACE}'
+HCI0_PATH = f'/sys/class/bluetooth/{HCI_IFACE}'
 LIRC0_PATH = '/dev/lirc0'
 SPI0_PATH = '/sys/bus/spi/devices/spi0.0'
 HIDG0_PATH = '/dev/hidg0'

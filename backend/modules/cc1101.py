@@ -71,9 +71,7 @@ class CC1101Module:
             return {'success': True}
         return {'success': False, 'error': 'CC1101 SPI communication failed. Check wiring.'}
 
-    # ------------------------------------------------------------------
     # Frequency control
-    # ------------------------------------------------------------------
 
     def set_frequency(self, frequency_mhz):
         if not self._initialized and not self._init_spi():
@@ -93,9 +91,7 @@ class CC1101Module:
 
         return {'success': True, 'frequency_mhz': frequency_mhz}
 
-    # ------------------------------------------------------------------
     # Recording
-    # ------------------------------------------------------------------
 
     def record_signal(self, frequency_mhz=433.92, duration=3, name=None):
         if name is None:
@@ -138,9 +134,7 @@ class CC1101Module:
             'frequency': frequency_mhz, 'samples': len(samples),
         }
 
-    # ------------------------------------------------------------------
     # Transmission (not yet implemented for raw replay)
-    # ------------------------------------------------------------------
 
     def transmit_signal(self, signal_id, repeat=3):
         filepath = os.path.join(self.signals_dir, f'{signal_id}.json')
@@ -167,9 +161,7 @@ class CC1101Module:
             'error': 'Raw sub-GHz replay not yet implemented. Recordings saved to disk for analysis.',
         }
 
-    # ------------------------------------------------------------------
     # Spectrum scan
-    # ------------------------------------------------------------------
 
     def scan_frequency(self, start_mhz=433.0, end_mhz=434.0, step_khz=25):
         if not self._initialized and not self._init_spi():
@@ -210,9 +202,7 @@ class CC1101Module:
             'step_khz': step_khz, 'samples': len(results), 'results': results,
         }
 
-    # ------------------------------------------------------------------
     # Signal management
-    # ------------------------------------------------------------------
 
     def list_signals(self):
         signals = []

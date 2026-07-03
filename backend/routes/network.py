@@ -7,12 +7,13 @@ import re
 import time
 import subprocess
 from flask import Blueprint, request
+from config import AP_SSID, AP_IP
 from utils import api_success, api_error
 
-bp = Blueprint('network', __name__)
+bp = Blueprint('network', __name__, url_prefix='/api')
 
 
-@bp.route('/api/network/status', methods=['GET'])
+@bp.route('/network/status', methods=['GET'])
 def network_status():
     try:
         hostapd_active = subprocess.run(
@@ -84,8 +85,8 @@ def network_status():
 
         return api_success({
             'ap_mode': hostapd_active,
-            'ap_ssid': 'Chonky_Control' if hostapd_active else None,
-            'ap_ip': '192.168.4.1' if hostapd_active else None,
+            'ap_ssid': AP_SSID if hostapd_active else None,
+            'ap_ip': AP_IP if hostapd_active else None,
             'ethernet': {'connected': eth0_connected, 'ip': eth0_ip},
             'wifi_client': {
                 'adapter_present': wlan1_exists,
@@ -100,7 +101,7 @@ def network_status():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/network/maintenance', methods=['POST'])
+@bp.route('/network/maintenance', methods=['POST'])
 def enable_maintenance_mode():
     data = request.json or {}
     ssid = data.get('ssid')
@@ -128,7 +129,7 @@ def enable_maintenance_mode():
         return api_error(str(e), 500)
 
 
-@bp.route('/api/network/apmode', methods=['POST'])
+@bp.route('/network/apmode', methods=['POST'])
 def enable_ap_mode():
     try:
         result = subprocess.run(
@@ -138,14 +139,14 @@ def enable_ap_mode():
         if result.returncode == 0:
             return api_success({
                 'message': 'AP mode restored',
-                'ssid': 'Chonky_Control', 'ip': '192.168.4.1',
+                'ssid': AP_SSID, 'ip': AP_IP,
             })
         return api_error(result.stderr, 500)
     except Exception as e:
         return api_error(str(e), 500)
 
 
-# ------------------------------------------------------------------ WiFi client helpers
+# WiFi client helpers
 
 def _wifi_cleanup():
     """Clean up wlan1 state before (re)connecting."""
@@ -201,7 +202,7 @@ def _start_wpa_and_wait():
     return False, None
 
 
-@bp.route('/api/network/wifi-connect', methods=['POST'])
+@bp.route('/network/wifi-connect', methods=['POST'])
 def wifi_connect():
     if not os.path.exists('/sys/class/net/wlan1'):
         return api_error('Alfa WiFi adapter not connected', 400)
@@ -228,7 +229,7 @@ def wifi_connect():
     return api_error(f'Could not connect to {ssid}. Check password and try again.', 400)
 
 
-@bp.route('/api/network/wifi-disconnect', methods=['POST'])
+@bp.route('/network/wifi-disconnect', methods=['POST'])
 def wifi_disconnect():
     subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'],
                    capture_output=True)

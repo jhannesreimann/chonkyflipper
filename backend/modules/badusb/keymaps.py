@@ -6,7 +6,7 @@ A layout maps a printable character to (modifier_byte, hid_keycode). The
 modifier byte is the USB HID modifier bitmask sent in byte 0 of the report:
     0x02 = Left Shift, 0x40 = Right Alt (AltGr).
 
-Only the raw HID path (HidBackend) cares about layouts -- it sends physical
+Only the raw HID path (HidBackend) cares about layouts - it sends physical
 scancodes, so the bytes that come out depend entirely on the layout the target
 OS is set to. Pick the layout that matches the target machine, not the Pi.
 
@@ -44,7 +44,7 @@ for _i, _ch in enumerate('1234567890'):
 
 
 def _build_us():
-    """US QWERTY -- the original Hak5/DuckyScript default layout."""
+    """US QWERTY - the original Hak5/DuckyScript default layout."""
     m = {}
     for i, ch in enumerate('abcdefghijklmnopqrstuvwxyz'):
         m[ch] = (0x00, 0x04 + i)
@@ -67,7 +67,7 @@ def _build_us():
 
 
 def _build_de():
-    """German QWERTZ. ASCII output only -- chars that need umlaut/dead keys
+    """German QWERTZ. ASCII output only - chars that need umlaut/dead keys
     on this layout are intentionally omitted (backtick and ^ are dead keys)."""
     SHIFT, ALTGR = 0x02, 0x40
     m = {}

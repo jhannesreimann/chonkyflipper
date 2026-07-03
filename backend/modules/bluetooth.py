@@ -57,7 +57,7 @@ class BluetoothModule:
     def __init__(self, interface='hci0'):
         self.interface = interface
 
-    # ------------------------------------------------------------------ scanning
+    # scanning
 
     def _discover(self, duration):
         """Run one BLE discovery pass. Returns {address: (BLEDevice, AdvertisementData)}."""
@@ -107,7 +107,7 @@ class BluetoothModule:
         beacons.sort(key=lambda b: b['rssi'] if b['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'beacons': beacons}
 
-    # ------------------------------------------------------------------ advertisement logging
+    # advertisement logging
 
     def log_advertisements(self, duration=15):
         """Passively log BLE advertisements over a time window.
@@ -166,7 +166,7 @@ class BluetoothModule:
             await scanner.stop()
         return sorted(summary.values(), key=lambda d: d['count'], reverse=True)
 
-    # ------------------------------------------------------------------ beacon decode
+    # beacon decode
 
     @staticmethod
     def _parse_ibeacon(adv):
@@ -211,7 +211,7 @@ class BluetoothModule:
             url += _URL_EXPANSIONS[b] if b < len(_URL_EXPANSIONS) else chr(b)
         return url
 
-    # ------------------------------------------------------------------ GATT profiling
+    # GATT profiling
 
     def profile_device(self, mac_address, read_values=True):
         """Connect to a BLE device and enumerate its GATT services,
@@ -313,7 +313,7 @@ class BluetoothModule:
                 'bytes_written': len(data), 'with_response': response,
             }
 
-    # ------------------------------------------------------------------ Classic BT (BR/EDR) + SDP
+    # Classic BT (BR/EDR) + SDP
 
     def scan_classic(self, duration=10):
         """Discover Classic (BR/EDR) devices via hcitool inquiry.
@@ -365,7 +365,7 @@ class BluetoothModule:
             if not m:
                 continue
             d = {'mac': m.group(1).upper(), 'name': None, 'rssi': None}
-            # Class of Device -- e.g. "class: 0x0c043c"
+            # Class of Device - e.g. "class: 0x0c043c"
             cm = re.search(r'class:\s*(0x[0-9a-fA-F]+)', line)
             if cm:
                 d['type'] = self._cod_major(cm.group(1))
@@ -481,7 +481,7 @@ class BluetoothModule:
             services.append(cur)
         return services
 
-    # ------------------------------------------------------------------ raw HCI capture
+    # raw HCI capture
 
     def capture_hci(self, duration=20, filename=None):
         """Capture raw HCI traffic to a btsnoop (.pcap) file via btmon for
@@ -529,7 +529,7 @@ class BluetoothModule:
         captures.sort(key=lambda c: c['modified'], reverse=True)
         return {'success': True, 'captures': captures}
 
-    # ------------------------------------------------------------------ deep scan (bettercap)
+    # deep scan (bettercap)
 
     def deep_scan(self, duration=15):
         """Deep BLE scan via bettercap for richer metadata (notably the MAC
@@ -609,7 +609,7 @@ class BluetoothModule:
             })
         return devices
 
-    # ------------------------------------------------------------------ advertisement spoofing
+    # advertisement spoofing
 
     def spoof_advertisement(self, params):
         """Broadcast a crafted BLE advertisement (device spoof / beacon) via a
@@ -772,7 +772,7 @@ class BluetoothModule:
                 i += 1
         return out, None
 
-    # ------------------------------------------------------------------ pairing (bluetoothctl)
+    # pairing (bluetoothctl)
 
     def get_device_info(self, mac_address):
         info = {'mac': mac_address, 'name': None, 'services': [], 'characteristics': []}
@@ -810,7 +810,7 @@ class BluetoothModule:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    # ------------------------------------------------------------------ background ad log daemon
+    # background ad log daemon
 
     _LOGGER_SCRIPT = f'{INSTALL_DIR}/ble-advert-logger.py'
     _LOGGER_PID = f'{INSTALL_DIR}/ble-advert-logger.pid'

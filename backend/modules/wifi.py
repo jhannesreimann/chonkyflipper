@@ -35,9 +35,7 @@ class WiFiModule:
         except Exception as e:
             return '', str(e), 1
 
-    # ------------------------------------------------------------------
     # Scanning (enriched with risk and encryption details)
-    # ------------------------------------------------------------------
 
     def scan_networks(self):
         """Scan for WiFi networks using wpa_cli on wlan1. Returns list with risk and encryption."""
@@ -46,7 +44,7 @@ class WiFiModule:
 
         # wpa_cli scanning needs managed mode. A prior monitor session or a
         # wifite attack leaves wlan1 in monitor mode, which would make every
-        # scan come back empty -- so transparently restore managed mode first.
+        # scan come back empty - so transparently restore managed mode first.
         if self._is_monitor_mode():
             self.stop_monitor_mode()
             time.sleep(2)
@@ -178,14 +176,12 @@ class WiFiModule:
 
         return encryption, risk
 
-    # ------------------------------------------------------------------
     # Monitor mode & packet capture
-    # ------------------------------------------------------------------
 
     def start_monitor_mode(self):
         """
         Enter monitor mode on wlan1 using iw (no airmon-ng).
-        airmon-ng check kill would kill gunicorn+hostapd -- avoided.
+        airmon-ng check kill would kill gunicorn+hostapd - avoided.
         """
         if not os.path.exists('/sys/class/net/wlan1'):
             return {'success': False,
@@ -261,7 +257,7 @@ class WiFiModule:
         """Return True if wlan1 is in monitor mode or has the PROMISC flag set.
 
         The rtl8821au driver can get stuck with PROMISC on even after
-        iwconfig reports Mode:Managed -- scanning is broken in that state
+        iwconfig reports Mode:Managed - scanning is broken in that state
         too, so treat it as monitor-like.
         """
         result = subprocess.run(
@@ -276,7 +272,7 @@ class WiFiModule:
         )
         return 'PROMISC' in result.stdout
 
-    # --- Filter presets for capture ---
+    # Filter presets for capture
 
     _FILTER_PRESETS = {
         'beacons': 'wlan type mgt subtype beacon',
@@ -319,9 +315,7 @@ class WiFiModule:
                 'size_bytes': file_size, 'duration': duration, 'channel': channel,
                 'filter': packet_filter}
 
-    # ------------------------------------------------------------------
-    # Probe request capture (issue #13)
-    # ------------------------------------------------------------------
+    # Probe request capture
 
     def capture_probes(self, duration=30):
         """Capture 802.11 probe requests using tshark. Returns list of client/SSID pairs."""
@@ -365,9 +359,7 @@ class WiFiModule:
         return {'success': True, 'probes': probes, 'count': len(probes),
                 'duration': duration, 'file': outfile}
 
-    # ------------------------------------------------------------------
     # Deauth attack (existing, now with endpoint)
-    # ------------------------------------------------------------------
 
     def deauth_attack(self, bssid, client=None, count=5, channel=None):
         """Send deauthentication frames via aireplay-ng."""
@@ -392,9 +384,7 @@ class WiFiModule:
         return {'success': rc == 0, 'bssid': bssid, 'client': client,
                 'frames_sent': count, 'output': stdout}
 
-    # ------------------------------------------------------------------
     # Handshake capture (aircrack-ng)
-    # ------------------------------------------------------------------
 
     def capture_handshake(self, bssid, channel, timeout=60):
         """Capture WPA handshake by deauth-ing a client, then waiting for reconnection."""
@@ -442,9 +432,7 @@ class WiFiModule:
         return {'success': False, 'error': 'No handshake captured',
                 'bssid': bssid, 'channel': channel}
 
-    # ------------------------------------------------------------------
     # Wifite-based auditing (Kali's wireless auditor - scan + attack)
-    # ------------------------------------------------------------------
 
     def run_wifite_audit(self, scan_time=10, attack_time=300):
         """Run wifite full audit: scan then automatically attack all targets.
@@ -595,9 +583,7 @@ class WiFiModule:
                 })
         return targets
 
-    # ------------------------------------------------------------------
     # Attack viability checker (dynamic, no hardcoded assumptions)
-    # ------------------------------------------------------------------
 
     def check_attack_viability(self, bssid, channel, security):
         """Quick non-destructive probes to determine which attacks are viable."""
@@ -614,7 +600,7 @@ class WiFiModule:
         has_wep = 'wep' in enc_lower
         is_open = 'open' in enc_lower
 
-        # --- WEP ---
+        # WEP
         if has_wep:
             results['wep'] = {'viable': True,
                               'reason': 'WEP encryption detected. Crackable in minutes via aircrack-ng.'}
@@ -622,7 +608,7 @@ class WiFiModule:
             results['wep'] = {'viable': False,
                               'reason': 'Network does not use WEP encryption.'}
 
-        # --- Deauth ---
+        # Deauth
         # Check for PMF (802.11w) by looking for MFP/PMF in RSN flags from scan
         # We test viability by checking if we can receive beacons on target channel
         if not self._is_monitor_mode():
@@ -675,7 +661,7 @@ class WiFiModule:
             results['deauth'] = {'viable': True,
                                  'reason': 'Deauth frames sendable. Modern clients reconnect within ms; IoT devices disconnect visibly.'}
 
-        # --- WPA handshake crack ---
+        # WPA handshake crack
         if not has_wpa:
             results['wpa'] = {'viable': False,
                               'reason': 'Not a WPA/WPA2 network.'}
@@ -686,7 +672,7 @@ class WiFiModule:
             results['wpa'] = {'viable': True,
                               'reason': 'Handshake capture possible via deauth. Cracked only if password is in wordlist.'}
 
-        # --- WPS PIN attack ---
+        # WPS PIN attack
         if has_wps:
             # Quick test: try a WPS transaction with a 5s timeout
             test, _, _ = self._run(
@@ -708,9 +694,7 @@ class WiFiModule:
 
         return results
 
-    # ------------------------------------------------------------------
-    # Rogue AP detection (issue #14)
-    # ------------------------------------------------------------------
+    # Rogue AP detection
 
     def detect_anomalies(self, networks):
         """Detect potential rogue APs and attacks from scan results."""
@@ -777,9 +761,7 @@ class WiFiModule:
 
         return {'success': True, 'anomalies': anomalies, 'count': len(anomalies)}
 
-    # ------------------------------------------------------------------
     # WEP attack (aircrack-ng)
-    # ------------------------------------------------------------------
 
     def attack_wep(self, bssid, channel, timeout=120):
         """Automated WEP cracking using airodump-ng + aireplay-ng + aircrack-ng."""
@@ -830,9 +812,7 @@ class WiFiModule:
         return {'success': False, 'error': 'Could not crack WEP key. Try capturing more IVs.',
                 'file': cap_file, 'bssid': bssid}
 
-    # ------------------------------------------------------------------
     # WPA handshake crack (aircrack-ng + wordlist)
-    # ------------------------------------------------------------------
 
     def attack_wpa(self, bssid, channel, wordlist='/usr/share/wordlists/rockyou.txt',
                    timeout=90):
@@ -867,9 +847,7 @@ class WiFiModule:
                 'error': 'Handshake captured but password not in wordlist.',
                 'file': cap_file, 'bssid': bssid}
 
-    # ------------------------------------------------------------------
     # WPS PIN attack (reaver)
-    # ------------------------------------------------------------------
 
     def attack_wps(self, bssid, channel, timeout=300):
         """WPS PIN brute force using reaver."""
