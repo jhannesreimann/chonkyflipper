@@ -111,6 +111,37 @@ class BadUSBModule:
             'timestamp': datetime.now().isoformat(),
         }
 
+    def execute_content(self, content, layout=None, label='inline'):
+        """Execute DuckyScript content directly (no filesystem lookup)."""
+        if not self._check_device():
+            return {
+                'success': False,
+                'error': f'{self.hid_device} not found',
+                'hint': 'Ensure dtoverlay=dwc2 is in /boot/firmware/config.txt, reboot, then run setup-gadget.sh',
+            }
+
+        layout = (layout or self.default_layout).lower()
+        interp = Interpreter(HidBackend(self.hid_device, layout))
+        try:
+            interp.run(content)
+        except PermissionError:
+            return {
+                'success': False,
+                'error': f'Permission denied on {self.hid_device}. Check udev rules or service user permissions.',
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'warnings': interp.warnings}
+
+        return {
+            'success': True,
+            'payload': label,
+            'layout': layout,
+            'commands_run': interp.stmt_count,
+            'skipped_chars': interp.skipped_chars,
+            'warnings': interp.warnings,
+            'timestamp': datetime.now().isoformat(),
+        }
+
     def dry_run_payload(self, payload_name, layout=None):
         """Execute against a recording backend - returns the action log."""
         text, err = self._read(payload_name)

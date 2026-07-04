@@ -108,11 +108,22 @@ def _detect_modules():
 
 @bp.route('/status', methods=['GET'])
 def get_status():
-    return api_success({
+    # Check auto-fire on each status poll (every 5s)
+    auto_fire_result = None
+    try:
+        from routes.badusb import auto_fire_check
+        auto_fire_result = auto_fire_check()
+    except Exception:
+        pass
+
+    status = {
         'hostname': 'chonkyflipper',
         'modules': _detect_modules(),
         'power': _get_power_data(),
-    })
+    }
+    if auto_fire_result:
+        status['auto_fire_fired'] = auto_fire_result
+    return api_success(status)
 
 
 @bp.route('/system/info', methods=['GET'])

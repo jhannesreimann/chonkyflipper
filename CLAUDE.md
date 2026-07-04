@@ -128,11 +128,16 @@ The IR functionality spans four files:
 - **Frontend**: `nfc.js` with Read & Dump, Write/Clone form, Advanced (mfoc), and Saved cards history section.
 - **Routes**: `/api/nfc/read`, `/api/nfc/write`, `/api/nfc/dump`, `/api/nfc/clone`, `/api/nfc/mfoc`.
 
-### BadUSB DuckyScript Parser
-- **`badusb.py`** parses DuckyScript payloads (`.txt` files from `payloads/badusb/`).
-- Commands: `STRING`, `DELAY`, modifier combos (`GUI r`, `CTRL SHIFT ESC`), and named keys (`ENTER`, `F5`, etc.).
-- Writes 8-byte HID reports to `/dev/hidg0` (Linux configfs USB gadget).
-- Character map covers printable ASCII plus shifted variants.
+### BadUSB DuckyScript Parser & Payload Library
+
+The BadUSB system has three layers: a filesystem scanner for local `.txt` payloads, a SQLite-backed library synced from GitHub payload repos (modelled after the IR library), and a USB HID gadget execution engine.
+
+- **`modules/badusb/`** — Package: `interpreter.py` (DuckyScript 3.0 parser with variables, IF/WHILE, expressions), `keymaps.py` (us/de layout tables + named keys + modifier bitmasks), `backends.py` (HidBackend writing 8-byte reports to `/dev/hidg0`, DryRunBackend for preview), `module.py` (filesystem payload discovery and execution).
+- **`modules/badusb/db.py`** — SQLite database: `os_types`, `categories`, `payloads` tables with FTS5 search. Stores payloads synced from GitHub with metadata parsed from REM headers (Title, Author, Description, Target OS, Category). Hierarchical browsing: OS → Category → Payloads.
+- **`modules/badusb/sync.py`** — Sync engine cloning payload repos (`hak5/usbrubberducky-payloads`, `Starvinci/BadUsb-Library`, `aleff-github/my-flipper-shits`) via shallow git clone. Incremental updates via `git diff`. Parses REM comment headers to extract OS, category, author, and description.
+- **`routes/badusb.py`** — Filesystem routes (`/badusb/payloads`, `/badusb/execute`), library routes (`/badusb/library/os`, `/categories`, `/payloads`, `/search`, `/stats`, `/sync/*`), and auto-fire routes (`/badusb/arm`, `/arm/status`, `/arm/cancel`).
+- **Auto-fire**: Arm a payload, and when the Pi's USB-C port detects a host connection (UDC state change), the payload fires automatically. State is polled via `/api/status` every 5 seconds.
+- **Frontend**: `badusb.js` — two-tab layout: Library (OS pills → category grid → payload list → detail with preview/edit/run/arm) and Files (existing filesystem browser).
 
 ### WiFi Scanning
 WiFi scanning is in `routes/wifi.py` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and wifite-based vulnerability auditing.

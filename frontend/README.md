@@ -76,7 +76,7 @@ src/
     ir.js          library browser + recorded signals (record/send/delete)
     subghz.js      CC1101 record / replay
     nfc.js         PN532 read / write / clone
-    badusb.js      DuckyScript payloads
+    badusb.js      DuckyScript library (OS/category browser, search, sync) + files
     zigbee.js      Zigbee2MQTT devices, events, bridge info, network map
     zigbee-sniffer.js  CC2531 sniffer: PAN scan, packet capture, key extraction
     settings.js    network, wifi connect, power, system update

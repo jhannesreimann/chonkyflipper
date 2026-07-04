@@ -18,6 +18,8 @@ CONFIG_DIR = f'{INSTALL_DIR}/config'
 VERSION_FILE = f'{INSTALL_DIR}/VERSION'
 
 IR_DB_PATH = f'{DATA_DIR}/ir_payloads.db'
+BADUSB_DB_PATH = f'{DATA_DIR}/badusb_payloads.db'
+BADUSB_REPOS_DIR = f'{DATA_DIR}/badusb_repos'
 IRDB_REPO_DIR = f'{DATA_DIR}/irdb'
 
 REPO_DIR = '/home/kali/chonkyflipper'

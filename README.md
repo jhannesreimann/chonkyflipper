@@ -96,7 +96,7 @@ backend/
         pn532.py        NFC/RFID reader/writer (I2C)
         zigbee.py       Zigbee2MQTT bridge (MQTT)
         zigbee_audit.py Zigbee security auditing (CC2531 + KillerBee)
-        badusb.py       USB HID DuckyScript emulation
+        badusb/             USB HID interpreter, keymaps, DB, sync engine
     requirements.txt
 
 frontend/
@@ -193,20 +193,30 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/badusb/payloads | List available payloads |
-| POST | /api/badusb/execute | Run HID emulation script |
+| GET | /api/badusb/payloads | List filesystem payloads |
+| POST | /api/badusb/execute | Execute payload by name, DB id, or inline content |
+| GET | /api/badusb/library/os | List OS types with payload counts |
+| GET | /api/badusb/library/categories?os={slug} | Categories filtered by OS |
+| GET | /api/badusb/library/payloads?os={slug}&category={slug} | Payload list with filters |
+| GET | /api/badusb/library/payload/{id} | Single payload with full content |
+| GET | /api/badusb/library/search?q=... | Full-text search |
+| GET | /api/badusb/library/stats | Payload counts by OS and category |
+| POST | /api/badusb/library/sync/check | Check for upstream repo updates |
+| POST | /api/badusb/library/sync/start | Clone/update repos and import payloads |
+| GET | /api/badusb/library/sync/status | Sync progress |
+| POST | /api/badusb/arm | Arm a payload for auto-fire on USB connect |
+| GET | /api/badusb/arm/status | Check armed state |
+| POST | /api/badusb/arm/cancel | Cancel auto-fire |
 
 ### Zigbee Bridge (Zigbee2MQTT)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/zigbee/bridge | Bridge info and state |
-| GET | /api/zigbee/devices | Raw device registry |
 | GET | /api/zigbee/dashboard | Combined device view (registry + live state) |
 | GET | /api/zigbee/events?limit=N | Recent lifecycle and state events |
 | GET | /api/zigbee/networkmap | Network topology (nodes + links) |
 | POST | /api/zigbee/permit_join | Enable pairing mode |
-| GET | /api/zigbee/device/\<name\> | Device live state |
 | POST | /api/zigbee/device/\<name\>/set | Control device (e.g. on/off) |
 | POST | /api/zigbee/device/\<name\>/rename | Rename a device |
 | DELETE | /api/zigbee/device/\<name\> | Force-remove a device |
@@ -215,13 +225,10 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/zigbee/audit/device | Check if CC2531 dongle is connected |
 | POST | /api/zigbee/audit/capture | Capture packets on a channel to pcap |
 | POST | /api/zigbee/audit/scan | Passive PAN discovery (zbstumbler) |
 | POST | /api/zigbee/audit/discover | Parse pcap for devices (MACs, roles, encryption) |
 | POST | /api/zigbee/audit/extract-keys | Extract network keys from capture (zbdsniff) |
-| POST | /api/zigbee/audit/replay | Replay captured packets (requires TX dongle) |
-| POST | /api/zigbee/audit/flood | Association flood DoS (requires TX dongle) |
 | GET | /api/zigbee/audit/captures | List saved pcap capture files |
 
 ## Usage Workflow
