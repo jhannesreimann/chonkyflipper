@@ -123,16 +123,29 @@ if [ -d "$REPO_DIR/frontend" ]; then
     if command -v npm >/dev/null 2>&1; then
         # Build as the kali user so node_modules stays kali-owned (the repo
         # lives under /home/kali). npm ci is reproducible; fall back to install.
-        ( cd "$REPO_DIR/frontend" \
-          && (sudo -u kali npm ci --no-audit --no-fund 2>&1 || sudo -u kali npm install --no-audit --no-fund 2>&1) | tail -3 \
-          && sudo -u kali npm run build 2>&1 | tail -5 )
+        # Use -H so sudo sets HOME=/home/kali (npm needs its cache dir).
+        FAILED=0
+        echo "  Installing dependencies..."
+        if ! sudo -Hu kali npm ci --no-audit --no-fund --prefix "$REPO_DIR/frontend" 2>&1 | tail -5; then
+            echo "  npm ci failed, trying npm install..."
+            sudo -Hu kali npm install --no-audit --no-fund --prefix "$REPO_DIR/frontend" 2>&1 | tail -5 || FAILED=1
+        fi
 
-        if [ -d "$REPO_DIR/frontend/dist" ]; then
-            rm -rf "${FRONTEND_DIR:?}/"*
-            cp -r "$REPO_DIR/frontend/dist/"* "$FRONTEND_DIR/"
-            echo "  ✓ frontend/dist → $FRONTEND_DIR"
+        if [ "$FAILED" -eq 0 ]; then
+            echo "  Building..."
+            if sudo -Hu kali npm run build --prefix "$REPO_DIR/frontend" 2>&1 | tail -8; then
+                if [ -d "$REPO_DIR/frontend/dist" ]; then
+                    rm -rf "${FRONTEND_DIR:?}/"*
+                    cp -r "$REPO_DIR/frontend/dist/"* "$FRONTEND_DIR/"
+                    echo "  ✓ frontend/dist → $FRONTEND_DIR"
+                else
+                    echo "  ✗ frontend build produced no dist/ -- leaving existing files in place"
+                fi
+            else
+                echo "  ✗ frontend build failed"
+            fi
         else
-            echo "  ✗ frontend build produced no dist/ -- leaving existing files in place"
+            echo "  ✗ npm install failed -- cannot build the dashboard"
         fi
     else
         echo "  ⚠ npm not found -- cannot build the dashboard. Install Node.js (>= 20) to deploy the frontend."
