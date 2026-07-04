@@ -1,6 +1,6 @@
 """
 WiFi scanning, monitor mode, packet capture, probe logging,
-rogue AP detection, deauth, handshake capture, and attacks.
+and wifite-based vulnerability auditing.
 """
 
 from flask import Blueprint, request
@@ -62,49 +62,6 @@ def wifi_probes():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
-# anomalies
-
-@bp.route('/wifi/anomalies', methods=['POST'])
-def wifi_anomalies():
-    wifi = get_module('wifi')
-    networks = wifi.scan_networks()
-    if networks is None:
-        return api_error('Alfa WiFi adapter not connected', 400)
-    result = wifi.detect_anomalies(networks)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
-# deauth
-
-@bp.route('/wifi/deauth', methods=['POST'])
-def wifi_deauth():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    if not bssid:
-        return api_error('bssid required', 400)
-    client = data.get('client')
-    count = data.get('count', 5)
-    channel = data.get('channel')
-    wifi = get_module('wifi')
-    result = wifi.deauth_attack(bssid, client=client, count=count, channel=channel)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
-# handshake capture
-
-@bp.route('/wifi/handshake', methods=['POST'])
-def wifi_handshake():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    channel = data.get('channel')
-    if not bssid or not channel:
-        return api_error('bssid and channel required', 400)
-    timeout = data.get('timeout', 60)
-    wifi = get_module('wifi')
-    result = wifi.capture_handshake(bssid, channel, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
 # wifite audit
 
 @bp.route('/wifi/audit/wifite-scan', methods=['POST'])
@@ -156,65 +113,3 @@ def wifi_wifite_status():
         return api_success({'running': True})
     return api_success({'running': False, 'message': 'No attack in progress'})
 
-
-# attack viability check
-
-@bp.route('/wifi/attack/check', methods=['POST'])
-def wifi_attack_check():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    channel = data.get('channel')
-    security = data.get('security')
-    flags = data.get('flags', '')
-    if not bssid or not channel:
-        return api_error('bssid and channel required', 400)
-
-    # Merge security from flags if not provided
-    if not security and flags:
-        from modules.wifi import WiFiModule
-        security, _ = WiFiModule._classify_security(flags)
-
-    wifi = get_module('wifi')
-    result = wifi.check_attack_viability(bssid, channel, security)
-    return api_success(result)
-
-
-# attacks
-
-@bp.route('/wifi/attack/wep', methods=['POST'])
-def wifi_attack_wep():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    channel = data.get('channel')
-    if not bssid or not channel:
-        return api_error('bssid and channel required', 400)
-    timeout = data.get('timeout', 120)
-    wifi = get_module('wifi')
-    result = wifi.attack_wep(bssid, channel, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
-@bp.route('/wifi/attack/wpa', methods=['POST'])
-def wifi_attack_wpa():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    channel = data.get('channel')
-    if not bssid or not channel:
-        return api_error('bssid and channel required', 400)
-    timeout = data.get('timeout', 90)
-    wifi = get_module('wifi')
-    result = wifi.attack_wpa(bssid, channel, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
-@bp.route('/wifi/attack/wps', methods=['POST'])
-def wifi_attack_wps():
-    data = request.json or {}
-    bssid = data.get('bssid')
-    channel = data.get('channel')
-    if not bssid or not channel:
-        return api_error('bssid and channel required', 400)
-    timeout = data.get('timeout', 300)
-    wifi = get_module('wifi')
-    result = wifi.attack_wps(bssid, channel, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)

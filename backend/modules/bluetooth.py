@@ -516,18 +516,6 @@ class BluetoothModule:
         return {'success': True, 'filename': filename,
                 'size': os.path.getsize(path), 'duration': duration}
 
-    def list_hci_captures(self):
-        captures = []
-        try:
-            for name in os.listdir(HCI_CAPTURES_DIR):
-                p = os.path.join(HCI_CAPTURES_DIR, name)
-                if os.path.isfile(p):
-                    st = os.stat(p)
-                    captures.append({'name': name, 'size': st.st_size, 'modified': st.st_mtime})
-        except FileNotFoundError:
-            pass
-        captures.sort(key=lambda c: c['modified'], reverse=True)
-        return {'success': True, 'captures': captures}
 
     # deep scan (bettercap)
 

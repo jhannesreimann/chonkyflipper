@@ -137,12 +137,6 @@ def ir_library_search():
     return api_success({'results': results, 'total': total, 'query': query})
 
 
-@bp.route('/ir/library/stats', methods=['GET'])
-def ir_library_stats():
-    db = _ir_db()
-    return api_success(db.get_stats())
-
-
 # Flipper-IRDB sync
 
 @bp.route('/ir/sync/check', methods=['POST'])

@@ -42,14 +42,6 @@ class ZigbeeAuditModule:
         except Exception as e:
             return '', str(e), 1
 
-    def _check_device(self):
-        """Verify the CC2531 dongle is present (fast USB check)."""
-        try:
-            import usb.core
-            dev = usb.core.find(idVendor=0x0451, idProduct=0x16AE)
-            return dev is not None
-        except Exception:
-            return False
 
     # Passive capture (zbdump)
 
@@ -113,47 +105,7 @@ class ZigbeeAuditModule:
                 'pans': pans, 'channels': channels, 'file': filepath,
                 'output': stdout[-1000:]}
 
-    # Replay attack (zbreplay)
 
-    def replay_packets(self, cap_file, count=1, channel=None):
-        """Replay captured packets for command injection.
-        Note: CC2531 sniffer firmware does not support packet injection.
-        Requires Atmel RZUSBSTICK or similar transmit-capable hardware."""
-        return {'success': False,
-                'error': 'Packet injection not supported on CC2531 sniffer. '
-                         'Replay requires a TX-capable dongle (e.g. RZUSBSTICK).'}
-
-        # zbreplay requires a channel
-        if not channel:
-            channel = 11  # default Zigbee channel
-        args = ['-r', cap_file, '-c', str(channel), '-n', str(count)]
-
-        stdout, stderr, rc = self._run_kb('zbreplay', *args, timeout=30)
-        if rc != 0:
-            return {'success': False,
-                    'error': f'Replay failed: {stderr[:200] or stdout[:200]}'}
-        return {'success': True, 'file': cap_file, 'repeat': count,
-                'channel': channel, 'output': stdout[:500]}
-
-    # Association flood (zbassocflood)
-
-    def assoc_flood(self, channel, pan_id, duration=5):
-        """Flood a PAN with association requests (DoS).
-        Note: CC2531 sniffer firmware does not support packet injection."""
-        return {'success': False,
-                'error': 'Packet injection not supported on CC2531 sniffer. '
-                         'Association flood requires a TX-capable dongle.'}
-
-        # zbassocflood runs until killed; use duration to limit
-        stdout, stderr, rc = self._run_kb(
-            'zbassocflood', '-c', str(channel), '-p', pan_id,
-            '-s', '0.05', timeout=duration + 5,
-        )
-        if rc != 0:
-            return {'success': False,
-                    'error': f'Flood failed: {stderr[:200] or stdout[:200]}'}
-        return {'success': True, 'channel': channel, 'pan_id': pan_id,
-                'duration': duration, 'output': stdout[:500]}
 
     # Key extraction (zbdsniff)
 

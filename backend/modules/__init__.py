@@ -14,6 +14,7 @@
 #   from modules.pn532 import PN532Module
 #   from modules.badusb import BadUSBModule
 #   from modules.zigbee import ZigbeeModule
+#   from modules.zigbee_audit import ZigbeeAuditModule
 
 __all__ = [
     'WiFiModule',
@@ -23,4 +24,5 @@ __all__ = [
     'PN532Module',
     'BadUSBModule',
     'ZigbeeModule',
+    'ZigbeeAuditModule',
 ]

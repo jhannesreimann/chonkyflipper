@@ -1,5 +1,7 @@
 """
 Zigbee security auditing endpoints (CC2531 sniffer + KillerBee).
+Passive capture and analysis only -- the CC2531 with stock TI firmware
+is RX-only and cannot transmit.
 """
 
 from flask import Blueprint, request
@@ -33,36 +35,6 @@ def zigbee_audit_scan():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
-# replay
-
-@bp.route('/zigbee/audit/replay', methods=['POST'])
-def zigbee_audit_replay():
-    data = request.json or {}
-    cap_file = data.get('file')
-    if not cap_file:
-        return api_error('file (path to pcap) required', 400)
-    count = data.get('count', 1)
-    channel = data.get('channel')
-    zb = get_module('zigbee_audit')
-    result = zb.replay_packets(cap_file, count=count, channel=channel)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Replay failed'), 500)
-
-
-# assoc flood
-
-@bp.route('/zigbee/audit/flood', methods=['POST'])
-def zigbee_audit_flood():
-    data = request.json or {}
-    channel = data.get('channel')
-    pan_id = data.get('pan_id')
-    if not channel or not pan_id:
-        return api_error('channel and pan_id required', 400)
-    duration = data.get('duration', 5)
-    zb = get_module('zigbee_audit')
-    result = zb.assoc_flood(channel, pan_id, duration=duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Flood failed'), 500)
-
-
 # list captures
 
 @bp.route('/zigbee/audit/captures', methods=['GET'])
@@ -94,11 +66,3 @@ def zigbee_audit_discover():
     result = zb.discover_devices(cap_file)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Discovery failed'), 500)
 
-
-# device check
-
-@bp.route('/zigbee/audit/device', methods=['GET'])
-def zigbee_audit_device():
-    zb = get_module('zigbee_audit')
-    present = zb._check_device()
-    return api_success({'cc2531_present': present})

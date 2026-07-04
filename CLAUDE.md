@@ -115,7 +115,7 @@ The IR functionality spans four files:
 - **Device discovery**: `discover_devices()` uses tshark to parse pcap files, extracting MACs, PAN IDs, roles, and encryption status. Cross-references with Zigbee2MQTT coordinator for device names/models.
 - **ZCL identification**: Attempts decryption with Z2M network key from config, maps cluster IDs to device types (On/Off=switch, Temperature=sensor, etc.).
 - **Frontend**: `zigbee-sniffer.js` with 3 tabs (Scan, Capture, Extract). Sidebar shows expandable Zigbee entry with Coordinator (SONOFF) and Sniffer (CC2531) sub-items.
-- **Routes**: `/api/zigbee/audit/` prefix -- `device`, `capture`, `scan`, `discover`, `extract-keys`, `replay`, `flood`, `captures`.
+- **Routes**: `/api/zigbee/audit/` prefix -- `capture`, `scan`, `discover`, `extract-keys`, `captures`.
 
 ### NFC / RFID (PN532 + libnfc)
 - **`pn532.py`** wraps libnfc CLI tools (`nfc-list`, `nfc-mfclassic`, `mfoc`) for card read, block write, full sector dump/clone, and key recovery.
@@ -135,7 +135,7 @@ The IR functionality spans four files:
 - Character map covers printable ASCII plus shifted variants.
 
 ### WiFi Scanning
-WiFi scanning is in `routes/wifi.py` via `_wpa_scan()` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and deauth. The old `WiFiModule.scan()` (iwlist-based, 60 lines) was dead code and has been removed.
+WiFi scanning is in `routes/wifi.py` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and wifite-based vulnerability auditing.
 
 - **rtl8821au driver gotcha**: Never use `ifconfig` to bring wlan1 down/up; it corrupts the driver state and causes `Invalid HW-addr family 0x0323` when wpa_supplicant tries to init. Use `ip link set down/up` instead. `stop_monitor_mode()` uses `ip link` + `iw set type managed` + `ip link set promisc off` to reliably exit monitor mode. If the interface gets into a broken state (promisc stuck, scans return empty), reload the module: `modprobe -r 8821au && modprobe 8821au`.
 

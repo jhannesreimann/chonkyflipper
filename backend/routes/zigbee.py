@@ -16,13 +16,6 @@ def zigbee_bridge():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
-@bp.route('/zigbee/devices', methods=['GET'])
-def zigbee_devices():
-    zigbee = get_module('zigbee')
-    result = zigbee.get_devices()
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
 @bp.route('/zigbee/permit_join', methods=['POST'])
 def zigbee_permit_join():
     data = request.json or {}
@@ -30,13 +23,6 @@ def zigbee_permit_join():
     duration = data.get('duration', 254)
     zigbee = get_module('zigbee')
     result = zigbee.permit_join(enable, duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
-
-
-@bp.route('/zigbee/device/<device_name>', methods=['GET'])
-def zigbee_device_state(device_name):
-    zigbee = get_module('zigbee')
-    result = zigbee.get_device_state(device_name)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 

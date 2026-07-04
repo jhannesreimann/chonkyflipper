@@ -33,19 +33,6 @@ def bluetooth_beacons():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
 
 
-@bp.route('/bluetooth/capture', methods=['POST'])
-def bluetooth_capture():
-    data = request.json or {}
-    try:
-        duration = int(data.get('duration', 15))
-    except (TypeError, ValueError):
-        return api_error('duration must be an integer (seconds)', 400)
-    duration = max(1, min(duration, 120))
-    bt = get_module('bluetooth')
-    result = bt.log_advertisements(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Capture failed'), 500)
-
-
 @bp.route('/bluetooth/gatt', methods=['POST'])
 def bluetooth_gatt():
     data = request.json or {}
@@ -81,12 +68,6 @@ def bluetooth_capture_hci():
     bt = get_module('bluetooth')
     result = bt.capture_hci(duration)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'HCI capture failed'), 500)
-
-
-@bp.route('/bluetooth/captures', methods=['GET'])
-def bluetooth_captures():
-    bt = get_module('bluetooth')
-    return api_success(bt.list_hci_captures())
 
 
 @bp.route('/bluetooth/spoof', methods=['POST'])

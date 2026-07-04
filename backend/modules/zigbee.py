@@ -158,16 +158,6 @@ class ZigbeeModule:
             }
         return {'success': True, 'state': state, 'info': info}
 
-    def get_devices(self):
-        if not self._ensure_connected():
-            return {'success': False, 'error': 'MQTT broker not available'}
-        time.sleep(0.5)
-        with self._lock:
-            devices = self._cache.get(f'{self.BASE_TOPIC}/bridge/devices', [])
-        return {
-            'success': True,
-            'devices': devices if isinstance(devices, list) else [],
-        }
 
     def get_device_dashboard(self):
         """
@@ -263,14 +253,6 @@ class ZigbeeModule:
             return {'success': False, 'error': error}
         return {'success': True, 'result': result}
 
-    def get_device_state(self, device_name):
-        if not self._ensure_connected():
-            return {'success': False, 'error': 'MQTT broker not available'}
-        self._client.publish(f'{self.BASE_TOPIC}/{device_name}/get', json.dumps({'state': ''}))
-        time.sleep(0.5)
-        with self._lock:
-            state = self._cache.get(f'{self.BASE_TOPIC}/{device_name}')
-        return {'success': True, 'device': device_name, 'state': state}
 
     def set_device_state(self, device_name, payload):
         if not self._ensure_connected():
