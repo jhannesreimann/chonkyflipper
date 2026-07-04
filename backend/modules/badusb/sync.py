@@ -269,8 +269,11 @@ class BadUSBSync:
             return {'success': True, 'action': 'up_to_date', 'repo': repo_info['name'],
                     'files_added': 0, 'files_updated': 0, 'sha': status.get('sha', '')}
 
-        # Determine files to import
-        if action == 'cloned' or not status.get('old_sha'):
+        # Determine files to import. Do a full scan when: freshly cloned, git
+        # didn't report an old SHA, or the DB was reset (no stored SHA for
+        # this repo). Otherwise only import files changed since last sync.
+        stored_sha = self.db.get_sync_state(f'sha_{repo_info["name"]}')
+        if action == 'cloned' or not status.get('old_sha') or not stored_sha:
             changed = self._find_all_txt_files(repo_dir)
         else:
             changed = self._get_changed_files(
