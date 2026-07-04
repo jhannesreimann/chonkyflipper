@@ -465,7 +465,7 @@ class BadUSBDB:
             for key, pat in patterns.items():
                 m = re.match(pat, line, re.IGNORECASE)
                 if m:
-                    val = m.group(1).strip().rstrip('|').strip()
+                    val = m.group(1).strip().rstrip('|# ').strip()
                     headers[key] = val
         return headers
 
