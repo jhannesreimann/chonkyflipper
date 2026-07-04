@@ -60,10 +60,11 @@ class BadUSBDB:
         if self._conn is not None:
             return self._conn
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('PRAGMA synchronous=NORMAL')
         conn.execute('PRAGMA foreign_keys=ON')
+        conn.execute('PRAGMA busy_timeout=10000')
         conn.row_factory = sqlite3.Row
         self._conn = conn
         return conn
@@ -172,18 +173,42 @@ class BadUSBDB:
         row = conn.execute('SELECT id FROM os_types WHERE slug = ?', (slug,)).fetchone()
         return row['id'] if row else None
 
-    def _resolve_os(self, target_text):
-        """Infer OS slug from REM Target: text or directory name."""
+    def _resolve_os(self, target_text, dirpath='', content=''):
+        """Infer OS slug from REM Target: text, directory name, or content."""
         t = (target_text or '').lower()
+        d = (dirpath or '').lower()
+        c = (content or '').lower()
+
+        # Content-based detection (strongest signal for Windows)
+        if 'powershell' in c or 'cmd.exe' in c or 'reg add' in c or 'wmic ' in c:
+            return 'windows'
+        if 'ipconfig' in c or 'netsh ' in c:
+            return 'windows'
+        if 'bash ' in c or '/etc/' in c or '#!/bin/bash' in c:
+            return 'linux'
+        if 'apt-get' in c or 'systemctl' in c:
+            return 'linux'
+        if 'osascript' in c or 'open -a' in c:
+            return 'macos'
+
+        combined = f'{t} {d}'
         if 'windows' in t or 'win' in t:
             return 'windows'
-        if 'linux' in t or 'ubuntu' in t or 'debian' in t or 'kali' in t:
+        if 'linux' in combined or 'ubuntu' in combined or 'debian' in combined or 'kali' in combined:
             return 'linux'
-        if 'macos' in t or 'mac os' in t or 'osx' in t or t.startswith('mac'):
+        if 'unix-like' in d:
+            return 'linux'
+        if 'gnu-linux' in d:
+            return 'linux'
+        if 'macos' in combined or 'mac os' in combined or 'osx' in combined:
             return 'macos'
-        if 'android' in t:
+        if '/macos/' in d or 'macos' in d:
+            return 'macos'
+        if t.startswith('mac') and 'macos' not in t and 'machine' not in t:
+            return 'macos'
+        if 'android' in combined:
             return 'android'
-        if 'ios' in t or 'iphone' in t or 'ipad' in t:
+        if 'ios' in combined or 'iphone' in combined or 'ipad' in combined:
             return 'ios'
         return 'cross-platform'
 
@@ -389,11 +414,11 @@ class BadUSBDB:
 
                 headers = self._parse_rem_headers(content)
                 name = headers.get('title') or fname.replace('.txt', '').replace('_', ' ').title()
-                os_slug = self._resolve_os(headers.get('target', ''))
+                os_slug = self._resolve_os(headers.get('target', ''), content=content)
                 if not headers.get('target'):
                     # Infer from directory structure
                     dir_os = os.path.dirname(rel).split(os.sep)[0] if os.sep in rel else ''
-                    os_slug = self._resolve_os(dir_os)
+                    os_slug = self._resolve_os(dir_os, content=content)
                 cat = self._resolve_category(
                     headers.get('category', ''),
                     os.path.dirname(rel)
@@ -420,29 +445,28 @@ class BadUSBDB:
         """Extract metadata from REM comment headers in DuckyScript."""
         headers = {}
         patterns = {
-            'title': r'REM\s+Title:\s*(.+)',
-            'author': r'REM\s+Author:\s*(.+)',
-            'description': r'REM\s+Description:\s*(.+)',
-            'target': r'REM\s+Target:\s*(.+)',
-            'category': r'REM\s+Category:\s*(.+)',
-            'props': r'REM\s+Props:\s*(.+)',
-            'version': r'REM\s+Version:\s*(.+)',
-            'layout': r'REM\s+Layout:\s*(.+)',
+            'title': r'REM\s+#?\s*Title\s*:\s*(.+)',
+            'author': r'REM\s+#?\s*Author\s*:\s*(.+)',
+            'description': r'REM\s+#?\s*Description\s*:\s*(.+)',
+            'target': r'REM\s+#?\s*Target\s*:\s*(.+)',
+            'category': r'REM\s+#?\s*Category\s*:\s*(.+)',
+            'props': r'REM\s+#?\s*Props\s*:\s*(.+)',
+            'version': r'REM\s+#?\s*Version\s*:\s*(.+)',
+            'layout': r'REM\s+#?\s*Layout\s*:\s*(.+)',
         }
         import re
         for line in content.split('\n'):
             line = line.strip()
             if not line.upper().startswith('REM '):
-                # Only parse REM lines at the top of the file
                 if line and not line.upper().startswith('REM'):
-                    # Stop at first non-REM, non-blank line (body started)
                     if headers:
                         break
                 continue
             for key, pat in patterns.items():
                 m = re.match(pat, line, re.IGNORECASE)
                 if m:
-                    headers[key] = m.group(1).strip()
+                    val = m.group(1).strip().rstrip('|').strip()
+                    headers[key] = val
         return headers
 
     def _find_by_source(self, repo, path):

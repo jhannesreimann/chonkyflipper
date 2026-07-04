@@ -218,6 +218,9 @@ async function loadPayloadList(body) {
 
 function payloadRow(p) {
   const osBadge = `<span class="badge badge-xs badge-outline">${esc(p.os_name || '?')}</span>`
+  const localBadge = p.source_repo === 'filesystem'
+    ? '<span class="badge badge-xs badge-warning badge-outline">local</span>'
+    : ''
   return `
   <button class="w-full flex items-center justify-between gap-3 rounded-xl bg-base-200/50 px-3 py-2.5 mb-2 hover:bg-base-200 transition-colors text-left"
           data-payload="${p.id}">
@@ -225,6 +228,7 @@ function payloadRow(p) {
       <span class="block font-medium text-sm truncate">${esc(p.name)}</span>
       <span class="flex items-center gap-1.5 mt-0.5">
         ${osBadge}
+        ${localBadge}
         <span class="text-[0.65rem] text-base-content/45">${esc(p.category_name || '')}</span>
         ${p.author ? `<span class="text-[0.65rem] text-base-content/30">by ${esc(p.author)}</span>` : ''}
       </span>
@@ -263,6 +267,8 @@ async function showPayloadDetail(body, payloadId) {
             <div class="flex flex-wrap items-center gap-1.5 mt-1">
               ${p.os_name ? `<span class="badge badge-sm badge-primary">${esc(p.os_name)}</span>` : ''}
               ${p.category_name ? `<span class="badge badge-sm badge-ghost">${esc(p.category_name)}</span>` : ''}
+              ${p.source_repo === 'filesystem' ? '<span class="badge badge-xs badge-outline badge-warning">local</span>' : ''}
+              ${p.source_repo && p.source_repo !== 'filesystem' ? `<span class="badge badge-xs badge-outline badge-info">${esc(p.source_repo)}</span>` : ''}
               ${p.layout ? `<span class="badge badge-xs badge-outline">${esc(p.layout.toUpperCase())}</span>` : ''}
               ${p.target ? `<span class="text-xs text-base-content/60">${esc(p.target)}</span>` : ''}
             </div>

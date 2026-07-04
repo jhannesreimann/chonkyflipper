@@ -96,7 +96,7 @@ backend/
         pn532.py        NFC/RFID reader/writer (I2C)
         zigbee.py       Zigbee2MQTT bridge (MQTT)
         zigbee_audit.py Zigbee security auditing (CC2531 + KillerBee)
-        badusb/             USB HID interpreter, keymaps, DB, sync engine
+        badusb/         USB HID interpreter, keymaps, DB, sync engine
     requirements.txt
 
 frontend/

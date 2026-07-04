@@ -133,15 +133,16 @@ class BadUSBSync:
     def _parse_rem_headers(self, content):
         """Extract metadata from REM comment headers in DuckyScript."""
         headers = {}
+        # Match various formats: "REM Title: ..." / "REM # Title : ... |" / "REM  Title : ..."
         patterns = {
-            'title': r'REM\s+Title:\s*(.+)',
-            'author': r'REM\s+Author:\s*(.+)',
-            'description': r'REM\s+Description:\s*(.+)',
-            'target': r'REM\s+Target:\s*(.+)',
-            'category': r'REM\s+Category:\s*(.+)',
-            'props': r'REM\s+Props:\s*(.+)',
-            'version': r'REM\s+Version:\s*(.+)',
-            'layout': r'REM\s+Layout:\s*(.+)',
+            'title': r'REM\s+#?\s*Title\s*:\s*(.+)',
+            'author': r'REM\s+#?\s*Author\s*:\s*(.+)',
+            'description': r'REM\s+#?\s*Description\s*:\s*(.+)',
+            'target': r'REM\s+#?\s*Target\s*:\s*(.+)',
+            'category': r'REM\s+#?\s*Category\s*:\s*(.+)',
+            'props': r'REM\s+#?\s*Props\s*:\s*(.+)',
+            'version': r'REM\s+#?\s*Version\s*:\s*(.+)',
+            'layout': r'REM\s+#?\s*Layout\s*:\s*(.+)',
         }
         for line in content.split('\n'):
             line = line.strip()
@@ -153,18 +154,38 @@ class BadUSBSync:
             for key, pat in patterns.items():
                 m = re.match(pat, line, re.IGNORECASE)
                 if m:
-                    headers[key] = m.group(1).strip()
+                    val = m.group(1).strip().rstrip('|').strip()
+                    headers[key] = val
         return headers
 
-    def _resolve_os(self, target_text, dirpath=''):
+    def _resolve_os(self, target_text, dirpath='', content=''):
         t = (target_text or '').lower()
         d = dirpath.lower()
+        c = (content or '').lower()
         combined = f'{t} {d}'
-        if 'windows' in combined or 'win' in t:
+
+        # Check content for OS-specific indicators first
+        if 'powershell' in c or 'netsh ' in c or 'ipconfig' in c or 'reg add' in c or 'wmic ' in c:
             return 'windows'
+        if 'cmd.exe' in c or '\\\\windows\\\\' in c or '\\\\win32\\\\' in c:
+            return 'windows'
+        if 'bash ' in c or '/etc/' in c or '#!/bin/bash' in c or '#!/bin/sh' in c:
+            return 'linux'
+        if 'apt-get' in c or 'apt install' in c or 'systemctl' in c or 'gsettings' in c:
+            return 'linux'
+
+        if 'windows' in t or 'win' in t:
+            return 'windows'
+        if 'unix-like' in d or 'gnu-linux' in d:
+            return 'linux'
         if 'linux' in combined or 'ubuntu' in combined or 'debian' in combined or 'kali' in combined:
             return 'linux'
         if 'macos' in combined or 'mac os' in combined or 'osx' in combined or 'mac' in t:
+            return 'macos'
+        if 'unix-like' in d and 'macos' in d:
+            return 'macos'
+        # Starvinci: Unix-like/macOS vs Unix-like/Linux
+        if '/macos/' in d.lower() or 'macos' in d.lower():
             return 'macos'
         if 'android' in combined:
             return 'android'
@@ -201,12 +222,21 @@ class BadUSBSync:
             return None
 
         headers = self._parse_rem_headers(content)
-        name = headers.get('title') or os.path.splitext(os.path.basename(filepath))[0]
+        fname = os.path.splitext(os.path.basename(filepath))[0]
+        # If the filename is generic (payload, Payload) use the parent directory
+        if fname.lower() in ('payload', 'inject', 'ducky'):
+            parent = os.path.basename(os.path.dirname(filepath))
+            if parent and parent.lower() not in ('payloads', 'library', 'directly_ready',
+                                                  'configuration_needed', 'windows',
+                                                  'linux', 'macos', 'gnu-linux'):
+                fname = parent
+        name = headers.get('title') or fname
         name = name.replace('_', ' ').replace('-', ' ').strip().title()
 
         os_slug = self._resolve_os(
             headers.get('target', ''),
-            os.path.dirname(filepath)
+            os.path.dirname(filepath),
+            content
         )
         cat = self._resolve_category(
             headers.get('category', ''),
