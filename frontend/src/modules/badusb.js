@@ -10,6 +10,20 @@ const TABS = [
   { id: 'files', label: 'Files', icon: 'fa-folder' },
 ]
 
+const OS_ICONS = {
+  windows:   { icon: 'fa-brands fa-windows', color: '#00A4EF' },
+  linux:     { icon: 'fa-brands fa-linux', color: '#FCC624' },
+  macos:     { icon: 'fa-brands fa-apple', color: '#A3AAAE' },
+  android:   { icon: 'fa-brands fa-android', color: '#3DDC84' },
+  ios:       { icon: 'fa-solid fa-mobile-screen', color: '#8E8E93' },
+  'cross-platform': { icon: 'fa-solid fa-globe', color: '#6B7280' },
+}
+
+function osIcon(slug) {
+  const o = OS_ICONS[slug] || OS_ICONS['cross-platform']
+  return `<i class="${o.icon}" style="color:${o.color}" title="${slug}"></i>`
+}
+
 let active = 'library'
 let selectedLayout = 'us'
 
@@ -111,9 +125,9 @@ async function loadOSGrid(body) {
     // OS filter pills
     const osRow = body.querySelector('#bu-os-row')
     osRow.innerHTML = [
-      `<button class="btn btn-xs ${navOS === null ? 'btn-primary' : 'btn-ghost'}" data-os-all>All</button>`,
+      `<button class="btn btn-xs ${navOS === null ? 'btn-primary' : 'btn-outline'}" data-os-all>All</button>`,
       ...osTypes.map((o) =>
-        `<button class="btn btn-xs ${navOS === o.slug ? 'btn-primary' : 'btn-ghost'}" data-os="${esc(o.slug)}">${esc(o.name)} <span class="text-base-content/40 ml-0.5">${o.payload_count}</span></button>`,
+        `<button class="btn btn-xs ${navOS === o.slug ? 'btn-primary' : 'btn-outline'}" data-os="${esc(o.slug)}">${esc(o.name)} <span class="text-base-content/40 ml-0.5">${o.payload_count}</span></button>`,
       ),
     ].join('')
     osRow.querySelectorAll('[data-os-all]').forEach((b) =>
@@ -148,7 +162,7 @@ async function loadCategoryGrid(body) {
   try {
     const params = navOS ? `?os=${encodeURIComponent(navOS)}` : ''
     const d = await apiGet(`/badusb/library/categories${params}`, { timeout: 10000 })
-    const cats = d.categories || []
+    const cats = (d.categories || []).filter((c) => c.payload_count > 0)
 
     const osLabel = navOS
       ? (navOS.charAt(0).toUpperCase() + navOS.slice(1))
@@ -217,7 +231,7 @@ async function loadPayloadList(body) {
 }
 
 function payloadRow(p) {
-  const osBadge = `<span class="badge badge-xs badge-outline">${esc(p.os_name || '?')}</span>`
+  const osIconBadge = osIcon(p.os_slug || 'cross-platform')
   const localBadge = p.source_repo === 'filesystem'
     ? '<span class="badge badge-xs badge-warning badge-outline">local</span>'
     : ''
@@ -227,7 +241,7 @@ function payloadRow(p) {
     <span class="min-w-0">
       <span class="block font-medium text-sm truncate">${esc(p.name)}</span>
       <span class="flex items-center gap-1.5 mt-0.5">
-        ${osBadge}
+        ${osIconBadge}
         ${localBadge}
         <span class="text-[0.65rem] text-base-content/45">${esc(p.category_name || '')}</span>
         ${p.author ? `<span class="text-[0.65rem] text-base-content/30">by ${esc(p.author)}</span>` : ''}
@@ -265,7 +279,7 @@ async function showPayloadDetail(body, payloadId) {
           <div class="min-w-0">
             <h3 class="font-semibold text-base">${esc(p.name)}</h3>
             <div class="flex flex-wrap items-center gap-1.5 mt-1">
-              ${p.os_name ? `<span class="badge badge-sm badge-primary">${esc(p.os_name)}</span>` : ''}
+              ${p.os_name ? `<span class="badge badge-sm badge-primary">${osIcon(p.os_slug || 'cross-platform')} ${esc(p.os_name)}</span>` : ''}
               ${p.category_name ? `<span class="badge badge-sm badge-ghost">${esc(p.category_name)}</span>` : ''}
               ${p.source_repo === 'filesystem' ? '<span class="badge badge-xs badge-outline badge-warning">local</span>' : ''}
               ${p.source_repo && p.source_repo !== 'filesystem' ? `<span class="badge badge-xs badge-outline badge-info">${esc(p.source_repo)}</span>` : ''}

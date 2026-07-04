@@ -105,12 +105,7 @@ if [ -d "$REPO_DIR/payloads" ]; then
     echo "  ✓ payloads (IR + BadUSB)"
 fi
 
-# -- Update update.sh itself --
-if [ -f "$REPO_DIR/update.sh" ]; then
-    cp "$REPO_DIR/update.sh" "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/update.sh"
-    echo "  ✓ update.sh (self-updated)"
-fi
+# update.sh self-update moved to end of script
 
 # -- Create data directory for databases --
 mkdir -p "$INSTALL_DIR/data"
@@ -171,6 +166,14 @@ chmod +x "$INSTALL_DIR/update.sh" 2>/dev/null || true
 
 # -- Restart service --
 echo ""
+# Self-update (must be last before restart — overwriting the running script
+# mid-execution causes syntax errors when bash re-reads the file)
+if [ -f "$REPO_DIR/update.sh" ]; then
+    cp "$REPO_DIR/update.sh" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/update.sh"
+    echo "  ✓ update.sh (self-updated)"
+fi
+
 echo "Restarting ChonkyFlipper service..."
 systemctl restart chonkyflipper
 
