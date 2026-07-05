@@ -69,6 +69,10 @@ function libraryView(body) {
         <select id="bu-layout" class="select select-bordered select-sm w-16" title="Keyboard layout of the target machine"></select>
       </div>
     </div>
+    <div id="bu-armed" class="hidden mb-3 rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 flex items-center justify-between gap-2">
+      <span class="text-sm"><i class="fa-solid fa-bolt text-warning mr-1.5"></i><span id="bu-armed-label">Armed</span></span>
+      <button id="bu-armed-cancel" class="btn btn-ghost btn-xs text-warning gap-1"><i class="fa-solid fa-xmark"></i>Cancel</button>
+    </div>
     <div id="bu-os-row" class="flex flex-wrap gap-1.5 mb-3"></div>
     <div id="bu-crumb" class="text-xs text-base-content/60 mb-3 hidden"></div>
     <div id="bu-list" class="overflow-y-auto overscroll-contain max-h-[55vh] sm:max-h-[60vh] -mx-1 px-1"></div>
@@ -84,6 +88,7 @@ function libraryView(body) {
     if (e.key === 'Enter') doSearch(body, search.value.trim())
   })
   body.querySelector('#bu-sync').addEventListener('click', () => syncStart(body))
+  body.querySelector('#bu-armed-cancel').addEventListener('click', () => cancelArm(body))
 
   const layoutSel = body.querySelector('#bu-layout')
   layoutSel.innerHTML = ['us', 'de'].map((l) => `<option value="${l}"${l === selectedLayout ? ' selected' : ''}>${l.toUpperCase()}</option>`).join('')
@@ -92,6 +97,7 @@ function libraryView(body) {
   // Reset nav and show OS grid
   navOS = null; navCategory = null; navPayload = null
   loadOSGrid(body)
+  checkArmStatus(body)
 }
 
 // -- breadcrumbs --------------------------------------------------------------
@@ -457,11 +463,44 @@ async function executeContent(content, label) {
   }
 }
 
+async function checkArmStatus(body) {
+  try {
+    const d = await apiGet('/badusb/arm/status', { timeout: 3000 })
+    const bar = body.querySelector('#bu-armed')
+    const label = body.querySelector('#bu-armed-label')
+    if (d.armed) {
+      bar.classList.remove('hidden')
+      const name = d.payload_name || `#${d.payload_id || 'inline'}`
+      label.textContent = `Armed: "${name}"`
+    } else {
+      bar.classList.add('hidden')
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function cancelArm(body) {
+  try {
+    const d = await apiPost('/badusb/arm/cancel', {}, { timeout: 3000 })
+    if (!d.success) throw new Error(d.error || 'Cancel failed')
+    body.querySelector('#bu-armed').classList.add('hidden')
+    notify('Auto-fire cancelled', 'info')
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
 async function armPayload(payloadId, name, content, layout) {
   try {
     const d = await apiPost('/badusb/arm', { id: payloadId, content, layout: layout || selectedLayout, payload: name }, { timeout: 5000 })
     if (!d.success) throw new Error(d.error || 'Arm failed')
     notify(`Armed: "${name}" will fire when USB is connected`, 'warning')
+    // Show armed bar
+    const bar = document.querySelector('#bu-armed')
+    const label = document.querySelector('#bu-armed-label')
+    if (bar && label) {
+      bar.classList.remove('hidden')
+      label.textContent = `Armed: "${name}"`
+    }
   } catch (e) {
     notify(e.message, 'error')
   }
