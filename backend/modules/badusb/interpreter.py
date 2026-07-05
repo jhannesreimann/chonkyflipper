@@ -231,6 +231,13 @@ class _StmtParser:
         h2 = parts[1].upper() if len(parts) > 1 else ''
         return h1, h2
 
+    def _skip_to(self, keyword):
+        """Advance past lines until keyword is found. Does not consume it."""
+        while not self._at_end():
+            if self.lines[self.i][1].split(None, 1)[0].upper() == keyword.upper():
+                return
+            self.i += 1
+
     def parse_block(self, terminators):
         nodes = []
         while not self._at_end():
@@ -248,6 +255,13 @@ class _StmtParser:
             elif h1 == 'DEFINE':
                 nodes.append(self._parse_define(lineno, s))
                 self.i += 1
+            elif h1 in ('EXTENSION', 'FUNCTION'):
+                # Skip EXTENSION/FUNCTION blocks (Hak5 extensions we don't
+                # implement). END_EXTENSION/END_FUNCTION close them.
+                term = 'END_' + h1
+                self.i += 1
+                self._skip_to(term)
+                self.i += 1  # consume the END_* line
             elif s[0] == '#':
                 # Bare #varname on a line: expand DEFINE'd constant, or no-op.
                 # Strip the # prefix and look it up at runtime.
@@ -277,7 +291,12 @@ class _StmtParser:
                 self.i += 1
                 return ('if', branches, else_body, lineno)
             if h1 == 'ELSE' and h2 == 'IF':
+                # ELSE IF (condition) THEN — but some payloads write bare
+                # "ELSE IF" with no condition. Treat as plain ELSE.
                 _, s2 = self.lines[self.i]
+                if not (s2 and '(' in s2):
+                    else_body = self.parse_block({'END_IF'})
+                    break
                 self.i += 1
                 branches.append((self._cond(s2), self.parse_block({'ELSE', 'END_IF'})))
             elif h1 == 'ELSE':
@@ -319,7 +338,12 @@ class _StmtParser:
             name = name[1:]
         if not name:
             raise ValueError(f'missing variable name in DEFINE at line {lineno}')
-        return ('assign', name, compile_expr(parts[2]), lineno)
+        try:
+            return ('assign', name, compile_expr(parts[2]), lineno)
+        except ValueError:
+            # Value isn't a numeric expression (e.g. DEFINE #SHORTCUT ALT j).
+            # Store as a string command that will be expanded later.
+            return ('define_cmd', name, parts[2], lineno)
 
 
 def parse(text):
@@ -336,6 +360,7 @@ class Interpreter:
     def __init__(self, backend):
         self.b = backend
         self.vars = {}
+        self._define_cmds = {}
         self.default_delay = 0
         self.char_delay = 0
         self.jitter = 0
@@ -358,13 +383,14 @@ class Interpreter:
         kind = node[0]
         if kind == 'cmd':
             self.exec_cmd(node)
+        elif kind == 'define_cmd':
+            # DEFINE #NAME with a command value (e.g. DEFINE #SHORTCUT ALT j).
+            self._define_cmds[node[1]] = node[2]
         elif kind == 'expand_def':
-            # Bare #varname on a line: resolve and execute if it maps to
-            # a command sequence (DEFINE #SHORTCUT ALT j style), or no-op.
+            # Bare #varname on a line: execute stored DEFINE command text.
             _kind, name, _lineno = node
-            expanded = self.vars.get(name, 0)
-            if expanded and isinstance(expanded, str):
-                self.exec_cmd(('cmd', expanded, '', _lineno))
+            if name in self._define_cmds:
+                self.exec_cmd(('cmd', self._define_cmds[name], '', _lineno))
         elif kind == 'assign':
             self.vars[node[1]] = eval_ast(node[2], self.vars)
         elif kind == 'if':
