@@ -136,7 +136,9 @@ class _ExprParser:
                 if self._next() != ('op', ')'):
                     raise ValueError('missing ) in function call')
                 return ('call', t[1].upper(), args)
-            raise ValueError(f'unexpected identifier {t[1]!r}')
+            # Bare identifiers (like WINDOWS, NOT_WINDOWS) are string
+            # constants in Hak5 PayloadStudio. Treat them as 0 (false).
+            return ('num', 0)
         raise ValueError(f'unexpected token {t[1]!r}')
 
 
@@ -240,11 +242,16 @@ class _StmtParser:
                 nodes.append(self._parse_if())
             elif h1 == 'WHILE':
                 nodes.append(self._parse_while())
-            elif h1 == 'VAR' or s[0] == '$' or s[0] == '#':
+            elif h1 == 'VAR' or s[0] == '$':
                 nodes.append(self._parse_assign(lineno, s))
                 self.i += 1
             elif h1 == 'DEFINE':
                 nodes.append(self._parse_define(lineno, s))
+                self.i += 1
+            elif s[0] == '#':
+                # Bare #varname on a line: expand DEFINE'd constant, or no-op.
+                # Strip the # prefix and look it up at runtime.
+                nodes.append(('expand_def', s[1:].strip(), lineno))
                 self.i += 1
             else:
                 split = s.split(None, 1)
@@ -351,6 +358,13 @@ class Interpreter:
         kind = node[0]
         if kind == 'cmd':
             self.exec_cmd(node)
+        elif kind == 'expand_def':
+            # Bare #varname on a line: resolve and execute if it maps to
+            # a command sequence (DEFINE #SHORTCUT ALT j style), or no-op.
+            _kind, name, _lineno = node
+            expanded = self.vars.get(name, 0)
+            if expanded and isinstance(expanded, str):
+                self.exec_cmd(('cmd', expanded, '', _lineno))
         elif kind == 'assign':
             self.vars[node[1]] = eval_ast(node[2], self.vars)
         elif kind == 'if':
