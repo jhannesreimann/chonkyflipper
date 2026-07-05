@@ -13,9 +13,9 @@ const TABS = [
 const OS_ICONS = {
   windows:   { icon: 'fa-brands fa-windows', color: '#00A4EF' },
   linux:     { icon: 'fa-brands fa-linux', color: '#FCC624' },
-  macos:     { svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="inline-block align-[-1px]"><path d="M2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5C16.4783 2.5 18.7175 2.5 20.1088 3.89124C21.5 5.28249 21.5 7.52166 21.5 12C21.5 16.4783 21.5 18.7175 20.1088 20.1088C18.7175 21.5 16.4783 21.5 12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 8V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 8V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 16.5C10.5 18.5 13.5 18.5 17 16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.9896 2.5C12.1238 3.78525 10.5163 7.71349 10.0737 11.5798C9.98097 12.3899 9.9346 12.795 10.1905 13.1176C10.2151 13.1486 10.2474 13.1843 10.2757 13.212C10.5708 13.5 11.0149 13.5 11.9031 13.5C12.3889 13.5 12.6317 13.5 12.7766 13.6314C12.7923 13.6457 12.8051 13.6588 12.819 13.6748C12.9468 13.8225 12.9383 14.072 12.9212 14.5709C12.8685 16.1156 12.9401 19.0524 14 21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  macos:     { svg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block align-[-2px]"><path d="M2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5C16.4783 2.5 18.7175 2.5 20.1088 3.89124C21.5 5.28249 21.5 7.52166 21.5 12C21.5 16.4783 21.5 18.7175 20.1088 20.1088C18.7175 21.5 16.4783 21.5 12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 8V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 8V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 16.5C10.5 18.5 13.5 18.5 17 16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.9896 2.5C12.1238 3.78525 10.5163 7.71349 10.0737 11.5798C9.98097 12.3899 9.9346 12.795 10.1905 13.1176C10.2151 13.1486 10.2474 13.1843 10.2757 13.212C10.5708 13.5 11.0149 13.5 11.9031 13.5C12.3889 13.5 12.6317 13.5 12.7766 13.6314C12.7923 13.6457 12.8051 13.6588 12.819 13.6748C12.9468 13.8225 12.9383 14.072 12.9212 14.5709C12.8685 16.1156 12.9401 19.0524 14 21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   android:   { icon: 'fa-brands fa-android', color: '#3DDC84' },
-  ios:       { icon: 'fa-brands fa-apple', color: '#555' },
+  ios:       { icon: 'fa-brands fa-apple', color: '#999' },
   'cross-platform': { icon: 'fa-solid fa-globe', color: '#6B7280' },
 }
 
@@ -283,7 +283,7 @@ async function showPayloadDetail(body, payloadId) {
           <div class="flex items-center gap-2">
             <button id="bu-edit-btn" class="btn btn-outline btn-sm gap-1.5"><i class="fa-solid fa-pen-to-square"></i>Edit</button>
             <button id="bu-run-btn" class="btn btn-primary btn-sm gap-1.5"><i class="fa-solid fa-play"></i>Run</button>
-            <button id="bu-arm-btn" class="btn btn-warning btn-sm gap-1.5" title="Arm to auto-fire when USB is plugged into target"><i class="fa-solid fa-bolt"></i>Arm</button>
+            <button id="bu-arm-btn" class="btn btn-outline btn-sm gap-1.5 border-warning text-warning hover:bg-warning hover:text-warning-content" title="Arm to auto-fire when USB is plugged into target"><i class="fa-solid fa-bolt"></i>Arm</button>
           </div>
         </div>
 
