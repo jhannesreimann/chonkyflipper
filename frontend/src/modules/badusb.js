@@ -13,14 +13,15 @@ const TABS = [
 const OS_ICONS = {
   windows:   { icon: 'fa-brands fa-windows', color: '#00A4EF' },
   linux:     { icon: 'fa-brands fa-linux', color: '#FCC624' },
-  macos:     { icon: 'fa-brands fa-apple', color: '#A3AAAE' },
+  macos:     { img: '/finder.svg' },
   android:   { icon: 'fa-brands fa-android', color: '#3DDC84' },
-  ios:       { icon: 'fa-solid fa-mobile-screen', color: '#8E8E93' },
+  ios:       { icon: 'fa-brands fa-apple', color: '#555' },
   'cross-platform': { icon: 'fa-solid fa-globe', color: '#6B7280' },
 }
 
 function osIcon(slug) {
   const o = OS_ICONS[slug] || OS_ICONS['cross-platform']
+  if (o.img) return `<img src="${o.img}" width="14" height="14" class="inline-block align-[-1px]" alt="${slug}" title="${slug}">`
   return `<i class="${o.icon}" style="color:${o.color}" title="${slug}"></i>`
 }
 
@@ -278,25 +279,21 @@ async function showPayloadDetail(body, payloadId) {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <h3 class="font-semibold text-base">${esc(p.name)}</h3>
-            <div class="flex flex-wrap items-center gap-1.5 mt-1">
-              ${p.os_name ? `<span class="badge badge-sm badge-primary">${osIcon(p.os_slug || 'cross-platform')} ${esc(p.os_name)}</span>` : ''}
-              ${p.category_name ? `<span class="badge badge-sm badge-ghost">${esc(p.category_name)}</span>` : ''}
-              ${p.source_repo === 'filesystem' ? '<span class="badge badge-xs badge-outline badge-warning">local</span>' : ''}
-              ${p.source_repo && p.source_repo !== 'filesystem' ? `<span class="badge badge-xs badge-outline badge-info">${esc(p.source_repo)}</span>` : ''}
-              ${p.layout ? `<span class="badge badge-xs badge-outline">${esc(p.layout.toUpperCase())}</span>` : ''}
-              ${p.target ? `<span class="text-xs text-base-content/60">${esc(p.target)}</span>` : ''}
-            </div>
           </div>
           <div class="flex items-center gap-2">
-            <button id="bu-arm-btn" class="btn btn-warning btn-outline btn-sm gap-1.5" title="Arm to auto-fire when USB is plugged into target"><i class="fa-solid fa-bolt"></i>Arm</button>
             <button id="bu-edit-btn" class="btn btn-outline btn-sm gap-1.5"><i class="fa-solid fa-pen-to-square"></i>Edit</button>
             <button id="bu-run-btn" class="btn btn-primary btn-sm gap-1.5"><i class="fa-solid fa-play"></i>Run</button>
+            <button id="bu-arm-btn" class="btn btn-warning btn-outline btn-sm gap-1.5" title="Arm to auto-fire when USB is plugged into target"><i class="fa-solid fa-bolt"></i>Arm</button>
           </div>
         </div>
 
         ${p.description ? `<p class="text-sm text-base-content/70 italic">${esc(p.description)}</p>` : ''}
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          ${p.os_name ? `<div><span class="text-base-content/40">OS</span><br>${osIcon(p.os_slug || 'cross-platform')} ${esc(p.os_name)}</div>` : ''}
+          ${p.category_name ? `<div><span class="text-base-content/40">Category</span><br>${esc(p.category_name)}</div>` : ''}
+          ${p.layout && p.layout !== 'us' ? `<div><span class="text-base-content/40">Layout</span><br>${esc(p.layout.toUpperCase())}</div>` : ''}
+          ${p.target ? `<div><span class="text-base-content/40">Target</span><br>${esc(p.target)}</div>` : ''}
           ${p.author ? `<div><span class="text-base-content/40">Author</span><br>${esc(p.author)}</div>` : ''}
           ${p.source_repo && p.source_repo !== 'filesystem' ? `<div><span class="text-base-content/40">Source</span><br><a class="link link-hover" href="https://github.com/${esc(p.source_repo)}" target="_blank" rel="noopener">${esc(p.source_repo)}</a></div>` : ''}
           ${p.payload_version ? `<div><span class="text-base-content/40">Version</span><br>${esc(p.payload_version)}</div>` : ''}
