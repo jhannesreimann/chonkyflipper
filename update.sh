@@ -119,12 +119,16 @@ if [ -d "$REPO_DIR/frontend" ]; then
         # Build as the kali user so node_modules stays kali-owned (the repo
         # lives under /home/kali). npm ci is reproducible; fall back to install.
         # Use -H so sudo sets HOME=/home/kali (npm needs its cache dir).
+        # pipefail is critical: without it, "npm ci | tail" swallows the exit
+        # code of npm and we'd think it succeeded when it didn't.
         FAILED=0
         echo "  Installing dependencies..."
+        set -o pipefail
         if ! sudo -Hu kali npm ci --no-audit --no-fund --prefix "$REPO_DIR/frontend" 2>&1 | tail -5; then
             echo "  npm ci failed, trying npm install..."
             sudo -Hu kali npm install --no-audit --no-fund --prefix "$REPO_DIR/frontend" 2>&1 | tail -5 || FAILED=1
         fi
+        set +o pipefail
 
         if [ "$FAILED" -eq 0 ]; then
             echo "  Building..."

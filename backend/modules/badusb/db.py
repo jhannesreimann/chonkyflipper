@@ -130,6 +130,12 @@ class BadUSBDB:
         except Exception:
             pass  # FTS5 may not be compiled in
 
+        # Schema migration: add companions column if missing (post-v1)
+        try:
+            conn.execute('ALTER TABLE payloads ADD COLUMN companions TEXT DEFAULT \"\"')
+        except Exception:
+            pass  # column already exists
+
         # Seed OS types
         cur = conn.execute('SELECT COUNT(*) FROM os_types')
         if cur.fetchone()[0] == 0:
@@ -301,7 +307,7 @@ class BadUSBDB:
     def insert_payload(self, name, content, os_slug='cross-platform',
                        category_slug='general', description='', author='',
                        target='', source_repo='', source_path='', layout='us',
-                       props='', payload_version=''):
+                       props='', payload_version='', companions=''):
         """Insert or replace a payload. Returns payload id."""
         conn = self._connect()
         os_id = self._get_os_id(os_slug) or self._get_os_id('cross-platform')
@@ -313,10 +319,11 @@ class BadUSBDB:
             INSERT OR REPLACE INTO payloads
             (os_id, category_id, name, slug, description, author, target,
              source_repo, source_path, content, layout, props, payload_version,
-             updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             companions, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ''', (os_id, cat_id, name, slug, description, author, target,
-              source_repo, source_path, content, layout, props, payload_version))
+              source_repo, source_path, content, layout, props,
+              payload_version, companions))
         conn.commit()
 
         # Update FTS index

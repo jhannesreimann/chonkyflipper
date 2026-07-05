@@ -243,6 +243,25 @@ class BadUSBSync:
             os.path.dirname(filepath)
         )
 
+        # Scan for companion files (staged .ps1, .sh, .py, .bat, .vbs etc.)
+        # in the same directory. Hak5 requires submitters to bundle these.
+        companions = {}
+        payload_dir = os.path.dirname(full_path)
+        companion_exts = ('.ps1', '.sh', '.py', '.bat', '.vbs', '.psm1', '.cmd')
+        try:
+            for entry in os.listdir(payload_dir):
+                if any(entry.lower().endswith(ext) for ext in companion_exts):
+                    cpath = os.path.join(payload_dir, entry)
+                    if os.path.isfile(cpath) and os.path.getsize(cpath) < 500_000:
+                        try:
+                            with open(cpath, 'r', encoding='utf-8', errors='replace') as cf:
+                                companions[entry] = cf.read()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        import json
         payload_id = self.db.insert_payload(
             name=name, content=content, os_slug=os_slug,
             category_slug=cat,
@@ -253,6 +272,7 @@ class BadUSBSync:
             layout=headers.get('layout', 'us'),
             props=headers.get('props', ''),
             payload_version=headers.get('version', ''),
+            companions=json.dumps(companions) if companions else '',
         )
         return {'id': payload_id, 'name': name, 'os': os_slug, 'category': cat}
 

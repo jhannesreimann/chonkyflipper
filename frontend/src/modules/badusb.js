@@ -303,6 +303,8 @@ async function showPayloadDetail(body, payloadId) {
           <div><span class="text-base-content/40">Size</span><br>${lines} lines</div>
         </div>
 
+        ${renderCompanions(p)}
+
         <div>
           <div class="text-xs text-base-content/40 mb-1 font-semibold uppercase tracking-wide">Script Preview</div>
           <pre id="bu-preview" class="rounded-xl bg-base-300/50 p-4 text-xs font-mono leading-relaxed overflow-x-auto max-h-[40vh]">${esc(p.content || '')}</pre>
@@ -413,6 +415,27 @@ async function syncStart(body) {
 }
 
 // -- Execute ------------------------------------------------------------------
+
+function renderCompanions(p) {
+  let comp = {}
+  try { comp = JSON.parse(p.companions || '{}') } catch (e) { /* empty */ }
+  const keys = Object.keys(comp)
+  if (!keys.length) return ''
+  return `
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-base-content/40 select-none">
+        <i class="fa-solid fa-paperclip mr-1"></i>Companion files (${keys.length})
+      </summary>
+      <div class="mt-2 space-y-2">
+        ${keys.map((k) => `
+          <div>
+            <div class="text-[0.6rem] font-mono text-base-content/50 mb-0.5">${esc(k)}</div>
+            <pre class="rounded-lg bg-base-300/50 p-2 text-[0.65rem] font-mono leading-relaxed overflow-x-auto max-h-[20vh]">${esc(comp[k])}</pre>
+          </div>
+        `).join('')}
+      </div>
+    </details>`
+}
 
 async function executePayload(payloadId, name) {
   const task = startTask('Running payload', `${name} (${selectedLayout.toUpperCase()})`)
