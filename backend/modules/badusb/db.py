@@ -279,7 +279,7 @@ class BadUSBDB:
         clause = ('WHERE ' + ' AND '.join(where)) if where else ''
         rows = conn.execute(f'''
             SELECT p.id, p.name, p.slug, p.description, p.author, p.target,
-                   p.source_repo, p.layout, p.payload_version,
+                   p.source_repo, p.layout, p.payload_version, p.companions,
                    o.name as os_name, o.slug as os_slug,
                    c.name as category_name, c.slug as category_slug
             FROM payloads p
@@ -375,7 +375,7 @@ class BadUSBDB:
         like = f'%{q}%'
         rows = conn.execute('''
             SELECT p.id, p.name, p.slug, p.description, p.author, p.target,
-                   p.source_repo, p.layout, p.payload_version,
+                   p.source_repo, p.layout, p.payload_version, p.companions,
                    o.name as os_name, o.slug as os_slug,
                    c.name as category_name, c.slug as category_slug
             FROM payloads p
