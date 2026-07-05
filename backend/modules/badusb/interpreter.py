@@ -33,6 +33,7 @@ from . import keymaps
 _TOKEN_RE = re.compile(r'''\s*(?:
       (?P<hex>0[xX][0-9a-fA-F]+)
     | (?P<int>\d+)
+    | (?P<hashvar>\#[A-Za-z_][A-Za-z0-9_]*)
     | (?P<var>\$[A-Za-z_][A-Za-z0-9_]*)
     | (?P<id>[A-Za-z_][A-Za-z0-9_]*)
     | (?P<op><<|>>|<=|>=|==|!=|&&|\|\||[-+*/%()<>!&|^,])
@@ -62,6 +63,8 @@ def _tokenize(s):
             toks.append(('num', int(m.group('int'))))
         elif kind == 'var':
             toks.append(('var', m.group('var')[1:]))
+        elif kind == 'hashvar':
+            toks.append(('var', m.group('hashvar')[1:]))
         elif kind == 'id':
             up = m.group('id').upper()
             if up == 'TRUE':
@@ -237,8 +240,11 @@ class _StmtParser:
                 nodes.append(self._parse_if())
             elif h1 == 'WHILE':
                 nodes.append(self._parse_while())
-            elif h1 == 'VAR' or s[0] == '$':
+            elif h1 == 'VAR' or s[0] == '$' or s[0] == '#':
                 nodes.append(self._parse_assign(lineno, s))
+                self.i += 1
+            elif h1 == 'DEFINE':
+                nodes.append(self._parse_define(lineno, s))
                 self.i += 1
             else:
                 split = s.split(None, 1)
@@ -290,11 +296,23 @@ class _StmtParser:
             raise ValueError(f'malformed assignment at line {lineno}: {s!r}')
         name, expr = body.split('=', 1)
         name = name.strip()
-        if name.startswith('$'):
+        if name.startswith('$') or name.startswith('#'):
             name = name[1:]
         if not name:
             raise ValueError(f'missing variable name at line {lineno}')
         return ('assign', name, compile_expr(expr), lineno)
+
+    def _parse_define(self, lineno, s):
+        """Parse DEFINE #VARNAME value (Hak5 PayloadStudio extension)."""
+        parts = s.split(None, 2)
+        if len(parts) < 3:
+            raise ValueError(f'malformed DEFINE at line {lineno}: {s!r}')
+        name = parts[1].strip()
+        if name.startswith('#'):
+            name = name[1:]
+        if not name:
+            raise ValueError(f'missing variable name in DEFINE at line {lineno}')
+        return ('assign', name, compile_expr(parts[2]), lineno)
 
 
 def parse(text):
