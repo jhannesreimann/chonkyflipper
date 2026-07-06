@@ -47,6 +47,7 @@ export default function renderBadusb(root) {
     }),
   )
   paint(root)
+  // Show armed bar if a payload is armed (API call, may take a moment)
   checkArmStatus(root)
 }
 
@@ -468,6 +469,7 @@ async function checkArmStatus(root) {
     const d = await apiGet('/badusb/arm/status', { timeout: 3000 })
     const bar = root.querySelector('#bu-armed')
     const label = root.querySelector('#bu-armed-label')
+    if (!bar || !label) return
     if (d.armed) {
       bar.classList.remove('hidden')
       const name = d.payload_name || `#${d.payload_id || 'inline'}`
@@ -475,7 +477,9 @@ async function checkArmStatus(root) {
     } else {
       bar.classList.add('hidden')
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // API may not be ready on first paint; bar stays hidden
+  }
 }
 
 async function cancelArm(root) {
