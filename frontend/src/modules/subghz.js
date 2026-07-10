@@ -311,9 +311,15 @@ async function viewSignal(body, name) {
     const d = await apiGet(`/subghz/signals/${encodeURIComponent(name)}`)
     if (!d.success) throw new Error(d.error || 'Load failed')
     const pulses = d.pulses || []
+    const totalUs = pulses.reduce((s, p) => s + (p[1] || 0), 0)
+    // A long silent gap (>= 2.5 ms) between carrier-on runs marks a repeat of
+    // the frame -- fobs re-send the same code several times per press.
+    const bursts = pulses.filter(([lv, dur]) => !lv && dur >= 2500).length + (pulses.length ? 1 : 0)
+    const truncated = pulses.length >= 4096
     const meta = [
       `${d.frequency_mhz ?? '?'} MHz`,
-      `${pulses.length} pulses`,
+      `${(totalUs / 1000).toFixed(1)} ms active`,
+      `${bursts} burst${bursts === 1 ? '' : 's'}`,
       d.peak_rssi_dbm != null ? `peak ${d.peak_rssi_dbm} dBm` : null,
       d.clean ? 'clean' : 'noisy',
     ]
@@ -323,6 +329,7 @@ async function viewSignal(body, name) {
       ${sectionTitle(esc(name), `<button id="sg-detail-close" class="btn btn-ghost btn-sm btn-square" title="Close"><i class="fa-solid fa-xmark"></i></button>`)}
       <div class="text-xs text-base-content/55 mb-3">${esc(meta)}</div>
       ${waveformSvg(pulses)}
+      ${infoBox(`Filled bars = carrier <b>on</b> (transmitting), gaps = silent. Only the active part of the capture window is shown. Multiple bar clusters are the same code re-sent as repeated frames.${truncated ? ' <b>Capture hit the 4096-pulse cap</b>, so a longer transmission may be cut off.' : ''}`)}
     `)
     detail.querySelector('#sg-detail-close').addEventListener('click', () => (detail.innerHTML = ''))
   } catch (e) {
@@ -330,8 +337,8 @@ async function viewSignal(body, name) {
   }
 }
 
-// Time-domain OOK waveform: a step line of the captured pulse train
-// (high = carrier on, low = off) plotted against elapsed time.
+// Time-domain OOK burst map: each carrier-on pulse is a filled bar placed at
+// its time offset, so repeated frames read as clusters of bars with gaps.
 function waveformSvg(pulses) {
   if (!pulses.length) return empty('No pulse data stored for this signal.', 'fa-wave-square')
   const total = pulses.reduce((s, p) => s + (p[1] || 0), 0) || 1
@@ -342,22 +349,24 @@ function waveformSvg(pulses) {
     padT = 12,
     padB = 22
   const plotW = W - padL - padR
-  const yHigh = padT + 4
-  const yLow = H - padB
-  const pts = []
+  const top = padT + 2
+  const bot = H - padB
+  const bars = []
   let t = 0
   for (const [lv, d] of pulses) {
-    const y = lv ? yHigh : yLow
-    pts.push(`${(padL + plotW * (t / total)).toFixed(1)},${y}`)
+    const x0 = padL + plotW * (t / total)
     t += d || 0
-    pts.push(`${(padL + plotW * (t / total)).toFixed(1)},${y}`)
+    if (lv) {
+      const w = Math.max(0.5, padL + plotW * (t / total) - x0)
+      bars.push(`<rect x="${x0.toFixed(1)}" y="${top}" width="${w.toFixed(2)}" height="${(bot - top).toFixed(1)}" class="text-primary fill-current"></rect>`)
+    }
   }
   const ms = (total / 1000).toFixed(total < 10000 ? 2 : 1)
   return `
   <div class="rounded-xl border border-base-300/60 bg-base-200/40 p-2">
-    <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" preserveAspectRatio="none" role="img" aria-label="OOK waveform">
-      <line x1="${padL}" y1="${yLow}" x2="${W - padR}" y2="${yLow}" class="text-base-content/15 stroke-current" stroke-width="1"></line>
-      <polyline points="${pts.join(' ')}" class="text-primary stroke-current" fill="none" stroke-width="1.2" stroke-linejoin="round"></polyline>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" preserveAspectRatio="none" role="img" aria-label="OOK burst map">
+      <line x1="${padL}" y1="${bot}" x2="${W - padR}" y2="${bot}" class="text-base-content/20 stroke-current" stroke-width="1"></line>
+      ${bars.join('')}
       <text x="${padL}" y="${H - 6}" class="text-base-content/55 fill-current" font-size="10">0 ms</text>
       <text x="${W - padR}" y="${H - 6}" text-anchor="end" class="text-base-content/55 fill-current" font-size="10">${ms} ms</text>
     </svg>
