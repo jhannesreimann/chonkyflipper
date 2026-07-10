@@ -21,6 +21,7 @@ MIN_MEDIAN_US = 60   # real OOK pulses are wide; sub-us hash is slicer noise
 MAX_PULSE_US = 30000 # clamp absurd gaps so replay never stalls the line high
 CARRIER_DBM = -85    # RSSI floor a genuine transmission must clear
 MAX_STORE = 4096     # cap stored pulses so a noise window cannot bloat the file
+JAM_MAX_S = 30       # hard ceiling on a single jam transmission
 
 
 class CC1101Module:
@@ -244,11 +245,11 @@ class CC1101Module:
         if clean:
             note = None
         elif not carrier:
-            note = f'No carrier (peak {round(peak_rssi, 1)} dBm) -- no transmission detected during the window.'
+            note = f'No carrier detected (peak {round(peak_rssi, 1)} dBm). Nothing was transmitting during the window.'
         elif continuous:
-            note = 'Continuous RF energy, not a discrete remote frame -- likely interference or background traffic.'
+            note = 'Continuous RF energy rather than a discrete remote frame. This is likely interference or background traffic.'
         else:
-            note = 'Carrier seen but no clean OOK burst decoded -- try again closer to the transmitter.'
+            note = 'Carrier seen but no clean OOK burst decoded. Try again closer to the transmitter.'
 
         return {
             'success': True, 'name': name, 'filepath': filepath,
@@ -310,6 +311,50 @@ class CC1101Module:
         return {
             'success': True, 'signal_id': signal_id, 'frequency': frequency,
             'pulses': len(pulses), 'repeats': sent,
+        }
+
+    # Jamming -- continuous carrier or PN9 noise for receiver resilience audits
+
+    def jam(self, frequency_mhz=433.92, duration=5, mode='noise'):
+        # Duration is hard-capped so an accidental long transmission cannot sit
+        # on the band. This emits real RF: authorised, isolated testing only.
+        duration = max(1, min(int(duration), JAM_MAX_S))
+
+        spi_check = self._ensure_spi()
+        if not spi_check['success']:
+            return spi_check
+
+        self._configure_tx_ook()
+        self.set_frequency(frequency_mhz)
+
+        try:
+            if mode == 'carrier':
+                # Async serial TX with GDO0 held high keys the PA on for the
+                # whole window -> an unmodulated continuous carrier.
+                import lgpio
+                chip = self._gpio()
+                lgpio.group_claim_output(chip, [GDO0_BCM], [1])
+                self._write_strobe(0x35)  # STX
+                time.sleep(duration)
+                self._write_strobe(0x36)  # SIDLE
+                self._gpio_release(GDO0_BCM)
+            else:
+                # PN9 random TX mode (PKTCTRL0 PKT_FORMAT=10) sprays modulated
+                # noise across the channel with no GPIO involvement.
+                mode = 'noise'
+                self._write_register(0x08, 0x22)  # random TX mode
+                self._write_strobe(0x35)  # STX
+                time.sleep(duration)
+                self._write_strobe(0x36)  # SIDLE
+                self._write_register(0x08, 0x32)  # restore async serial
+        except Exception as e:
+            self._write_strobe(0x36)  # SIDLE
+            self._gpio_release(GDO0_BCM)
+            return {'success': False, 'error': str(e)}
+
+        return {
+            'success': True, 'mode': mode,
+            'frequency': frequency_mhz, 'duration': duration,
         }
 
     # Spectrum scan

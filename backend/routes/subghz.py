@@ -68,6 +68,17 @@ def subghz_decode():
     return api_success(decode_pulses(sig.get('pulses', [])))
 
 
+@bp.route('/subghz/jam', methods=['POST'])
+def subghz_jam():
+    data = request.json or {}
+    frequency = data.get('frequency', 433.92)
+    duration = data.get('duration', 5)
+    mode = data.get('mode', 'noise')
+    cc1101 = get_module('cc1101')
+    result = cc1101.jam(frequency, duration, mode)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+
+
 @bp.route('/subghz/signals/<signal_id>', methods=['DELETE'])
 def subghz_delete(signal_id):
     cc1101 = get_module('cc1101')

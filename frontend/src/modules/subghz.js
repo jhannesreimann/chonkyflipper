@@ -10,6 +10,7 @@ const TABS = [
   { id: 'spectrum', label: 'Spectrum', icon: 'fa-chart-column' },
   { id: 'capture', label: 'Capture', icon: 'fa-floppy-disk' },
   { id: 'signals', label: 'Signals', icon: 'fa-tower-broadcast' },
+  { id: 'jam', label: 'Jam', icon: 'fa-ban' },
 ]
 
 // Preset bands: [start, end] MHz for the sweep, plus a nominal centre.
@@ -50,6 +51,7 @@ function paint(root) {
   const body = root.querySelector('#sg-body')
   if (active === 'spectrum') return spectrumTab(body)
   if (active === 'capture') return captureTab(body)
+  if (active === 'jam') return jamTab(body)
   return signalsTab(body)
 }
 
@@ -239,11 +241,72 @@ async function record(body) {
       out.innerHTML = infoBox(`Captured <b>${esc(d.name)}</b> with ${d.pulses} pulses. Replay it from the Signals tab.`, 'fa-circle-check')
     } else {
       task.done('Saved (noisy)', `${d.edges} edges`)
-      out.innerHTML = errorBox(d.note || 'No structured burst detected -- only noise was captured. Try again closer to the transmitter.')
+      out.innerHTML = errorBox(d.note || 'No structured burst detected. Only noise was captured, try again closer to the transmitter.')
     }
   } catch (e) {
     task.fail('Record failed', e.message)
     out.innerHTML = errorBox(e.message)
+  }
+}
+
+// ---------------------------------------------------------------- Jam
+function jamTab(body) {
+  body.innerHTML = card(`
+    ${sectionTitle('Signal jammer')}
+    <div class="rounded-xl border border-error/40 bg-error/10 text-error text-sm px-4 py-3 flex items-start gap-2 mb-4">
+      <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+      <span>Transmitting a carrier or noise blocks every receiver on the band and is <b>illegal</b> in most jurisdictions outside a shielded lab. Use only on hardware you own, in an isolated or authorised test setup. Capped at 30 s per burst.</span>
+    </div>
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="form-control">
+        <span class="label-text text-xs mb-1">Frequency</span>
+        <select id="sg-jfreq" class="select select-bordered select-sm">
+          ${CAP_FREQS.map((f) => `<option value="${f.v}">${esc(f.label)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="form-control w-40">
+        <span class="label-text text-xs mb-1">Mode</span>
+        <select id="sg-jmode" class="select select-bordered select-sm">
+          <option value="noise">Noise (PN9 random)</option>
+          <option value="carrier">Carrier (continuous wave)</option>
+        </select>
+      </label>
+      <label class="form-control w-28">
+        <span class="label-text text-xs mb-1">Duration</span>
+        <select id="sg-jdur" class="select select-bordered select-sm">
+          <option value="2">2 seconds</option>
+          <option value="5" selected>5 seconds</option>
+          <option value="10">10 seconds</option>
+          <option value="20">20 seconds</option>
+        </select>
+      </label>
+      <button id="sg-jam" class="btn btn-error btn-sm gap-2"><i class="fa-solid fa-ban"></i>Start jamming</button>
+    </div>
+    <div id="sg-jam-out" class="mt-4"></div>
+  `)
+  body.querySelector('#sg-jam').addEventListener('click', () => jam(body))
+}
+
+async function jam(body) {
+  const freq = body.querySelector('#sg-jfreq').value
+  const mode = body.querySelector('#sg-jmode').value
+  const dur = parseInt(body.querySelector('#sg-jdur').value) || 5
+  if (!confirm(`Transmit ${mode} on ${freq} MHz for ${dur}s? This will block nearby receivers. Only do this if you are authorised to transmit here.`)) return
+  const out = body.querySelector('#sg-jam-out')
+  const btn = body.querySelector('#sg-jam')
+  const task = startTask('Jamming', `${freq} MHz · ${mode} · ${dur}s`)
+  btn.disabled = true
+  out.innerHTML = spinner(`Transmitting ${mode} for ${dur}s...`)
+  try {
+    const d = await apiPost('/subghz/jam', { frequency: parseFloat(freq), duration: dur, mode }, { timeout: (dur + 12) * 1000 })
+    if (!d.success) throw new Error(d.error || 'Jam failed')
+    task.done('Jam complete', `${d.frequency} MHz · ${d.mode} · ${d.duration}s`)
+    out.innerHTML = infoBox(`Transmitted ${esc(d.mode)} on ${esc(d.frequency)} MHz for ${esc(d.duration)}s. Radio returned to idle.`, 'fa-circle-check')
+  } catch (e) {
+    task.fail('Jam failed', e.message)
+    out.innerHTML = errorBox(e.message)
+  } finally {
+    btn.disabled = false
   }
 }
 

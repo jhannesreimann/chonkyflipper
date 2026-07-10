@@ -88,7 +88,7 @@ def decode_pulses(pulses, min_bits=8):
     if not decoded:
         return {
             'decoded': False,
-            'reason': 'No PWM frames found -- signal may be FSK, Manchester, or noise.',
+            'reason': 'No PWM frames found. The signal may be FSK, Manchester, or noise.',
             'frames': len(frames), 'te_us': round(te),
         }
 
@@ -105,8 +105,8 @@ def decode_pulses(pulses, min_bits=8):
         longest = max(candidates)
         return {
             'decoded': False,
-            'reason': 'Decoded {} bits -- too long for a fixed/rolling code frame; '
-                      'likely FSK, Manchester, or noise.'.format(longest),
+            'reason': 'Decoded {} bits, too long for a fixed or rolling code frame. '
+                      'This is most likely FSK, Manchester, or noise.'.format(longest),
             'frames': len(decoded), 'te_us': round(te),
         }
     target_len = max(sane)
