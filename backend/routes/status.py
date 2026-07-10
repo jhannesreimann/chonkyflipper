@@ -81,13 +81,11 @@ def _detect_modules():
         },
     }
 
-    # PN532: check libnfc via UART
+    # PN532: probe libnfc via UART. Serialized + non-blocking so the two
+    # workers and any in-flight NFC operation do not collide on the port.
     try:
-        nfc_out = subprocess.check_output(
-            ['nfc-list'], text=True, stderr=subprocess.DEVNULL, timeout=5,
-        )
-        if 'pn532' in nfc_out.lower():
-            module_status['pn532']['available'] = True
+        from modules.pn532 import probe_present
+        module_status['pn532']['available'] = probe_present()
     except Exception:
         pass
 

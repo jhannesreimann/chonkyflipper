@@ -7,12 +7,72 @@ Depends on: libnfc-bin, mfoc (installed via apt).
 
 import os
 import json
+import fcntl
+import contextlib
 import subprocess
 import tempfile
 from datetime import datetime
 from config import CARDS_DIR
 
 os.makedirs(CARDS_DIR, exist_ok=True)
+
+# The PN532 hangs off a single UART (/dev/ttyAMA0). libnfc takes an flock on the
+# port, so two callers at once (the two gunicorn workers, or module detection
+# racing a real operation) make one of them fail with "Serial port already
+# claimed" and the module flickers to unavailable. Serialize every libnfc
+# invocation on our own flock so that never happens.
+_UART_LOCK_PATH = '/dev/shm/chonky-nfc-uart.lock'
+_UART_DEVICE = '/dev/ttyAMA0'
+
+
+@contextlib.contextmanager
+def _uart_lock():
+    """Block until the shared PN532 UART lock is held, then release on exit."""
+    f = open(_UART_LOCK_PATH, 'w')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        finally:
+            f.close()
+
+
+def _kill_uart_holders():
+    """Best-effort: kill a crashed libnfc tool still holding the UART."""
+    subprocess.run(['fuser', '-k', _UART_DEVICE], capture_output=True, timeout=2)
+
+
+def probe_present(timeout=5):
+    """Presence check for module detection, safe to call every status poll.
+
+    Non-blocking on the shared lock: if an NFC operation is already running the
+    device is present and in use, so report available without touching the port
+    (avoids the false-unavailable flicker). Only when the UART is free do we
+    actually probe with nfc-list, recovering a stale lock once before giving up.
+    """
+    f = open(_UART_LOCK_PATH, 'w')
+    try:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True  # busy elsewhere -> present and in use
+        try:
+            r = subprocess.run(['nfc-list'], capture_output=True, text=True, timeout=timeout)
+            if r.returncode == 0 and 'pn532' in r.stdout.lower():
+                return True
+            _kill_uart_holders()
+            r = subprocess.run(['nfc-list'], capture_output=True, text=True, timeout=timeout)
+            return r.returncode == 0 and 'pn532' in r.stdout.lower()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+    finally:
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        finally:
+            f.close()
+
 
 # Known default keys that mfoc tests
 COMMON_KEYS = [
@@ -33,9 +93,10 @@ class PN532Module:
 
     @staticmethod
     def _run(cmd, timeout=30):
-        """Run a command, return (stdout, stderr, returncode)."""
+        """Run a libnfc command under the shared UART lock, return (out, err, rc)."""
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            with _uart_lock():
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             return r.stdout, r.stderr, r.returncode
         except subprocess.TimeoutExpired:
             return '', 'timed out', 1
@@ -148,8 +209,7 @@ class PN532Module:
     def _recover_uart():
         """Kill any process holding /dev/ttyAMA0.  Needed after mfoc or other
         libnfc tools crash without closing the UART device."""
-        import subprocess as _sp
-        _sp.run(['fuser', '-k', '/dev/ttyAMA0'], capture_output=True, timeout=2)
+        _kill_uart_holders()
 
     def _nfc_list_with_retry(self, timeout=10):
         """Run nfc-list -v, recovering the UART and retrying once on failure."""
