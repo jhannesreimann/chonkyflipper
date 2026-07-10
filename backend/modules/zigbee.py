@@ -5,6 +5,7 @@ Communicates with zigbee2mqtt service running on localhost:1883
 """
 
 import json
+import os
 import threading
 import time
 from collections import deque
@@ -26,6 +27,7 @@ class ZigbeeModule:
         self._connected = False
         self._connect_event = threading.Event()
         self._event_log = deque(maxlen=200)
+        self._last_network_map = None
 
     # Internal MQTT plumbing
 
@@ -35,7 +37,13 @@ class ZigbeeModule:
         except ImportError:
             return False
 
-        client = mqtt.Client(client_id='chonkyflipper-zigbee')
+        # Client id must be unique per process: gunicorn runs multiple workers,
+        # and an MQTT broker kicks any client that reconnects with an id already
+        # in use. Two workers sharing 'chonkyflipper-zigbee' flap each other off,
+        # so a request published by one worker gets its response delivered to the
+        # other, and the original waiter then times out. Per-pid ids keep each
+        # worker's subscription stable.
+        client = mqtt.Client(client_id=f'chonkyflipper-zigbee-{os.getpid()}')
         client.on_connect = self._on_connect
         client.on_disconnect = self._on_disconnect
         client.on_message = self._on_message
@@ -236,11 +244,40 @@ class ZigbeeModule:
         result, error = self._publish_and_wait(
             f'{self.BASE_TOPIC}/bridge/request/networkmap',
             f'{self.BASE_TOPIC}/bridge/response/networkmap',
-            {'type': 'raw', 'routes': False}, timeout=15,
+            {'type': 'raw', 'routes': False}, timeout=40,
         )
         if error:
+            # Fall back to the last good map (flagged stale) rather than a bare
+            # failure, so a slow build or transient hiccup does not blank the view.
+            if self._last_network_map is not None:
+                cached = dict(self._last_network_map)
+                cached.update({'success': True, 'stale': True})
+                return cached
             return {'success': False, 'error': error}
-        return {'success': True, 'map': result.get('data') if isinstance(result, dict) else result}
+
+        # Response shape: {data: {type, routes, value: {nodes, links}}, status}
+        data = result.get('data') if isinstance(result, dict) else None
+        value = data.get('value') if isinstance(data, dict) else None
+        if not isinstance(value, dict):
+            value = data if isinstance(data, dict) else {}
+        nodes = value.get('nodes', []) or []
+        links = value.get('links', []) or []
+        # Only the coordinator with no links means nothing is paired yet. This
+        # is a valid state, not a failure, so flag it for the UI.
+        mesh_empty = len(links) == 0 and len(nodes) <= 1
+
+        out = {
+            'success': True,
+            'map': {'nodes': nodes, 'links': links},
+            'nodes': nodes,
+            'links': links,
+            'mesh_empty': mesh_empty,
+            'stale': False,
+        }
+        self._last_network_map = {
+            'map': out['map'], 'nodes': nodes, 'links': links, 'mesh_empty': mesh_empty,
+        }
+        return out
 
     def permit_join(self, enable, duration=254):
         payload = {'value': bool(enable), 'time': duration if enable else 0}

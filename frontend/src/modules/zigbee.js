@@ -252,18 +252,30 @@ async function loadBridge(body) {
 
 async function loadMap(body) {
   const wrap = body.querySelector('#zb-map')
-  wrap.innerHTML = spinner('Building network map (up to 15s)...')
+  wrap.innerHTML = spinner('Building network map (up to 40s)...')
   const task = startTask('Zigbee network map')
   try {
-    const d = await apiGet('/zigbee/networkmap', { timeout: 20000 })
+    const d = await apiGet('/zigbee/networkmap', { timeout: 45000 })
     if (!d.success) throw new Error(d.error || 'Failed')
-    // Z2M wraps the raw map under data.value on some versions, data on others.
+    // Z2M wraps the raw map under data.value on some versions, data on others;
+    // the backend now also flattens nodes/links to the top level.
     const m = d.map?.value || d.map || {}
-    const nodes = m.nodes || []
-    const links = m.links || []
-    task.done('Network map ready', `${nodes.length} nodes`)
+    const nodes = d.nodes || m.nodes || []
+    const links = d.links || m.links || []
+    if (d.mesh_empty) {
+      task.done('Network map ready', 'No devices paired')
+      wrap.innerHTML = infoBox(
+        'No devices paired yet. Open permit join and pair a Zigbee device (bulb, switch, sensor) to see the mesh.',
+        'fa-diagram-project',
+      )
+      return
+    }
+    task.done('Network map ready', `${nodes.length} node(s)${d.stale ? ' (cached)' : ''}`)
     if (!nodes.length) return (wrap.innerHTML = empty('Network map is empty.', 'fa-diagram-project'))
-    wrap.innerHTML = networkMap(nodes, links)
+    const staleBanner = d.stale
+      ? `<div class="text-[0.7rem] text-warning mb-2 flex items-center gap-1.5"><i class="fa-solid fa-clock-rotate-left"></i>Showing the last cached map (the live build timed out).</div>`
+      : ''
+    wrap.innerHTML = staleBanner + networkMap(nodes, links)
   } catch (e) {
     task.fail('Network map failed', e.message)
     wrap.innerHTML = errorBox(e.message)
@@ -348,8 +360,10 @@ export function networkMap(nodes, links) {
     .map((e) => {
       const a = pos.get(e.s)
       const b = pos.get(e.t)
-      const op = Math.max(0.15, Math.min(0.7, e.lqi / 255)).toFixed(2)
-      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="currentColor" stroke-width="1.5" stroke-opacity="${op}" class="text-base-content"/>`
+      // Colour the link by quality: green strong, yellow usable, red weak.
+      const tone = e.lqi > 100 ? 'text-success' : e.lqi > 50 ? 'text-warning' : 'text-error'
+      const op = Math.max(0.35, Math.min(0.9, e.lqi / 255)).toFixed(2)
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="currentColor" stroke-width="2" stroke-opacity="${op}" class="${tone}"><title>LQI ${e.lqi}</title></line>`
     })
     .join('')
 
@@ -370,7 +384,10 @@ export function networkMap(nodes, links) {
   const legend = `
     <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-primary"></span>Coordinator</span>
     <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-secondary"></span>Router</span>
-    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-base-content/50"></span>End device</span>`
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-2 h-2 rounded-full bg-base-content/50"></span>End device</span>
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-3 h-0.5 rounded bg-success"></span>LQI &gt;100</span>
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-3 h-0.5 rounded bg-warning"></span>50 to 100</span>
+    <span class="inline-flex items-center gap-1.5 text-[0.65rem] text-base-content/60"><span class="w-3 h-0.5 rounded bg-error"></span>&lt;50</span>`
 
   return `
   <div class="rounded-xl bg-base-200/40 p-2 overflow-hidden">
@@ -380,6 +397,6 @@ export function networkMap(nodes, links) {
     </svg>
   </div>
   <div class="flex flex-wrap items-center gap-4 mt-3">${legend}</div>
-  <p class="text-[0.65rem] text-base-content/45 mt-2">${nodes.length} nodes · ${edges.size} links · line opacity reflects link quality</p>`
+  <p class="text-[0.65rem] text-base-content/45 mt-2">${nodes.length} nodes · ${edges.size} links · line colour reflects link quality (LQI)</p>`
 }
 
