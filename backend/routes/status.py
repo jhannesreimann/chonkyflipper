@@ -123,6 +123,11 @@ def get_status():
     }
     if auto_fire_result:
         status['auto_fire_fired'] = auto_fire_result
+    try:
+        from routes.badusb import get_arm_state
+        status['badusb_armed'] = get_arm_state()
+    except Exception:
+        pass
     return api_success(status)
 
 

@@ -3,6 +3,9 @@ BadUSB payload library, filesystem listing, execution, sync, and auto-fire.
 """
 
 import os
+import json
+import fcntl
+import contextlib
 import threading
 import time
 from flask import Blueprint, request
@@ -197,75 +200,122 @@ def badusb_sync_status():
 
 
 # auto-fire
+#
+# Armed state must be shared across gunicorn workers (the service runs with
+# -w 2). An in-process dict only lives in the worker that handled the /arm
+# POST, so status polls and the auto-fire edge check landing on the other
+# worker would see nothing. We keep the state in a small file on tmpfs and
+# guard read-modify-write with an flock so exactly one worker fires per edge.
 
-_armed = {'enabled': False, 'payload_id': None, 'payload_name': None,
-          'layout': 'us', 'content': None}
-_was_connected = False
+_ARM_FILE = '/dev/shm/chonky_badusb_arm.json'
+_ARM_LOCK = '/dev/shm/chonky_badusb_arm.lock'
+_ARM_DEFAULT = {'enabled': False, 'payload_id': None, 'payload_name': None,
+                'content': None, 'layout': 'us', 'was_connected': False}
+
+
+def _read_arm():
+    try:
+        with open(_ARM_FILE, 'r') as f:
+            merged = dict(_ARM_DEFAULT)
+            merged.update(json.load(f))
+            return merged
+    except (OSError, ValueError):
+        return dict(_ARM_DEFAULT)
+
+
+def _write_arm(state):
+    tmp = _ARM_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(state, f)
+    os.replace(tmp, _ARM_FILE)
+
+
+@contextlib.contextmanager
+def _arm_lock():
+    f = open(_ARM_LOCK, 'w')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(f, fcntl.LOCK_UN)
+        f.close()
 
 
 def _check_usb_host_connected():
-    """Return True if the USB gadget is configured (host enumerated it)."""
-    # Check if UDC is bound — means the gadget is active and a host is connected
-    try:
-        with open('/sys/kernel/config/usb_gadget/chonky/UDC', 'r') as f:
-            udc = f.read().strip()
-            return bool(udc)
-    except Exception:
-        pass
-    # Fallback: check UDC symlink
+    """Return True only when a host has actually enumerated the gadget.
+
+    The gadget's UDC file stays populated for as long as the gadget is bound
+    to the controller, so it is NOT a connection signal (it reads the same
+    whether a host is plugged in or not). The controller's 'state' file is:
+    it reports 'configured' once a host finishes enumeration and
+    'not attached' when the data port is unplugged.
+    """
     try:
         udc_dir = '/sys/class/udc'
-        if os.path.isdir(udc_dir):
-            for name in os.listdir(udc_dir):
-                state_path = os.path.join(udc_dir, name, 'state')
-                if os.path.isfile(state_path):
-                    with open(state_path, 'r') as f:
-                        if 'configured' in f.read():
-                            return True
-    except Exception:
+        for name in os.listdir(udc_dir):
+            state_path = os.path.join(udc_dir, name, 'state')
+            try:
+                with open(state_path, 'r') as f:
+                    if f.read().strip() == 'configured':
+                        return True
+            except OSError:
+                continue
+    except OSError:
         pass
     return False
 
 
 def auto_fire_check():
-    """Called from status poll. Fires armed payload on USB connect edge."""
-    global _armed, _was_connected
-    if not _armed['enabled']:
-        _was_connected = False
-        return None
+    """Called from status poll. Fires armed payload on USB connect edge.
 
-    connected = _check_usb_host_connected()
-    if connected and not _was_connected:
-        _was_connected = True
-        # Fire the armed payload
-        badusb = get_module('badusb')
-        if _armed.get('content'):
-            result = badusb.execute_content(
-                _armed['content'],
-                layout=_armed.get('layout', 'us'),
-                label=_armed.get('payload_name', 'armed'))
-        elif _armed.get('payload_id'):
-            db = _get_db()
-            p = db.get_payload(_armed['payload_id'])
-            if p:
-                result = badusb.execute_content(
-                    p['content'],
-                    layout=_armed.get('layout', p.get('layout', 'us')),
-                    label=p.get('name', f"payload #{_armed['payload_id']}"))
-            else:
-                result = {'success': False, 'error': 'Armed payload not found in DB'}
-        elif _armed.get('payload_name'):
-            result = badusb.execute_payload(
-                _armed['payload_name'],
-                layout=_armed.get('layout', 'us'))
-        else:
-            result = {'success': False, 'error': 'No payload armed'}
+    The claim-and-disarm happens under the lock so the second worker never
+    fires the same edge; the payload itself runs outside the lock.
+    """
+    with _arm_lock():
+        state = _read_arm()
+        if not state['enabled']:
+            return None
+        connected = _check_usb_host_connected()
+        if not (connected and not state['was_connected']):
+            # No rising edge: just record the current connection state.
+            state['was_connected'] = connected
+            _write_arm(state)
+            return None
+        # Rising edge: claim this fire and disarm before releasing the lock.
+        state['was_connected'] = True
+        state['enabled'] = False
+        _write_arm(state)
+        armed = state
 
-        _armed['enabled'] = False
-        return result
+    badusb = get_module('badusb')
+    if armed.get('content'):
+        return badusb.execute_content(
+            armed['content'],
+            layout=armed.get('layout', 'us'),
+            label=armed.get('payload_name', 'armed'))
+    if armed.get('payload_id'):
+        db = _get_db()
+        p = db.get_payload(armed['payload_id'])
+        if not p:
+            return {'success': False, 'error': 'Armed payload not found in DB'}
+        return badusb.execute_content(
+            p['content'],
+            layout=armed.get('layout', p.get('layout', 'us')),
+            label=p.get('name', f"payload #{armed['payload_id']}"))
+    if armed.get('payload_name'):
+        return badusb.execute_payload(
+            armed['payload_name'],
+            layout=armed.get('layout', 'us'))
+    return {'success': False, 'error': 'No payload armed'}
 
-    _was_connected = connected
-    return None
+
+def get_arm_state():
+    """Armed summary for the global /api/status poll (drives the UI banner)."""
+    s = _read_arm()
+    return {'armed': s['enabled'],
+            'payload_name': s['payload_name'],
+            'payload_id': s['payload_id'],
+            'layout': s['layout']}
 
 
 @bp.route('/badusb/arm', methods=['POST'])
@@ -278,26 +328,71 @@ def badusb_arm():
     if not payload_id and not payload_name and not content:
         return api_error('id, payload name, or content required', 400)
 
-    _armed['enabled'] = True
-    _armed['payload_id'] = payload_id
-    _armed['payload_name'] = payload_name
-    _armed['content'] = content
-    _armed['layout'] = data.get('layout', 'us')
+    with _arm_lock():
+        # Seed was_connected with the CURRENT state so we fire only on a fresh
+        # plug-in edge after arming, never into whatever host is attached right
+        # now. This keeps the arm live (and the banner shown) when the port is
+        # already enumerated by some non-target host at arm time; the payload
+        # fires when the cable is moved to the target (not attached -> configured).
+        _write_arm({
+            'enabled': True,
+            'payload_id': payload_id,
+            'payload_name': payload_name,
+            'content': content,
+            'layout': data.get('layout', 'us'),
+            'was_connected': _check_usb_host_connected(),
+        })
     return api_success({'armed': True, 'payload_id': payload_id,
                         'payload_name': payload_name})
 
 
 @bp.route('/badusb/arm/status', methods=['GET'])
 def badusb_arm_status():
-    return api_success({'armed': _armed['enabled'],
-                        'payload_id': _armed['payload_id'],
-                        'payload_name': _armed['payload_name'],
-                        'layout': _armed['layout']})
+    return api_success(get_arm_state())
 
 
 @bp.route('/badusb/arm/cancel', methods=['POST'])
 def badusb_arm_cancel():
-    _armed['enabled'] = False
-    _armed['payload_id'] = None
-    _armed['payload_name'] = None
+    with _arm_lock():
+        state = _read_arm()
+        state['enabled'] = False
+        _write_arm(state)
     return api_success({'armed': False})
+
+
+# Background watcher: runs the auto-fire check server-side so a plug-in fires
+# even when no browser is polling /api/status (e.g. the phone screen is off).
+# Each worker starts one; auto_fire_check() claims the edge under the flock, so
+# only one worker ever fires a given connect.
+_watcher_thread = None
+_watcher_guard = threading.Lock()
+
+
+def _auto_fire_loop():
+    while True:
+        try:
+            auto_fire_check()
+        except Exception:
+            pass
+        time.sleep(2)
+
+
+def start_auto_fire_watcher():
+    global _watcher_thread
+    with _watcher_guard:
+        if _watcher_thread is not None and _watcher_thread.is_alive():
+            return
+        # A restart must not fire a leftover arm into a host that is already
+        # attached: re-seed was_connected to the current state so only a fresh
+        # plug-in edge fires (same seeding rule an explicit /arm uses).
+        with _arm_lock():
+            state = _read_arm()
+            if state['enabled']:
+                state['was_connected'] = _check_usb_host_connected()
+                _write_arm(state)
+        _watcher_thread = threading.Thread(
+            target=_auto_fire_loop, name='badusb-autofire', daemon=True)
+        _watcher_thread.start()
+
+
+start_auto_fire_watcher()
