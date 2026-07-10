@@ -20,6 +20,7 @@ MIN_PULSES = 16      # a burst shorter than this is treated as noise
 MIN_MEDIAN_US = 60   # real OOK pulses are wide; sub-us hash is slicer noise
 MAX_PULSE_US = 30000 # clamp absurd gaps so replay never stalls the line high
 CARRIER_DBM = -85    # RSSI floor a genuine transmission must clear
+MAX_STORE = 4096     # cap stored pulses so a noise window cannot bloat the file
 
 
 class CC1101Module:
@@ -223,9 +224,11 @@ class CC1101Module:
         clean = (carrier and len(burst) >= MIN_PULSES
                  and median_us >= MIN_MEDIAN_US and not continuous)
 
-        # Only persist the pulse train when it is a real burst; noise captures
-        # would otherwise bloat the store with tens of thousands of junk edges.
-        stored = burst if clean else []
+        # `clean` is an advisory hint (carrier present, a bounded burst of
+        # sanely-timed pulses) -- not a gate. We always keep the extracted
+        # burst so a real capture is never discarded on a heuristic miss; the
+        # cap only stops a continuous-noise window from dumping 10k+ edges.
+        stored = burst[:MAX_STORE]
 
         signal_data = {
             'name': name, 'timestamp': datetime.now().isoformat(),
