@@ -17,7 +17,9 @@ GDO0_BCM = 25
 # OOK denoise / burst-extraction tuning (microseconds)
 GAP_US = 6000        # silence longer than this separates transmissions
 MIN_PULSES = 16      # a burst shorter than this is treated as noise
+MIN_MEDIAN_US = 60   # real OOK pulses are wide; sub-us hash is slicer noise
 MAX_PULSE_US = 30000 # clamp absurd gaps so replay never stalls the line high
+CARRIER_DBM = -85    # RSSI floor a genuine transmission must clear
 
 
 class CC1101Module:
@@ -181,7 +183,19 @@ class CC1101Module:
         chip = self._gpio()
         lgpio.gpio_claim_alert(chip, GDO0_BCM, lgpio.BOTH_EDGES)
         cb = lgpio.callback(chip, GDO0_BCM, lgpio.BOTH_EDGES, _on_edge)
-        time.sleep(duration)
+
+        # Poll RSSI across the window: without carrier the async slicer floods
+        # GDO0 with noise edges, so edge count alone cannot tell signal from
+        # noise. A real transmission lifts RSSI well above the noise floor.
+        peak_rssi = -120.0
+        deadline = time.time() + duration
+        while time.time() < deadline:
+            rv = self._read_register(0xF4)  # RSSI status reg
+            dbm = (rv - 256) / 2 - 74 if rv >= 128 else rv / 2 - 74
+            if dbm > peak_rssi:
+                peak_rssi = dbm
+            time.sleep(0.02)
+
         cb.cancel()
         self._gpio_release(GDO0_BCM)
         self._write_strobe(0x36)  # SIDLE
@@ -196,23 +210,41 @@ class CC1101Module:
                 pulses.append([level, min(dur, MAX_PULSE_US)])
 
         burst = self._extract_burst(pulses)
-        clean = len(burst) >= MIN_PULSES
+        # A genuine OOK frame needs carrier (RSSI above the floor), enough
+        # structured pulses, and pulse widths in a real timing range -- not the
+        # sub-microsecond hash the slicer emits on noise.
+        widths = sorted(d for _, d in burst)
+        median_us = widths[len(widths) // 2] if widths else 0
+        carrier = peak_rssi >= CARRIER_DBM
+        clean = carrier and len(burst) >= MIN_PULSES and median_us >= MIN_MEDIAN_US
+
+        # Only persist the pulse train when it is a real burst; noise captures
+        # would otherwise bloat the store with tens of thousands of junk edges.
+        stored = burst if clean else []
 
         signal_data = {
             'name': name, 'timestamp': datetime.now().isoformat(),
             'frequency_mhz': frequency_mhz, 'duration': duration,
-            'modulation': 'OOK', 'pulses': burst or pulses,
+            'modulation': 'OOK', 'pulses': stored,
             'edges': len(edges), 'clean': clean,
+            'peak_rssi_dbm': round(peak_rssi, 1),
             'spi_device': f'/dev/spidev{self.spi_bus}.{self.spi_device}',
         }
         with open(filepath, 'w') as f:
             json.dump(signal_data, f, indent=2)
 
+        if clean:
+            note = None
+        elif not carrier:
+            note = f'No carrier (peak {round(peak_rssi, 1)} dBm) -- no transmission detected during the window.'
+        else:
+            note = 'Carrier seen but no clean OOK burst decoded -- try again closer to the transmitter.'
+
         return {
             'success': True, 'name': name, 'filepath': filepath,
             'frequency': frequency_mhz, 'pulses': len(signal_data['pulses']),
             'edges': len(edges), 'clean': clean,
-            'note': None if clean else 'No structured burst detected -- likely only noise was captured.',
+            'peak_rssi_dbm': round(peak_rssi, 1), 'note': note,
         }
 
     # Transmission -- raw OOK replay by driving GDO0 in async serial mode
