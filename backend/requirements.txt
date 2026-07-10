@@ -15,5 +15,8 @@ dbus-fast>=1.0  # BlueZ D-Bus API for BLE advertisement spoofing
 # MQTT client for Zigbee2MQTT communication
 paho-mqtt>=1.6.1
 
+# Parse the Zigbee2MQTT config (network key) for the sniffer's key readout
+PyYAML>=6.0
+
 # Production WSGI server
 gunicorn==21.2.0
