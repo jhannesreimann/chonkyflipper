@@ -1,4 +1,4 @@
-// Zigbee Sniffer -- CC2531 USB dongle + KillerBee
+// Zigbee Sniffer: CC2531 USB dongle + KillerBee
 import { apiGet, apiPost } from '../api.js'
 import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner, tabBar } from '../ui.js'
 import { esc, fmtBytes } from '../util.js'
@@ -247,10 +247,20 @@ async function doExtract(body) {
           '<li>Use with <code class="text-xs bg-base-300 px-1 rounded">zbdsniff -k KEY</code> to decrypt more captures offline</li>' +
         '</ul></div>'
     } else {
-      html += '<div class="rounded-lg bg-base-200/50 p-3 text-xs text-base-content/50">' +
-        '<p>No keys found in this capture. The network may use encryption that requires active probing, or no key transport was observed.</p>' +
+      html += '<div class="rounded-lg bg-base-200/50 p-3 text-xs text-base-content/70">' +
+        '<p class="font-semibold text-base-content/80 mb-1">No key transport in this capture.</p>' +
+        '<p>A network key only travels over the air when a device <strong>joins</strong> the network, so extraction only works if the capture covers a pairing. To grab one: open permit join on the coordinator, start a capture on its channel, then pair the device.</p>' +
+        '<p class="mt-2">Zigbee 3.0 devices that use install codes encrypt that transport with a per-device key, so even a join capture will not yield the network key with the default Trust Center key.</p>' +
         '<p class="mt-2">Raw output:</p>' +
         '<pre class="text-xs bg-base-300/50 rounded-lg p-2 mt-1 overflow-x-auto max-h-32">' + esc(d.output || '(empty)') + '</pre></div>'
+      if (d.config_key) {
+        html += '<div class="rounded-lg bg-info/10 border border-info/30 p-3 mt-3">' +
+          '<div class="flex items-center gap-2 mb-1"><span class="badge badge-sm badge-info">Network Key</span>' +
+          '<span class="text-[0.65rem] text-base-content/50">your coordinator, read from Zigbee2MQTT config</span></div>' +
+          '<code class="text-sm font-mono text-info break-all select-all">' + esc(d.config_key.toUpperCase().match(/.{1,2}/g).join(':')) + '</code>' +
+          '<p class="text-[0.65rem] text-base-content/50 mt-2">This is your own network, so the key is already known. Use it with <code class="bg-base-300 px-1 rounded">zbdsniff -k KEY</code> or Wireshark to decrypt your captures.</p>' +
+          '</div>'
+      }
     }
     out.innerHTML = html
   } catch (e) {

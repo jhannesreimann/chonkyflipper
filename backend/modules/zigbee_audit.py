@@ -133,7 +133,12 @@ class ZigbeeAuditModule:
             return {'success': False,
                     'error': f'Key extraction failed: {stderr[:200] or stdout[:200]}',
                     'output': stdout[-500:]}
-        return {'success': True, 'output': stdout, 'file': cap_file}
+        # zbdsniff only recovers a network key when the capture contains a
+        # device join (the moment the Trust Center transports the key). For an
+        # idle capture it finds nothing, so also hand back the coordinator's own
+        # key from the Zigbee2MQTT config, letting the user decrypt their network.
+        return {'success': True, 'output': stdout, 'file': cap_file,
+                'config_key': self._get_network_key()}
 
     # Device discovery (parse pcap for devices, with ZCL cluster identification)
 
