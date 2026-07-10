@@ -363,7 +363,11 @@ class WiFiModule:
         hop_stop = threading.Event()
 
         def _hop():
-            chans = [1, 6, 11, 3, 9, 1, 6, 11, 2, 7, 4, 10, 5, 8]
+            # Probes are sparse, so dwell long enough on each of the three
+            # non-overlapping 2.4 GHz channels to actually catch one rather than
+            # hopping so fast we are never on the right channel at the right
+            # moment.
+            chans = [1, 6, 11]
             i = 0
             while not hop_stop.is_set():
                 subprocess.run(
@@ -371,7 +375,7 @@ class WiFiModule:
                     capture_output=True,
                 )
                 i += 1
-                hop_stop.wait(0.5)
+                hop_stop.wait(2.5)
 
         hopper = threading.Thread(target=_hop, daemon=True)
         hopper.start()
