@@ -211,12 +211,17 @@ class CC1101Module:
 
         burst = self._extract_burst(pulses)
         # A genuine OOK frame needs carrier (RSSI above the floor), enough
-        # structured pulses, and pulse widths in a real timing range -- not the
-        # sub-microsecond hash the slicer emits on noise.
+        # structured pulses, pulse widths in a real timing range (not the
+        # sub-microsecond hash the slicer emits on noise), and it must be a
+        # DISCRETE burst -- a frame that fills the whole window is continuous
+        # interference, not a remote press.
         widths = sorted(d for _, d in burst)
         median_us = widths[len(widths) // 2] if widths else 0
+        span_us = sum(d for _, d in burst)
         carrier = peak_rssi >= CARRIER_DBM
-        clean = carrier and len(burst) >= MIN_PULSES and median_us >= MIN_MEDIAN_US
+        continuous = span_us > 0.8 * duration * 1_000_000
+        clean = (carrier and len(burst) >= MIN_PULSES
+                 and median_us >= MIN_MEDIAN_US and not continuous)
 
         # Only persist the pulse train when it is a real burst; noise captures
         # would otherwise bloat the store with tens of thousands of junk edges.
@@ -237,6 +242,8 @@ class CC1101Module:
             note = None
         elif not carrier:
             note = f'No carrier (peak {round(peak_rssi, 1)} dBm) -- no transmission detected during the window.'
+        elif continuous:
+            note = 'Continuous RF energy, not a discrete remote frame -- likely interference or background traffic.'
         else:
             note = 'Carrier seen but no clean OOK burst decoded -- try again closer to the transmitter.'
 
