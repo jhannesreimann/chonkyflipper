@@ -139,6 +139,15 @@ The BadUSB system has three layers: a filesystem scanner for local `.txt` payloa
 - **Auto-fire**: Arm a payload, and when the Pi's USB-C port detects a host connection (UDC state change), the payload fires automatically. State is polled via `/api/status` every 5 seconds.
 - **Frontend**: `badusb.js` — two-tab layout: Library (OS pills → category grid → payload list → detail with preview/edit/run/arm) and Files (existing filesystem browser).
 
+### Sub-1GHz RF (CC1101)
+- **`cc1101.py`** drives the CC1101 over SPI (`/dev/spidev0.0`) for the control plane (reset, strobes, register R/W, frequency synthesis, RSSI) and uses **lgpio** on GDO0 (BCM 25) for the timing plane.
+- **Async serial OOK**: `_configure_default_ook()` puts the modem in async serial mode (IOCFG0=0x0D, PKTCTRL0=0x32, MDMCFG2=0x30) so GDO0 carries the raw sliced bitstream. Capture claims GDO0 as an lgpio alert and timestamps both edges; replay drives GDO0 with an lgpio `tx_wave` while the PA is keyed by the input level (`_configure_tx_ook()` sets FREND0 + PATABLE).
+- **Capture denoise**: `_extract_burst()` splits the edge stream on long idle gaps (`GAP_US`) and keeps the densest segment; a capture with fewer than `MIN_PULSES` edges is flagged `clean=False` (noise only).
+- **`scan_frequency()`** sweeps a band reading RSSI per step for the spectrum graph. Signals are stored as raw `pulses` (`[level, us]`) JSON in `signals/subghz/`.
+- **Routes** (`routes/subghz.py`): `/subghz/record`, `/subghz/transmit`, `/subghz/scan`, `GET /subghz/signals`, `DELETE /subghz/signals/<id>`.
+- **Frontend**: `subghz.js` -- three tabs (Spectrum / Capture / Signals). The spectrum graph is inline SVG (no chart library); bars use `fill-current` + DaisyUI text colours.
+- **lgpio provisioning** (not on Kali apt, and the pip wheel needs the C lib): build `github.com/joan2937/lg` (`make && sudo make install && sudo ldconfig`), then install the binding into the venv as the chonky user: `sudo -u chonky bash -c 'LIBRARY_PATH=/usr/local/lib C_INCLUDE_PATH=/usr/local/include /opt/chonkyflipper/venv/bin/pip install lgpio'`. It runs daemonless; the import creates a `.lgd-nfy*` notify pipe in the service CWD (`/opt/chonkyflipper`, chonky-writable). Kept out of `requirements.txt` so `update.sh`'s `pip install` never tries (and fails) to rebuild the wheel without those env vars.
+
 ### WiFi Scanning
 WiFi scanning is in `routes/wifi.py` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and wifite-based vulnerability auditing.
 
