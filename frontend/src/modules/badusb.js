@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../api.js'
 import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner, tabBar } from '../ui.js'
 import { esc } from '../util.js'
 import { startTask, notify } from '../toast.js'
+import { refreshAll } from '../state.js'
 
 const TABS = [
   { id: 'library', label: 'Library', icon: 'fa-book' },
@@ -31,14 +32,9 @@ let selectedLayout = 'us'
 export default function renderBadusb(root) {
   root.innerHTML = `
     ${pageHead('fa-keyboard', 'BadUSB', 'USB HID gadget · /dev/hidg0')}
-    <div id="bu-armed" class="hidden mb-3 rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 flex items-center justify-between gap-2">
-      <span class="text-sm"><i class="fa-solid fa-bolt text-warning mr-1.5"></i><span id="bu-armed-label">Armed</span></span>
-      <button id="bu-armed-cancel" class="btn btn-ghost btn-xs text-warning gap-1"><i class="fa-solid fa-xmark"></i>Cancel</button>
-    </div>
     ${tabBar(TABS, active)}
     <div id="bu-body"></div>
   `
-  root.querySelector('#bu-armed-cancel').addEventListener('click', () => cancelArm(root))
   root.querySelectorAll('[data-tab]').forEach((el) =>
     el.addEventListener('click', () => {
       active = el.dataset.tab
@@ -47,8 +43,6 @@ export default function renderBadusb(root) {
     }),
   )
   paint(root)
-  // Show armed bar if a payload is armed (API call, may take a moment)
-  checkArmStatus(root)
 }
 
 function paint(root) {
@@ -325,7 +319,7 @@ async function showPayloadDetail(body, payloadId) {
       </div>`
 
     // Arm button
-    body.querySelector('#bu-arm-btn').addEventListener('click', () => armPayload(payloadId, p.name, p.content, p.layout))
+    body.querySelector('#bu-arm-btn').addEventListener('click', () => armPayload(payloadId, p.name, p.content))
     // Run button
     body.querySelector('#bu-run-btn').addEventListener('click', () => executePayload(payloadId, p.name))
     // Edit toggle
@@ -464,47 +458,13 @@ async function executeContent(content, label) {
   }
 }
 
-async function checkArmStatus(root) {
+async function armPayload(payloadId, name, content) {
   try {
-    const d = await apiGet('/badusb/arm/status', { timeout: 3000 })
-    const bar = root.querySelector('#bu-armed')
-    const label = root.querySelector('#bu-armed-label')
-    if (!bar || !label) return
-    if (d.armed) {
-      bar.classList.remove('hidden')
-      const name = d.payload_name || `#${d.payload_id || 'inline'}`
-      label.textContent = `Armed: "${name}"`
-    } else {
-      bar.classList.add('hidden')
-    }
-  } catch (e) {
-    // API may not be ready on first paint; bar stays hidden
-  }
-}
-
-async function cancelArm(root) {
-  try {
-    const d = await apiPost('/badusb/arm/cancel', {}, { timeout: 3000 })
-    if (!d.success) throw new Error(d.error || 'Cancel failed')
-    root.querySelector('#bu-armed').classList.add('hidden')
-    notify('Auto-fire cancelled', 'info')
-  } catch (e) {
-    notify(e.message, 'error')
-  }
-}
-
-async function armPayload(payloadId, name, content, layout) {
-  try {
-    const d = await apiPost('/badusb/arm', { id: payloadId, content, layout: layout || selectedLayout, payload: name }, { timeout: 5000 })
+    const d = await apiPost('/badusb/arm', { id: payloadId, content, layout: selectedLayout, payload: name }, { timeout: 5000 })
     if (!d.success) throw new Error(d.error || 'Arm failed')
-    notify(`Armed: "${name}" will fire when USB is connected`, 'warning')
-    // Show armed bar at module level (above tabs)
-    const bar = document.querySelector('#bu-armed')
-    const label = document.querySelector('#bu-armed-label')
-    if (bar && label) {
-      bar.classList.remove('hidden')
-      label.textContent = `Armed: "${name}"`
-    }
+    notify(`Armed: "${name}" (${selectedLayout.toUpperCase()}) will fire when USB is connected`, 'warning')
+    // Refresh the global status poll so the app-shell armed banner shows now.
+    refreshAll()
   } catch (e) {
     notify(e.message, 'error')
   }

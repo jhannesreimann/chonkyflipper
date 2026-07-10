@@ -1,7 +1,8 @@
 import './style.css'
 
-import { subscribe, startPolling, getState } from './state.js'
+import { subscribe, startPolling, getState, refreshAll } from './state.js'
 import { onTaskCountChange } from './toast.js'
+import { apiPost } from './api.js'
 import { esc, faClass } from './util.js'
 
 import renderDashboard from './modules/dashboard.js'
@@ -53,6 +54,7 @@ function shell() {
 
     <div class="drawer-content flex flex-col min-h-screen">
       ${header()}
+      ${armedBanner()}
       <main id="view" class="flex-1 px-4 sm:px-6 py-5 max-w-6xl w-full mx-auto"></main>
     </div>
 
@@ -96,6 +98,21 @@ function header() {
       </button>
     </div>
   </header>`
+}
+
+// Global armed indicator. Lives in the app shell (outside #view) so it stays
+// put across module navigation. Driven by the /api/status poll via reflectState.
+function armedBanner() {
+  return `
+  <div id="armed-banner" class="hidden sticky top-16 z-20 bg-warning/15 border-b border-warning/30">
+    <div class="flex items-center gap-2 px-4 sm:px-6 py-2 max-w-6xl w-full mx-auto">
+      <i class="fa-solid fa-bolt text-warning"></i>
+      <span id="armed-banner-label" class="text-sm flex-1 min-w-0 truncate">BadUSB armed</span>
+      <button id="armed-banner-cancel" class="btn btn-ghost btn-xs text-warning gap-1">
+        <i class="fa-solid fa-xmark"></i>Cancel
+      </button>
+    </div>
+  </div>`
 }
 
 function navLink(r, indent) {
@@ -210,6 +227,17 @@ function wireHeader() {
     wrap.classList.toggle('hidden', count === 0)
     wrap.classList.toggle('flex', count > 0)
   })
+
+  const cancelBtn = document.getElementById('armed-banner-cancel')
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      try {
+        await apiPost('/badusb/arm/cancel', {}, { timeout: 3000 })
+        document.getElementById('armed-banner').classList.add('hidden')
+        refreshAll()
+      } catch (e) {}
+    })
+  }
 }
 
 function reflectState(s) {
@@ -240,6 +268,21 @@ function reflectState(s) {
     if (pct !== null && pct !== undefined) {
       const charging = s.status.power.is_charging ? ' fa-bolt' : ''
       batt.innerHTML = `<i class="fa-solid fa-battery-half"></i> ${pct}%${charging ? '<i class="fa-solid fa-bolt ml-0.5"></i>' : ''}`
+    }
+  }
+
+  // Global BadUSB armed banner
+  const banner = document.getElementById('armed-banner')
+  if (banner) {
+    const armed = s.status && s.status.badusb_armed
+    if (armed && armed.armed) {
+      const name = armed.payload_name || `#${armed.payload_id || 'inline'}`
+      const layout = (armed.layout || 'us').toUpperCase()
+      const label = document.getElementById('armed-banner-label')
+      if (label) label.textContent = `BadUSB armed: "${name}" (${layout}) · fires on USB connect`
+      banner.classList.remove('hidden')
+    } else {
+      banner.classList.add('hidden')
     }
   }
 }
