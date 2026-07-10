@@ -49,6 +49,13 @@ def subghz_signals():
     return api_success(result)
 
 
+@bp.route('/subghz/signals/<signal_id>', methods=['GET'])
+def subghz_get_signal(signal_id):
+    cc1101 = get_module('cc1101')
+    result = cc1101.get_signal(signal_id)
+    return api_success(result) if result.get('success') else api_error(result.get('error', 'Not found'), 404)
+
+
 @bp.route('/subghz/signals/<signal_id>', methods=['DELETE'])
 def subghz_delete(signal_id):
     cc1101 = get_module('cc1101')

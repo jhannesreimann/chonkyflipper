@@ -8,7 +8,7 @@ import { startTask, notify } from '../toast.js'
 
 const TABS = [
   { id: 'spectrum', label: 'Spectrum', icon: 'fa-chart-column' },
-  { id: 'capture', label: 'Capture', icon: 'fa-circle-dot' },
+  { id: 'capture', label: 'Capture', icon: 'fa-floppy-disk' },
   { id: 'signals', label: 'Signals', icon: 'fa-tower-broadcast' },
 ]
 
@@ -254,6 +254,7 @@ function signalsTab(body) {
       ${sectionTitle('Saved signals', `<button id="sg-refresh" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-rotate"></i>Refresh</button>`)}
       <div id="sg-list"></div>
     `)}
+    <div id="sg-detail" class="mt-4"></div>
   `
   body.querySelector('#sg-refresh').addEventListener('click', () => loadSignals(body))
   loadSignals(body)
@@ -271,6 +272,9 @@ async function loadSignals(body) {
         <thead><tr><th>Signal</th><th>Freq</th><th>Pulses</th><th></th></tr></thead>
         <tbody>${sigs.map(sigRow).join('')}</tbody>
       </table></div>`
+    list.querySelectorAll('[data-view]').forEach((b) =>
+      b.addEventListener('click', () => viewSignal(body, b.dataset.view)),
+    )
     list.querySelectorAll('[data-replay]').forEach((b) =>
       b.addEventListener('click', () => replay(b.dataset.replay)),
     )
@@ -292,10 +296,72 @@ function sigRow(s) {
     <td class="text-xs">${esc(s.frequency_mhz ?? '?')} MHz</td>
     <td class="text-xs">${esc(s.pulses ?? 0)}</td>
     <td class="text-right whitespace-nowrap">
+      <button class="btn btn-ghost btn-xs gap-1" data-view="${esc(s.name)}"><i class="fa-solid fa-chart-column"></i>Graph</button>
       <button class="btn btn-ghost btn-xs gap-1" data-replay="${esc(s.name)}"><i class="fa-solid fa-paper-plane"></i>Replay</button>
       <button class="btn btn-ghost btn-xs text-error gap-1" data-del="${esc(s.name)}" title="Delete signal"><i class="fa-solid fa-trash"></i></button>
     </td>
   </tr>`
+}
+
+async function viewSignal(body, name) {
+  const detail = body.querySelector('#sg-detail')
+  detail.innerHTML = spinner('Loading waveform...')
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  try {
+    const d = await apiGet(`/subghz/signals/${encodeURIComponent(name)}`)
+    if (!d.success) throw new Error(d.error || 'Load failed')
+    const pulses = d.pulses || []
+    const meta = [
+      `${d.frequency_mhz ?? '?'} MHz`,
+      `${pulses.length} pulses`,
+      d.peak_rssi_dbm != null ? `peak ${d.peak_rssi_dbm} dBm` : null,
+      d.clean ? 'clean' : 'noisy',
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    detail.innerHTML = card(`
+      ${sectionTitle(esc(name), `<button id="sg-detail-close" class="btn btn-ghost btn-sm btn-square" title="Close"><i class="fa-solid fa-xmark"></i></button>`)}
+      <div class="text-xs text-base-content/55 mb-3">${esc(meta)}</div>
+      ${waveformSvg(pulses)}
+    `)
+    detail.querySelector('#sg-detail-close').addEventListener('click', () => (detail.innerHTML = ''))
+  } catch (e) {
+    detail.innerHTML = errorBox(e.message)
+  }
+}
+
+// Time-domain OOK waveform: a step line of the captured pulse train
+// (high = carrier on, low = off) plotted against elapsed time.
+function waveformSvg(pulses) {
+  if (!pulses.length) return empty('No pulse data stored for this signal.', 'fa-wave-square')
+  const total = pulses.reduce((s, p) => s + (p[1] || 0), 0) || 1
+  const W = 1000,
+    H = 130,
+    padL = 8,
+    padR = 8,
+    padT = 12,
+    padB = 22
+  const plotW = W - padL - padR
+  const yHigh = padT + 4
+  const yLow = H - padB
+  const pts = []
+  let t = 0
+  for (const [lv, d] of pulses) {
+    const y = lv ? yHigh : yLow
+    pts.push(`${(padL + plotW * (t / total)).toFixed(1)},${y}`)
+    t += d || 0
+    pts.push(`${(padL + plotW * (t / total)).toFixed(1)},${y}`)
+  }
+  const ms = (total / 1000).toFixed(total < 10000 ? 2 : 1)
+  return `
+  <div class="rounded-xl border border-base-300/60 bg-base-200/40 p-2">
+    <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" preserveAspectRatio="none" role="img" aria-label="OOK waveform">
+      <line x1="${padL}" y1="${yLow}" x2="${W - padR}" y2="${yLow}" class="text-base-content/15 stroke-current" stroke-width="1"></line>
+      <polyline points="${pts.join(' ')}" class="text-primary stroke-current" fill="none" stroke-width="1.2" stroke-linejoin="round"></polyline>
+      <text x="${padL}" y="${H - 6}" class="text-base-content/55 fill-current" font-size="10">0 ms</text>
+      <text x="${W - padR}" y="${H - 6}" text-anchor="end" class="text-base-content/55 fill-current" font-size="10">${ms} ms</text>
+    </svg>
+  </div>`
 }
 
 async function replay(name) {

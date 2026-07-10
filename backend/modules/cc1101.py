@@ -355,6 +355,18 @@ class CC1101Module:
 
     # Signal management
 
+    def get_signal(self, signal_id):
+        filepath = os.path.join(self.signals_dir, f'{signal_id}.json')
+        if not os.path.exists(filepath):
+            return {'success': False, 'error': 'Signal not found'}
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        data['success'] = True
+        return data
+
     def list_signals(self):
         signals = []
         try:
