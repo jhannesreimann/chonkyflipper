@@ -344,6 +344,17 @@ class WiFiModule:
 
     # Probe request capture
 
+    @staticmethod
+    def _decode_ssid(s):
+        """tshark renders wlan.ssid as a hex byte string; decode it to text.
+        Falls back to the raw value if it is not valid hex/UTF-8."""
+        if s and len(s) % 2 == 0 and re.fullmatch(r'[0-9a-fA-F]+', s):
+            try:
+                return bytes.fromhex(s).decode('utf-8')
+            except (ValueError, UnicodeDecodeError):
+                return s
+        return s
+
     def capture_probes(self, duration=30):
         """Capture 802.11 probe requests using tshark, hopping 2.4 GHz channels
         so we hear clients probing on any channel (not just the current one)."""
@@ -400,10 +411,12 @@ class WiFiModule:
             parts = line.split(',', 1)
             mac = parts[0].strip()
             ssid = parts[1].strip() if len(parts) > 1 else ''
-            # tshark emits <MISSING> for a wildcard (broadcast) probe; normalise
-            # it to an empty SSID so the UI shows it as "(broadcast)".
+            # tshark emits <MISSING> for a wildcard (broadcast) probe, and the
+            # wlan.ssid field as hex bytes for directed probes; normalise both.
             if ssid == '<MISSING>':
                 ssid = ''
+            else:
+                ssid = self._decode_ssid(ssid)
             if mac and re.match(r'^[0-9a-fA-F:]{17}$', mac):
                 key = f'{mac}:{ssid}'
                 if key not in seen:
