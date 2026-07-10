@@ -154,6 +154,8 @@ The BadUSB system has three layers: a filesystem scanner for local `.txt` payloa
 WiFi scanning is in `routes/wifi.py` (uses `wpa_cli -i wlan1 scan` + `scan_results`). The `WiFiModule` class (`wifi.py`) provides `scan_networks()`, monitor mode, packet capture, and wifite-based vulnerability auditing.
 
 - **rtl8821au driver gotcha**: Never use `ifconfig` to bring wlan1 down/up; it corrupts the driver state and causes `Invalid HW-addr family 0x0323` when wpa_supplicant tries to init. Use `ip link set down/up` instead. `stop_monitor_mode()` uses `ip link` + `iw set type managed` + `ip link set promisc off` to reliably exit monitor mode. If the interface gets into a broken state (promisc stuck, scans return empty), reload the module: `modprobe -r 8821au && modprobe 8821au`.
+- **Empty-scan auto-recovery**: `scan_networks()` reloads the `8821au` module (via `reset_adapter()`) and retries once when a scan returns zero networks, since an empty result almost always means the driver wedged. Manual trigger: `POST /wifi/reset_adapter` (Scan tab reset button). Requires the sudoers drop-in `/etc/sudoers.d/chonky-wifi-reset` granting chonky `modprobe -r 8821au` and `modprobe 8821au`. Do NOT run `iw dev wlan1 scan` directly against a wedged driver -- it can hard-crash the kernel and reboot the Pi.
+- **wifite serialization**: `/wifi/audit/wifite-scan` and `wifite-attack` take a cross-process `flock` (`/tmp/chonky_wifite.lock`) so two runs cannot fight over the adapter and crash the backend. The Attack tab does not auto-scan on open (that caused concurrent runs on tab switches).
 
 ## Frontend Architecture
 - **Stack**: Vite, Tailwind CSS v4, DaisyUI v5, Font Awesome; plain ES modules, no framework.

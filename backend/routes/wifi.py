@@ -62,54 +62,80 @@ def wifi_probes():
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
 
 
-# wifite audit
+# adapter reset (recover the wedged rtl8821au driver)
+
+@bp.route('/wifi/reset_adapter', methods=['POST'])
+def wifi_reset_adapter():
+    wifi = get_module('wifi')
+    result = wifi.reset_adapter()
+    return api_success(result) if result.get('success') else api_error('Adapter reset failed', 500)
+
+
+# wifite audit -- serialized with a cross-process file lock so two runs (e.g.
+# from rapid tab switches) cannot fight over the adapter and crash the backend.
+
+import fcntl
+
+_WIFITE_LOCK_PATH = '/tmp/chonky_wifite.lock'
+
+
+def _acquire_wifite_lock():
+    f = open(_WIFITE_LOCK_PATH, 'w')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except BlockingIOError:
+        f.close()
+        return None
+
 
 @bp.route('/wifi/audit/wifite-scan', methods=['POST'])
 def wifi_wifite_scan():
     """Wifite scan only (no attacks). Returns targets with clients."""
-    data = request.json or {}
-    scan_time = data.get('scan_time', 10)
-    wifi = get_module('wifi')
-    targets = wifi.run_wifite_scan_only(scan_time=scan_time)
-    return api_success({'targets': targets})
+    lock = _acquire_wifite_lock()
+    if lock is None:
+        return api_error('A Wi-Fi audit is already running', 409)
+    try:
+        data = request.json or {}
+        scan_time = data.get('scan_time', 10)
+        wifi = get_module('wifi')
+        targets = wifi.run_wifite_scan_only(scan_time=scan_time)
+        return api_success({'targets': targets})
+    finally:
+        lock.close()
 
-
-_wifite_bg_task = None
 
 @bp.route('/wifi/audit/wifite-attack', methods=['POST'])
 def wifi_wifite_attack():
     """Wifite attack: runs in background to avoid HTTP timeout."""
-    global _wifite_bg_task
-    if _wifite_bg_task and _wifite_bg_task.poll() is None:
-        return api_error('Attack already in progress', 400)
+    lock = _acquire_wifite_lock()
+    if lock is None:
+        return api_error('A Wi-Fi audit is already running', 409)
 
     data = request.json or {}
     scan_time = data.get('scan_time', 10)
     attack_time = data.get('attack_time', 120)
-    channel = data.get('channel')
 
     wifi = get_module('wifi')
-    # Run in background thread so API returns immediately
     import threading
-    result_holder = {}
 
     def _run():
-        result_holder['data'] = wifi.run_wifite_audit(
-            scan_time=scan_time, attack_time=attack_time)
+        try:
+            wifi.run_wifite_audit(scan_time=scan_time, attack_time=attack_time)
+        finally:
+            lock.close()  # release the lock only when the attack finishes
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    _wifite_bg_task = t
-
+    threading.Thread(target=_run, daemon=True).start()
     return api_success({'status': 'started', 'scan_time': scan_time,
-                         'attack_time': attack_time})
+                        'attack_time': attack_time})
 
 
 @bp.route('/wifi/audit/wifite-status', methods=['GET'])
 def wifi_wifite_status():
-    """Check if background wifite attack is still running."""
-    global _wifite_bg_task
-    if _wifite_bg_task and _wifite_bg_task.is_alive():
+    """Report whether a wifite audit is running (i.e. the lock is still held)."""
+    probe = _acquire_wifite_lock()
+    if probe is None:
         return api_success({'running': True})
+    probe.close()
     return api_success({'running': False, 'message': 'No attack in progress'})
 

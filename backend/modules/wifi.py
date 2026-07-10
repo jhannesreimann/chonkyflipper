@@ -37,7 +37,7 @@ class WiFiModule:
 
     # Scanning (enriched with risk and encryption details)
 
-    def scan_networks(self):
+    def scan_networks(self, _recover=True):
         """Scan for WiFi networks using wpa_cli on wlan1. Returns list with risk and encryption."""
         if not os.path.exists('/sys/class/net/wlan1'):
             return None
@@ -131,7 +131,34 @@ class WiFiModule:
                 else:
                     seen[ssid] = net
 
-        return sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
+        result = sorted(seen.values(), key=lambda x: x.get('signal_dbm', -100), reverse=True)
+        if not result and _recover:
+            # An empty result almost always means the driver wedged (there are
+            # always APs in range). Reload the module once and retry a single
+            # time before giving up.
+            self.reset_adapter()
+            return self.scan_networks(_recover=False)
+        return result
+
+    def reset_adapter(self):
+        """Reload the rtl8821au driver to clear the wedged empty-scan state.
+
+        The driver periodically gets stuck returning empty scan results (and a
+        stuck PROMISC flag). Reloading the kernel module is the reliable fix.
+        Only wlan1 (the Alfa) is affected; the wlan0 AP and eth0 uplink stay up.
+        """
+        subprocess.run(['sudo', '-n', 'modprobe', '-r', '8821au'], capture_output=True, timeout=20)
+        time.sleep(2)
+        subprocess.run(['sudo', '-n', 'modprobe', '8821au'], capture_output=True, timeout=20)
+        for _ in range(15):
+            if os.path.exists('/sys/class/net/wlan1'):
+                break
+            time.sleep(1)
+        subprocess.run(['sudo', '-n', 'ip', 'link', 'set', self.interface, 'up'], capture_output=True)
+        subprocess.run(['sudo', '-n', 'systemctl', 'stop', 'wpa_supplicant@wlan1'], capture_output=True)
+        subprocess.run(['sudo', '-n', 'systemctl', 'start', 'wpa_supplicant@wlan1'], capture_output=True)
+        time.sleep(3)
+        return {'success': os.path.exists('/sys/class/net/wlan1')}
 
     @staticmethod
     def _classify_security(flags):
@@ -318,7 +345,8 @@ class WiFiModule:
     # Probe request capture
 
     def capture_probes(self, duration=30):
-        """Capture 802.11 probe requests using tshark. Returns list of client/SSID pairs."""
+        """Capture 802.11 probe requests using tshark, hopping 2.4 GHz channels
+        so we hear clients probing on any channel (not just the current one)."""
         if not self._is_monitor_mode():
             result = self.start_monitor_mode()
             if not result['success']:
@@ -328,13 +356,36 @@ class WiFiModule:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         outfile = os.path.join(CAPTURES_DIR, f'probes_{timestamp}.csv')
 
+        # Hop channels in a background thread while tshark listens. sudoers only
+        # permits specific binaries (not a shell), so the hop cannot be a
+        # backgrounded shell job inside the tshark sudo call -- do it here.
+        import threading
+        hop_stop = threading.Event()
+
+        def _hop():
+            chans = [1, 6, 11, 3, 9, 1, 6, 11, 2, 7, 4, 10, 5, 8]
+            i = 0
+            while not hop_stop.is_set():
+                subprocess.run(
+                    ['sudo', '-n', 'iw', 'dev', self.interface, 'set', 'channel', str(chans[i % len(chans)])],
+                    capture_output=True,
+                )
+                i += 1
+                hop_stop.wait(0.5)
+
+        hopper = threading.Thread(target=_hop, daemon=True)
+        hopper.start()
+
         cmd = (
             f'timeout {duration} tshark -i {self.monitor_interface} '
             f'-Y "wlan.fc.type_subtype == 4" '
             f'-T fields -e wlan.sa -e wlan.ssid -E separator=,'
         )
-
-        stdout, stderr, rc = self._run(cmd, timeout=duration + 10)
+        try:
+            stdout, stderr, rc = self._run(cmd, timeout=duration + 10)
+        finally:
+            hop_stop.set()
+            hopper.join(timeout=2)
 
         probes = []
         seen = set()
@@ -345,6 +396,10 @@ class WiFiModule:
             parts = line.split(',', 1)
             mac = parts[0].strip()
             ssid = parts[1].strip() if len(parts) > 1 else ''
+            # tshark emits <MISSING> for a wildcard (broadcast) probe; normalise
+            # it to an empty SSID so the UI shows it as "(broadcast)".
+            if ssid == '<MISSING>':
+                ssid = ''
             if mac and re.match(r'^[0-9a-fA-F:]{17}$', mac):
                 key = f'{mac}:{ssid}'
                 if key not in seen:
@@ -356,8 +411,9 @@ class WiFiModule:
         with open(outfile, 'w') as f:
             f.write(stdout)
 
+        directed = sum(1 for p in probes if p['ssid'])
         return {'success': True, 'probes': probes, 'count': len(probes),
-                'duration': duration, 'file': outfile}
+                'directed': directed, 'duration': duration, 'file': outfile}
 
     # Wifite-based auditing (Kali's wireless auditor - scan + attack)
 

@@ -44,14 +44,14 @@ function paint(root) {
 function scanTab(body) {
   body.innerHTML = card(`
     ${sectionTitle('Nearby networks', `
-      <button id="w-managed" class="btn btn-ghost btn-sm btn-square" title="Restore managed mode (fixes scanning after an attack)"><i class="fa-solid fa-rotate-left"></i></button>
+      <button id="w-reset" class="btn btn-ghost btn-sm btn-square" title="Reset the Alfa adapter (reloads the driver if scans come back empty)"><i class="fa-solid fa-plug-circle-bolt"></i></button>
       <button id="w-mon" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-tower-broadcast"></i>Monitor</button>
       <button id="w-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan</button>
     `)}
     <div id="w-results">${empty('Run a scan to discover access points.', 'fa-wifi')}</div>
   `)
   body.querySelector('#w-scan').addEventListener('click', () => doScan(body))
-  body.querySelector('#w-managed').addEventListener('click', () => restoreManaged())
+  body.querySelector('#w-reset').addEventListener('click', () => resetAdapter())
   body.querySelector('#w-mon').addEventListener('click', async () => {
     const task = startTask('Enabling monitor mode')
     try {
@@ -63,15 +63,15 @@ function scanTab(body) {
   })
 }
 
-// wifite / monitor mode leave wlan1 unable to scan. Restore managed mode so the
-// Scan tab (wpa_cli) works again.
-async function restoreManaged() {
-  const task = startTask('Restoring managed mode')
+// Reload the rtl8821au driver to clear the wedged empty-scan state. The Scan
+// endpoint does this automatically on an empty result; this is the manual knob.
+async function resetAdapter() {
+  const task = startTask('Resetting adapter', 'Reloading driver')
   try {
-    await apiPost('/wifi/stop_monitor', {}, { timeout: 20000 })
-    task.done('Managed mode restored', 'Scanning is available again')
+    await apiPost('/wifi/reset_adapter', {}, { timeout: 40000 })
+    task.done('Adapter reset', 'Driver reloaded, scanning available')
   } catch (e) {
-    task.fail('Could not restore managed mode', e.message)
+    task.fail('Reset failed', e.message)
   }
 }
 
@@ -159,31 +159,44 @@ function auditCard(t) {
 function probesTab(body) {
   body.innerHTML = card(`
     ${sectionTitle('Probe requests')}
-    ${infoBox('Capture probe requests to reveal which networks nearby devices are searching for.')}
-    <div class="flex gap-2 mt-3">
-      ${[15, 30, 60].map((s) => `<button class="btn btn-sm ${s === 15 ? 'btn-primary' : 'btn-ghost'}" data-dur="${s}">${s}s</button>`).join('')}
+    ${infoBox('Listens across the 2.4 GHz channels for probe requests. Most modern phones send <strong>broadcast</strong> probes (no SSID) with randomised MACs for privacy, so directed network names are rarer than they used to be.')}
+    <div class="flex flex-wrap items-end gap-3 mt-3">
+      <label class="form-control w-32">
+        <span class="label-text text-xs mb-1">Duration</span>
+        <select id="w-probe-dur" class="select select-bordered select-sm">
+          <option value="15">15 seconds</option>
+          <option value="30" selected>30 seconds</option>
+          <option value="60">60 seconds</option>
+        </select>
+      </label>
+      <button id="w-probe-start" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-satellite"></i>Start listening</button>
     </div>
-    <div id="w-probes-out" class="mt-3">${empty('Choose a duration to start listening.', 'fa-satellite')}</div>
+    <div id="w-probes-out" class="mt-3">${empty('Start listening to capture probe requests.', 'fa-satellite')}</div>
   `)
-  body.querySelectorAll('[data-dur]').forEach((b) =>
-    b.addEventListener('click', () => doProbes(body, parseInt(b.dataset.dur))),
+  body.querySelector('#w-probe-start').addEventListener('click', () =>
+    doProbes(body, parseInt(body.querySelector('#w-probe-dur').value) || 30),
   )
 }
 
 async function doProbes(body, dur) {
   const out = body.querySelector('#w-probes-out')
-  out.innerHTML = spinner(`Listening for ${dur}s...`)
+  out.innerHTML = spinner(`Listening for ${dur}s (hopping channels)...`)
   const task = startTask('Capturing probes', `${dur}s window`)
   try {
     const d = await apiPost('/wifi/probes', { duration: dur }, { timeout: (dur + 30) * 1000 })
     const probes = d.probes || []
     task.done('Probes captured', `${probes.length} request(s)`)
     if (!probes.length) return (out.innerHTML = empty('No probe requests captured.'))
+    const directed = d.directed || 0
     out.innerHTML = `
+      <div class="text-xs text-base-content/55 mb-2">${probes.length} unique probe(s) from ${new Set(probes.map((p) => p.client_mac)).size} device(s) · ${directed} naming a specific network</div>
       <div class="overflow-x-auto"><table class="table table-sm">
         <thead><tr><th>Client MAC</th><th>Looking for</th></tr></thead>
         <tbody>${probes
-          .map((p) => `<tr><td class="font-mono text-xs">${esc(p.client_mac)}</td><td>${esc(p.ssid || '(broadcast)')}</td></tr>`)
+          .map(
+            (p) =>
+              `<tr><td class="font-mono text-xs">${esc(p.client_mac)}</td><td>${p.ssid ? esc(p.ssid) : '<span class="text-base-content/40">(broadcast)</span>'}</td></tr>`,
+          )
           .join('')}</tbody>
       </table></div>`
   } catch (e) {
@@ -195,13 +208,12 @@ async function doProbes(body, dur) {
 // ---------------------------------------------------------------- Attack
 function attackTab(body) {
   body.innerHTML = card(`
-    ${sectionTitle('Targeted attack', `<button id="w-rescan" class="btn btn-ghost btn-sm gap-2"><i class="fa-solid fa-rotate"></i>Rescan</button>`)}
-    ${infoBox('<span class="text-warning font-semibold">Only attack networks you own or are authorised to test.</span> wifite runs handshake capture + WPS in the background.')}
-    <div id="w-attack-list" class="mt-3"></div>
+    ${sectionTitle('Targeted attack', `<button id="w-attack-scan" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-magnifying-glass"></i>Scan for targets</button>`)}
+    ${infoBox('<span class="text-warning font-semibold">Only attack networks you own or are authorised to test.</span> wifite deauths a client to capture the WPA handshake (and tries WPS). The handshake is <strong>not cracked on the Pi</strong> - the <code>.cap</code> is saved to <code>/root/hs/</code> for offline cracking on a real GPU.')}
+    <div id="w-attack-list" class="mt-3">${empty('Scan for targets with connected clients, then pick one to attack.', 'fa-burst')}</div>
     <div id="w-attack-result" class="console mt-3 hidden"></div>
   `)
-  body.querySelector('#w-rescan').addEventListener('click', () => loadTargets(body))
-  loadTargets(body)
+  body.querySelector('#w-attack-scan').addEventListener('click', () => loadTargets(body))
 }
 
 async function loadTargets(body) {
@@ -288,27 +300,38 @@ async function runAttack(body, target) {
 function captureTab(body) {
   body.innerHTML = card(`
     ${sectionTitle('Packet capture')}
-    <label class="form-control w-full max-w-xs">
-      <span class="label-text text-xs mb-1">Filter</span>
-      <select id="w-cap-filter" class="select select-bordered select-sm">
-        <option value="">All packets</option>
-        <option value="beacons">Beacons</option>
-        <option value="probes">Probe requests</option>
-        <option value="management">Management frames</option>
-        <option value="data">Data frames</option>
-        <option value="control">Control frames</option>
-      </select>
-    </label>
-    <button id="w-cap" class="btn btn-primary btn-sm gap-2 mt-4"><i class="fa-solid fa-floppy-disk"></i>Capture 60s</button>
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="form-control w-44">
+        <span class="label-text text-xs mb-1">Filter</span>
+        <select id="w-cap-filter" class="select select-bordered select-sm">
+          <option value="">All packets</option>
+          <option value="beacons">Beacons</option>
+          <option value="probes">Probe requests</option>
+          <option value="management">Management frames</option>
+          <option value="data">Data frames</option>
+          <option value="control">Control frames</option>
+        </select>
+      </label>
+      <label class="form-control w-32">
+        <span class="label-text text-xs mb-1">Duration</span>
+        <select id="w-cap-dur" class="select select-bordered select-sm">
+          <option value="30">30 seconds</option>
+          <option value="60" selected>60 seconds</option>
+          <option value="120">120 seconds</option>
+        </select>
+      </label>
+      <button id="w-cap" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-floppy-disk"></i>Capture</button>
+    </div>
     <div id="w-cap-out" class="mt-3"></div>
   `)
   body.querySelector('#w-cap').addEventListener('click', async () => {
     const filter = body.querySelector('#w-cap-filter').value || null
+    const dur = parseInt(body.querySelector('#w-cap-dur').value) || 60
     const out = body.querySelector('#w-cap-out')
-    out.innerHTML = spinner('Capturing for 60s...')
-    const task = startTask('Packet capture', `filter: ${filter || 'all'}`)
+    out.innerHTML = spinner(`Capturing for ${dur}s...`)
+    const task = startTask('Packet capture', `${dur}s · filter: ${filter || 'all'}`)
     try {
-      const d = await apiPost('/wifi/capture', { duration: 60, filter }, { timeout: 90000 })
+      const d = await apiPost('/wifi/capture', { duration: dur, filter }, { timeout: (dur + 30) * 1000 })
       task.done('Capture saved', `${d.filename || ''} (${fmtBytes(d.size_bytes)})`)
       out.innerHTML = infoBox(`Saved <strong>${esc(d.filename || 'capture.pcap')}</strong> · ${fmtBytes(d.size_bytes)}`, 'fa-circle-check')
     } catch (e) {
