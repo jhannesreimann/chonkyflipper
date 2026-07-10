@@ -19,4 +19,4 @@ paho-mqtt>=1.6.1
 PyYAML>=6.0
 
 # Production WSGI server
-gunicorn==21.2.0
+gunicorn==22.0.0
