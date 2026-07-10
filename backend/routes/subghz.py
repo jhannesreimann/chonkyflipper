@@ -4,6 +4,7 @@ Sub-1GHz recording, replay, spectrum scan and signal management endpoints.
 
 from flask import Blueprint, request
 from hardware import get_module
+from modules.subghz_decode import decode_pulses
 from utils import api_success, api_error
 
 bp = Blueprint('subghz', __name__, url_prefix='/api')
@@ -54,6 +55,17 @@ def subghz_get_signal(signal_id):
     cc1101 = get_module('cc1101')
     result = cc1101.get_signal(signal_id)
     return api_success(result) if result.get('success') else api_error(result.get('error', 'Not found'), 404)
+
+
+@bp.route('/subghz/decode', methods=['POST'])
+def subghz_decode():
+    data = request.json or {}
+    signal_id = data.get('signal_id')
+    cc1101 = get_module('cc1101')
+    sig = cc1101.get_signal(signal_id)
+    if not sig.get('success'):
+        return api_error(sig.get('error', 'Not found'), 404)
+    return api_success(decode_pulses(sig.get('pulses', [])))
 
 
 @bp.route('/subghz/signals/<signal_id>', methods=['DELETE'])

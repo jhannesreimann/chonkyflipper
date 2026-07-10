@@ -330,8 +330,14 @@ async function viewSignal(body, name) {
       <div class="text-xs text-base-content/55 mb-3">${esc(meta)}</div>
       ${waveformSvg(pulses)}
       ${infoBox(`Filled bars = carrier <b>on</b> (transmitting), gaps = silent. Only the active part of the capture window is shown. Multiple bar clusters are the same code re-sent as repeated frames.${truncated ? ' <b>Capture hit the 4096-pulse cap</b>, so a longer transmission may be cut off.' : ''}`)}
+      <div class="flex items-center gap-2 mt-4">
+        <button id="sg-decode-btn" class="btn btn-primary btn-sm gap-2"><i class="fa-solid fa-barcode"></i>Decode protocol</button>
+        <span class="text-[0.65rem] text-base-content/45">Parse the pulses into bits and identify the protocol.</span>
+      </div>
+      <div id="sg-decode-out" class="mt-3"></div>
     `)
     detail.querySelector('#sg-detail-close').addEventListener('click', () => (detail.innerHTML = ''))
+    detail.querySelector('#sg-decode-btn').addEventListener('click', () => decodeSignal(detail, name))
   } catch (e) {
     detail.innerHTML = errorBox(e.message)
   }
@@ -370,6 +376,50 @@ function waveformSvg(pulses) {
       <text x="${padL}" y="${H - 6}" class="text-base-content/55 fill-current" font-size="10">0 ms</text>
       <text x="${W - padR}" y="${H - 6}" text-anchor="end" class="text-base-content/55 fill-current" font-size="10">${ms} ms</text>
     </svg>
+  </div>`
+}
+
+async function decodeSignal(detail, name) {
+  const out = detail.querySelector('#sg-decode-out')
+  const btn = detail.querySelector('#sg-decode-btn')
+  if (btn) btn.disabled = true
+  out.innerHTML = spinner('Decoding...')
+  try {
+    const d = await apiPost('/subghz/decode', { signal_id: name })
+    if (!d.decoded) {
+      out.innerHTML = infoBox(d.reason || 'Could not decode this signal.', 'fa-circle-question')
+      return
+    }
+    const conf = { high: 'badge-success', medium: 'badge-warning', low: 'badge-ghost' }[d.confidence] || 'badge-ghost'
+    const kind = d.code_type === 'rolling' ? 'badge-warning' : d.code_type === 'fixed' ? 'badge-info' : 'badge-ghost'
+    out.innerHTML = `
+      <div class="rounded-xl border border-base-300/60 bg-base-200/40 p-3 space-y-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="badge badge-sm badge-primary">${esc(d.protocol)}</span>
+          <span class="badge badge-sm ${kind} badge-outline">${esc(d.code_type)}</span>
+          <span class="badge badge-sm ${conf} badge-outline">${esc(d.confidence)} confidence</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          ${statCell('Code', d.hex, true)}
+          ${statCell('Bits', d.bits)}
+          ${statCell('Base Te', `${d.te_us} us`)}
+          ${statCell('Frames', `${d.repeats_agree}/${d.frames} agree`)}
+        </div>
+        <div class="text-[0.65rem] text-base-content/45 break-all font-mono">${esc(d.binary)}</div>
+        ${d.code_type === 'rolling' ? infoBox('Rolling code: each press is a new encrypted value, so a captured frame will not replay. This identifies the protocol, it does not recover the key.') : ''}
+      </div>`
+  } catch (e) {
+    out.innerHTML = errorBox(e.message)
+  } finally {
+    if (btn) btn.disabled = false
+  }
+}
+
+function statCell(label, value, mono = false) {
+  return `
+  <div class="rounded-lg bg-base-100/60 px-2.5 py-1.5">
+    <div class="text-[0.6rem] uppercase tracking-wide text-base-content/40">${esc(label)}</div>
+    <div class="font-semibold ${mono ? 'font-mono' : ''} truncate">${esc(value)}</div>
   </div>`
 }
 
