@@ -42,6 +42,17 @@ class ZigbeeAuditModule:
         except Exception as e:
             return '', str(e), 1
 
+    def _check_device(self):
+        """Return True if the CC2531 sniffer dongle (VID:0451 PID:16AE) is on
+        the USB bus. This is the stock TI packet sniffer dongle KillerBee drives."""
+        try:
+            out = subprocess.run(
+                ['lsusb'], capture_output=True, text=True, timeout=5,
+            ).stdout.lower()
+        except Exception:
+            return False
+        return '0451:16ae' in out
+
 
     # Passive capture (zbdump)
 
