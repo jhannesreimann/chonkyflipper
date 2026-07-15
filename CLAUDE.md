@@ -27,7 +27,7 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 ## Development Notes
 - The Flask backend has **no test suite, no linter** and runs directly: `python3 backend/app.py` on the Pi (debug mode is off by default; set `FLASK_DEBUG=1` to enable).
 - The frontend IS built: `cd frontend && npm run build` produces static files in `frontend/dist/`.  The dev server (`npm run dev`) proxies `/api` to the Pi so you can work on the UI locally against live hardware.
-- All module code runs only on the Pi -- it imports hardware-specific libraries (RPi.GPIO, spidev, board, adafruit_pn532). You can edit files locally, but testing requires deploying to the Pi.
+- All module code runs only on the Pi -- it imports hardware-specific libraries (spidev, lgpio, paho.mqtt, bleak). You can edit files locally, but testing requires deploying to the Pi.
 - The `requirements.txt` lists Pi-only packages. No venv is needed locally unless you want syntax checking.
 - The venv at `/opt/chonkyflipper/venv` MUST be owned by `chonky:chonky` so the service user can pip install during updates. If root-owned, `pip install` will fail with permission errors.
 - To test modules directly, use the venv Python: `cd /opt/chonkyflipper && source venv/bin/activate`

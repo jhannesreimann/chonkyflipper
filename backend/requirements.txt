@@ -3,14 +3,11 @@
 
 flask==2.3.3
 flask-cors==4.0.0
-pigpio==1.78
 spidev>=3.6
-RPi.GPIO>=0.7.1
-adafruit-circuitpython-pn532>=2.4.9
+lgpio>=0.2.2  # CC1101 GDO0 timing plane (OOK capture/replay/jam)
 # pipower5: installed from /opt/pipower5/ by install.sh (not on PyPI)
 bleak>=0.21.0  # BLE scanning + beacon decode (BlueZ backend)
 dbus-fast>=1.0  # BlueZ D-Bus API for BLE advertisement spoofing
-# pyserial==3.5  # For UART modules if needed
 
 # MQTT client for Zigbee2MQTT communication
 paho-mqtt>=1.6.1

@@ -54,10 +54,6 @@ apt-get install -y \
     mfoc \
     mfcuk
 
-# Note: pigpio daemon compilation fails on newer kernels
-# The Python pigpio library will be installed via pip for client mode
-# For IR timing, consider using gpiod or manual sysfs GPIO instead
-
 # Install AWUS036ACS (RTL8811AU) WiFi adapter driver (optional)
 echo ""
 echo "Step 2: Installing AWUS036ACS WiFi driver (optional)..."
@@ -348,17 +344,24 @@ cat > /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
 chonky ALL=(ALL) NOPASSWD: /sbin/shutdown
 chonky ALL=(ALL) NOPASSWD: /opt/chonkyflipper/update.sh
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/iw *
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/iwconfig *
+chonky ALL=(ALL) NOPASSWD: /usr/sbin/modprobe *
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli -i wlan1 scan
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli -i wlan1 scan_results
 chonky ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/wpa_supplicant/wpa_supplicant-wlan1.conf
+chonky ALL=(ALL) NOPASSWD: /usr/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan1.conf
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl start wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop wpa_supplicant@wlan1
+chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable wpa_supplicant@wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip addr flush dev wlan1
 chonky ALL=(ALL) NOPASSWD: /usr/sbin/ip link set wlan1 *
-chonky ALL=(ALL) NOPASSWD: /usr/sbin/i2cdetect -y 1
 chonky ALL=(ALL) NOPASSWD: /usr/bin/rm -f /var/run/wpa_supplicant/wlan1
+chonky ALL=(ALL) NOPASSWD: /usr/bin/rm -f /tmp/tmp*
+chonky ALL=(ALL) NOPASSWD: /usr/bin/timeout *
+chonky ALL=(ALL) NOPASSWD: /usr/bin/tshark *
+chonky ALL=(ALL) NOPASSWD: /usr/bin/script *
 chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp *
 chonky ALL=(ALL) NOPASSWD: /opt/pipower5/venv/bin/pipower5 -sp
 chonky ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pipower5.service
@@ -572,14 +575,8 @@ UDEVEOF
 udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
 echo "  ✓ CC2531 udev rule"
-# Sudoers for tshark (used by zigbee_audit module)
-if ! grep -q "/usr/bin/tshark" /etc/sudoers.d/chonky-ops 2>/dev/null; then
-    cat >> /etc/sudoers.d/chonky-ops << 'EOFSUDOERS'
-chonky ALL=(ALL) NOPASSWD: /usr/bin/tshark *
-chonky ALL=(ALL) NOPASSWD: /usr/bin/script *
-EOFSUDOERS
-fi
-echo "  ✓ sudoers updated"
+# tshark and script are already in the main sudoers block above
+echo "  ✓ sudoers up to date"
 
 echo ""
 echo "==================================================="
