@@ -1,7 +1,7 @@
 // BadUSB: browse the synced payload library (OS -> category -> payload),
 // search, sync updates, and execute payloads. Files tab for filesystem payloads.
 import { apiGet, apiPost } from '../api.js'
-import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner, tabBar } from '../ui.js'
+import { pageHead, card, sectionTitle, empty, errorBox, infoBox, spinner, tabBar, breadcrumb } from '../ui.js'
 import { esc } from '../util.js'
 import { startTask, notify } from '../toast.js'
 import { refreshAll } from '../state.js'
@@ -98,18 +98,7 @@ function libraryView(body) {
 // -- breadcrumbs --------------------------------------------------------------
 
 function crumb(body, parts) {
-  const el = body.querySelector('#bu-crumb')
-  el.classList.toggle('hidden', !parts.length)
-  el.innerHTML = parts
-    .map((p, i) =>
-      p.action
-        ? `<a class="link link-hover text-primary cursor-pointer" data-crumb="${i}">${esc(p.label)}</a>`
-        : `<span class="font-semibold text-base-content">${esc(p.label)}</span>`,
-    )
-    .join('<i class="fa-solid fa-angle-right text-base-content/30 mx-1.5 text-[0.6rem]"></i>')
-  el.querySelectorAll('[data-crumb]').forEach((a) =>
-    a.addEventListener('click', () => parts[parseInt(a.dataset.crumb)].action()),
-  )
+  breadcrumb(body, '#bu-crumb', parts)
 }
 
 // -- OS grid ------------------------------------------------------------------

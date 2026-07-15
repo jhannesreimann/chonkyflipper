@@ -58,6 +58,14 @@ npm run preview    # serve the production build locally
 On the Pi, `update.sh` runs `npm run build` and copies `dist/` into
 `/var/www/html`, where nginx serves it and proxies `/api` to gunicorn.
 
+## API Authentication
+
+If the backend has a token file at `/opt/chonkyflipper/config/api_token`,
+all `/api/` requests must include an `X-API-Token` header. The frontend
+handles this automatically: on the first 401 response, it prompts the user
+for the token and stores it in `localStorage` under `chonky-api-token`.
+If no token file exists on the backend, auth is disabled.
+
 ## Layout
 
 ```

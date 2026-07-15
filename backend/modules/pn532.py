@@ -281,19 +281,16 @@ class PN532Module:
         except Exception as e:
             return {'success': False, 'error': f'Payload encoding error: {e}'}
 
-        # Write as hex to a temp mfd file, then use nfc-mfclassic
+        # Write binary .mfd file, then use nfc-mfclassic
         hex_data = payload_bytes.hex()
-        # Build a minimal .mfd with only the target block filled in
-        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.mfd', delete=False)
+        tmp = tempfile.NamedTemporaryFile(suffix='.mfd', delete=False)
+        tmp.close()
         try:
-            # nfc-mfclassic w a u reads a complete .mfd file.
-            # Build a proper 1K .mfd (64 blocks of 16 bytes).
-            with open(tmp.name, 'w') as f:
-                for b in range(64):
-                    if b == block:
-                        f.write(hex_data + '\n')
-                    else:
-                        f.write('00000000000000000000000000000000\n')
+            # Build a proper 1K .mfd (64 blocks of 16 bytes, binary)
+            mfd_data = bytearray(1024)
+            mfd_data[block * 16:(block + 1) * 16] = payload_bytes
+            with open(tmp.name, 'wb') as f:
+                f.write(mfd_data)
 
             stdout, stderr, rc = self._run(
                 ['nfc-mfclassic', 'w', 'a', 'u', tmp.name], timeout=20)
@@ -329,9 +326,13 @@ class PN532Module:
                 ['nfc-mfclassic', 'r', 'a', 'u', tmp.name], timeout=timeout)
 
             if rc == 0 and os.path.exists(tmp.name):
-                with open(tmp.name, 'r') as f:
-                    mfd_out = f.read()
-                blocks = self._parse_mfclassic_output(mfd_out)
+                with open(tmp.name, 'rb') as f:
+                    mfd_data = f.read()
+                blocks = {}
+                for i in range(0, len(mfd_data), 16):
+                    chunk = mfd_data[i:i+16]
+                    if len(chunk) == 16:
+                        blocks[i // 16] = chunk.hex()
                 if blocks:
                     uid_hex = self._uid_from_blocks(blocks)
                     sectors = self._blocks_to_sectors(blocks)
@@ -405,17 +406,24 @@ class PN532Module:
     def clone_dump(self, dump_data, key='FFFFFFFFFFFF', timeout=30):
         """Write a full sector dump to a magic Mifare Classic card.
         dump_data: {'0': {'0': 'hex...', '1': ..., '2': ...}, ...}"""
-        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.mfd', delete=False)
+        tmp = tempfile.NamedTemporaryFile(suffix='.mfd', delete=False)
+        tmp.close()
         try:
-            # Build a complete 64-block .mfd from dump_data
+            # Build a complete 64-block binary .mfd from dump_data
             all_blocks = {}
             for sector_str, blocks in dump_data.items():
                 for blk_str, hex_data in blocks.items():
                     if hex_data and len(hex_data) == 32:
                         all_blocks[int(blk_str)] = hex_data
-            with open(tmp.name, 'w') as f:
-                for b in range(64):
-                    f.write(all_blocks.get(b, '00000000000000000000000000000000') + '\n')
+            mfd_data = bytearray(1024)
+            for b in range(64):
+                hex_str = all_blocks.get(b, '00000000000000000000000000000000')
+                try:
+                    mfd_data[b * 16:(b + 1) * 16] = bytes.fromhex(hex_str)
+                except ValueError:
+                    pass  # leave zeros if invalid hex
+            with open(tmp.name, 'wb') as f:
+                f.write(mfd_data)
 
             stdout, stderr, rc = self._run(
                 ['nfc-mfclassic', 'w', 'a', 'u', tmp.name], timeout=timeout)

@@ -1,6 +1,6 @@
 import './style.css'
 
-import { subscribe, startPolling, getState, refreshAll } from './state.js'
+import { subscribe, startPolling, refreshAll } from './state.js'
 import { onTaskCountChange } from './toast.js'
 import { apiPost } from './api.js'
 import { esc, faClass } from './util.js'

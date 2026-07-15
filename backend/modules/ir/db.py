@@ -4,45 +4,16 @@ IR Payload Database - SQLite storage for IR signal library.
 Provides hierarchical browsing (brands -> devices -> buttons) and raw signal retrieval.
 """
 
-import sqlite3
 import os
 import json
-import time
+
+from modules.base_db import BasePayloadDB
 
 
-class IRPayloadDB:
+class IRPayloadDB(BasePayloadDB):
     """SQLite-backed IR payload database."""
 
-    SCHEMA_VERSION = 1
-
-    def __init__(self, db_path=None):
-        if db_path is None:
-            candidates = [
-                '/opt/chonkyflipper/data/ir_payloads.db',
-                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             '..', 'data', 'ir_payloads.db'),
-            ]
-            db_path = candidates[0]
-            for p in candidates:
-                parent = os.path.dirname(p)
-                if os.path.isdir(parent):
-                    db_path = p
-                    break
-
-        self.db_path = db_path
-        self._conn = None
-
-    def _connect(self):
-        if self._conn is not None:
-            return self._conn
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA synchronous=NORMAL')
-        conn.execute('PRAGMA foreign_keys=ON')
-        conn.row_factory = sqlite3.Row
-        self._conn = conn
-        return conn
+    DB_FILENAME = 'ir_payloads.db'
 
     def init_db(self):
         """Create tables and seed with legacy JSON payloads if empty."""
@@ -114,13 +85,7 @@ class IRPayloadDB:
             );
         ''')
 
-        # Apply schema version if empty
-        cur = conn.execute('SELECT COUNT(*) FROM schema_version')
-        if cur.fetchone()[0] == 0:
-            conn.execute('INSERT INTO schema_version (version) VALUES (?)',
-                         (self.SCHEMA_VERSION,))
-            conn.commit()
-
+        self._ensure_schema_version()
         return {'success': True, 'db_path': self.db_path}
 
     # Brands
@@ -371,101 +336,3 @@ class IRPayloadDB:
             'buttons': button_count,
             'protocols': {r['protocol']: r['cnt'] for r in proto_rows}
         }
-
-    # Sync State
-
-    def get_sync_state(self, key):
-        """Get a sync state value."""
-        conn = self._connect()
-        row = conn.execute(
-            'SELECT value FROM sync_state WHERE key = ?', (key,)
-        ).fetchone()
-        return row['value'] if row else None
-
-    def set_sync_state(self, key, value):
-        """Set a sync state value."""
-        conn = self._connect()
-        conn.execute('''
-            INSERT OR REPLACE INTO sync_state (key, value, updated_at)
-            VALUES (?, ?, datetime('now'))
-        ''', (key, value))
-        conn.commit()
-
-    # Seed from legacy JSON payloads
-
-    def seed_from_json(self, payloads_dir):
-        """Import existing JSON payload files into the database (idempotent)."""
-        ir_dir = os.path.join(payloads_dir, 'ir')
-        if not os.path.isdir(ir_dir):
-            return {'imported': 0, 'skipped': 0, 'message': 'No payload dir'}
-
-        imported = 0
-        skipped = 0
-
-        for filename in sorted(os.listdir(ir_dir)):
-            if not filename.endswith('.json'):
-                continue
-            filepath = os.path.join(ir_dir, filename)
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-            except Exception:
-                skipped += 1
-                continue
-
-            brand_name = data.get('brand', 'Unknown')
-            device_name = data.get('device', filename.replace('.json', ''))
-            protocol = data.get('protocol', 'NEC')
-            notes = data.get('notes', '')
-            source_urls = data.get('source_urls', [])
-
-            brand_id = self.insert_brand(brand_name, device_type='')
-            device_id = self.insert_device(
-                brand_id, device_name,
-                source_file=filename,
-                notes=notes
-            )
-
-            for btn_id, btn in data.get('buttons', {}).items():
-                addr = btn.get('address')
-                cmd = btn.get('command')
-                addr_hex = f'0x{addr:04X}' if addr is not None else ''
-                cmd_hex = f'0x{cmd:04X}' if cmd is not None else ''
-
-                # Build raw pulses/spaces from NEC encoder
-                from modules.ir_protocols import encode_nec
-                hp = data.get('header_pulse', 9000)
-                hs = data.get('header_space', 4500)
-                s32 = data.get('samsung32', False)
-                pulses, spaces = encode_nec(
-                    addr or 0, cmd or 0,
-                    header_pulse=hp, header_space=hs,
-                    samsung32=s32
-                )
-
-                existing = self.get_button_by_device_and_id(device_id, btn_id)
-                if existing:
-                    skipped += 1
-                    continue
-
-                self.insert_button(
-                    device_id, btn_id, btn.get('label', btn_id),
-                    protocol=protocol,
-                    address=addr, command=cmd,
-                    address_hex=addr_hex, command_hex=cmd_hex,
-                    frequency=38000,
-                    raw_pulses=pulses, raw_spaces=spaces,
-                    protocol_hint=protocol,
-                    header_pulse=hp, header_space=hs,
-                    samsung32=1 if s32 else 0,
-                    source_file=filename,
-                    notes=json.dumps(source_urls) if source_urls else ''
-                )
-                imported += 1
-
-        return {'imported': imported, 'skipped': skipped}
-
-    def close(self):
-        if self._conn:
-            self._conn.close()
-            self._conn = None

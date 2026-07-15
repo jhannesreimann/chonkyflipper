@@ -115,12 +115,24 @@ def _wifi_cleanup():
                    capture_output=True)
 
 
+def _escape_wpa_value(value):
+    """Escape a value for wpa_supplicant config: strip newlines, escape quotes/backslashes."""
+    if value is None:
+        return ''
+    # Remove any newline characters (injection prevention)
+    value = str(value).replace('\n', '').replace('\r', '')
+    # Escape backslashes and double quotes for the quoted string
+    value = value.replace('\\', '\\\\').replace('"', '\\"')
+    return value
+
+
 def _write_wpa_config(ssid, password):
     """Write wpa_supplicant config for wlan1."""
     config = (
         f'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n'
         f'update_config=1\nbgscan=""\ncountry=DE\n\n'
-        f'network={{\n    ssid="{ssid}"\n    psk="{password}"\n    key_mgmt=WPA-PSK\n}}\n'
+        f'network={{\n    ssid="{_escape_wpa_value(ssid)}"\n'
+        f'    psk="{_escape_wpa_value(password)}"\n    key_mgmt=WPA-PSK\n}}\n'
     )
     conf_path = '/etc/wpa_supplicant/wpa_supplicant-wlan1.conf'
     tee = subprocess.Popen(

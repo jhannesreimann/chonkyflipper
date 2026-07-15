@@ -5,14 +5,13 @@ Uses git for efficient incremental updates (avoids GitHub API rate limits).
 """
 
 import os
-import subprocess
-import json
-import time
 import re
 from datetime import datetime
 
+from modules.base_sync import BaseGitSync
 
-class IRDBSync:
+
+class IRDBSync(BaseGitSync):
     """Sync engine for Flipper-IRDB -> local SQLite database."""
 
     IRDB_REPO = 'https://github.com/logickworkshop/Flipper-IRDB.git'
@@ -66,7 +65,6 @@ class IRDBSync:
     }
 
     def __init__(self, db, repo_dir=None):
-        self.db = db
         if repo_dir is None:
             candidates = [
                 '/opt/chonkyflipper/data/irdb',
@@ -78,50 +76,25 @@ class IRDBSync:
                 if os.path.isdir(os.path.dirname(p)):
                     repo_dir = p
                     break
-        self.repo_dir = repo_dir
+        super().__init__(db, repo_dir)
 
     # Repo Management
-
-    def _run(self, cmd, cwd=None, timeout=120):
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout,
-                cwd=cwd or self.repo_dir
-            )
-            return result.stdout.strip(), result.stderr.strip(), result.returncode
-        except subprocess.TimeoutExpired:
-            return '', 'Command timed out', 1
-        except Exception as e:
-            return '', str(e), 1
 
     def clone_or_update(self):
         """Ensure repo exists and is up to date. Returns {action, sha}."""
         if not os.path.isdir(os.path.join(self.repo_dir, '.git')):
             os.makedirs(os.path.dirname(self.repo_dir), exist_ok=True)
-            # Shallow clone to save space
-            stdout, stderr, rc = self._run(
-                ['git', 'clone', '--depth', '1', self.IRDB_REPO, self.repo_dir],
-                cwd='/tmp'
-            )
-            if rc != 0:
-                return {'success': False, 'error': f'Clone failed: {stderr}'}
-            sha = self._get_head_sha()
+            success, result = self._clone_repo(self.IRDB_REPO, self.repo_dir)
+            if not success:
+                return {'success': False, 'error': result}
+            sha = result
             self.db.set_sync_state('last_commit_sha', sha)
             self.db.set_sync_state('last_sync_at', datetime.now().isoformat())
             return {'success': True, 'action': 'cloned', 'sha': sha}
 
         # Already cloned - pull updates
-        stdout, stderr, rc = self._run(['git', 'fetch', 'origin', 'main'])
-        if rc != 0:
-            return {'success': False, 'error': f'Fetch failed: {stderr}'}
-
-        old_sha = self._get_head_sha()
-        stdout, stderr, rc = self._run(
-            ['git', 'merge', 'origin/main', '--ff-only']
-        )
-        new_sha = self._get_head_sha()
-
-        if old_sha == new_sha:
+        action, old_sha, new_sha = self._fetch_and_merge(self.repo_dir)
+        if action == 'up_to_date':
             return {'success': True, 'action': 'up_to_date', 'sha': new_sha}
 
         self.db.set_sync_state('last_commit_sha', new_sha)
@@ -129,50 +102,33 @@ class IRDBSync:
         return {'success': True, 'action': 'updated', 'sha': new_sha,
                 'old_sha': old_sha}
 
-    def _get_head_sha(self):
-        stdout, _, rc = self._run(['git', 'rev-parse', 'HEAD'])
-        return stdout if rc == 0 else None
-
     def _get_changed_files(self, old_sha, new_sha):
         """Get list of changed .ir files between two commits."""
-        stdout, _, rc = self._run(
-            ['git', 'diff', '--name-only', old_sha, new_sha, '--', '*.ir']
-        )
+        stdout, _, rc = self._run_git(
+            self.repo_dir, 'diff', '--name-only', old_sha, new_sha, '--', '*.ir')
         if rc != 0 or not stdout:
             return []
         return [f for f in stdout.split('\n') if f.endswith('.ir')]
 
-    # Check for Updates
-
     def check_for_updates(self):
         """Check if upstream has new commits. Returns {has_updates, ...}."""
-        # If repo doesn't exist at all, signal that a full clone is needed
         if not os.path.isdir(os.path.join(self.repo_dir, '.git')):
             return {'has_updates': True, 'new_commits': -1, 'needs_clone': True,
                     'local_sha': None, 'remote_sha': None}
 
-        stdout, stderr, rc = self._run(['git', 'fetch', 'origin', 'main'])
+        stdout, stderr, rc = self._run_git(self.repo_dir, 'fetch', 'origin', 'main')
         if rc != 0:
             return {'has_updates': False, 'error': f'Fetch failed: {stderr}'}
 
-        local_sha = self._get_head_sha()
-        stdout, _, rc = self._run(['git', 'rev-parse', 'origin/main'])
+        local_sha = self._get_head_sha(self.repo_dir, short=False)
+        stdout, _, rc = self._run_git(self.repo_dir, 'rev-parse', 'origin/main')
         remote_sha = stdout if rc == 0 else None
 
         if not local_sha or not remote_sha:
             return {'has_updates': False, 'error': 'Could not determine SHAs'}
 
         has_updates = local_sha != remote_sha
-
-        new_count = 0
-        if has_updates:
-            stdout, _, rc = self._run(
-                ['git', 'rev-list', '--count', f'{local_sha}..{remote_sha}']
-            )
-            try:
-                new_count = int(stdout) if rc == 0 else 0
-            except ValueError:
-                new_count = 0
+        new_count = self._count_new_commits(self.repo_dir, local_sha, remote_sha) if has_updates else 0
 
         return {
             'has_updates': has_updates,
@@ -438,7 +394,7 @@ class IRDBSync:
             addr = signal.get('address', 0)
             cmd = signal.get('command', 0)
             try:
-                from modules.ir_protocols import encode
+                from modules.ir.protocols import encode
                 (pulses, spaces), err = encode(proto, address=addr, command=cmd)
                 if err is None:
                     signal['pulses'] = pulses

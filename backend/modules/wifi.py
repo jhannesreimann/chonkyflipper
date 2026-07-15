@@ -23,12 +23,19 @@ class WiFiModule:
         os.makedirs(CAPTURES_DIR, exist_ok=True)
 
     def _run(self, cmd, timeout=30):
-        """Run a shell command with sudo. Returns (stdout, stderr, returncode)."""
+        """Run a command with sudo. Returns (stdout, stderr, returncode).
+        Accepts a list (preferred, no shell) or a string (legacy, shell=True)."""
         try:
-            result = subprocess.run(
-                f'sudo -n {cmd}', shell=True, capture_output=True, text=True,
-                timeout=timeout,
-            )
+            if isinstance(cmd, list):
+                full = ['sudo', '-n'] + cmd
+                result = subprocess.run(
+                    full, capture_output=True, text=True, timeout=timeout,
+                )
+            else:
+                result = subprocess.run(
+                    f'sudo -n {cmd}', shell=True, capture_output=True, text=True,
+                    timeout=timeout,
+                )
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired:
             return '', 'Command timed out', 1
@@ -324,16 +331,20 @@ class WiFiModule:
                 return {'success': False, 'error': 'Failed to enter monitor mode'}
         interface = self.monitor_interface
 
-        cmd = f'timeout {duration} tcpdump -i {interface} -w {filepath}'
+        # Set channel first if specified (separate command, no shell)
         if channel:
-            cmd = f'iwconfig {interface} channel {channel} && ' + cmd
+            subprocess.run(
+                ['sudo', '-n', 'iwconfig', interface, 'channel', str(channel)],
+                capture_output=True, timeout=5,
+            )
 
-        # Apply filter
+        # Build argv list (no shell injection)
+        cmd = ['timeout', str(duration), 'tcpdump', '-i', interface, '-w', filepath]
         filter_str = self._FILTER_PRESETS.get(packet_filter, packet_filter)
         if filter_str:
-            cmd += f' "{filter_str}"'
+            cmd.append(filter_str)
 
-        self._run(cmd)
+        self._run(cmd, timeout=duration + 10)
 
         file_exists = os.path.exists(filepath)
         file_size = os.path.getsize(filepath) if file_exists else 0
@@ -391,11 +402,12 @@ class WiFiModule:
         hopper = threading.Thread(target=_hop, daemon=True)
         hopper.start()
 
-        cmd = (
-            f'timeout {duration} tshark -i {self.monitor_interface} '
-            f'-Y "wlan.fc.type_subtype == 4" '
-            f'-T fields -e wlan.sa -e wlan.ssid -E separator=,'
-        )
+        cmd = [
+            'timeout', str(duration), 'tshark', '-i', self.monitor_interface,
+            '-Y', 'wlan.fc.type_subtype == 4',
+            '-T', 'fields', '-e', 'wlan.sa', '-e', 'wlan.ssid',
+            '-E', 'separator=,',
+        ]
         try:
             stdout, stderr, rc = self._run(cmd, timeout=duration + 10)
         finally:
@@ -438,12 +450,13 @@ class WiFiModule:
         """Run wifite full audit: scan then automatically attack all targets.
         Uses detached process to survive gunicorn worker death from airmon-ng."""
         tmpfile = f'/tmp/wifite_audit_{os.getpid()}.txt'
-        cmd = (
-            f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--clients-only -p {scan_time} --daemon" {tmpfile}'
+        wifite_cmd = (
+            f'wifite -i {self.interface} --wpa --wps --wep '
+            f'--clients-only -p {int(scan_time)} --daemon'
         )
         proc = subprocess.Popen(
-            cmd, shell=True, start_new_session=True,
+            ['sudo', '-n', 'script', '-q', '-c', wifite_cmd, tmpfile],
+            start_new_session=True,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         try:
@@ -472,14 +485,13 @@ class WiFiModule:
         """Run wifite scan without attacking. Returns target list.
         Uses detached process to survive gunicorn worker death from airmon-ng."""
         tmpfile = f'/tmp/wifite_scan_{os.getpid()}.txt'
-        # script writes the pseudo-terminal output to the typescript file.
-        # Pass the tmpfile as the typescript target (not /dev/null).
-        cmd = (
-            f'sudo -n script -q -c "wifite -i {self.interface} --wpa --wps --wep '
-            f'--skip-crack --clients-only -p {scan_time} --daemon" {tmpfile}'
+        wifite_cmd = (
+            f'wifite -i {self.interface} --wpa --wps --wep '
+            f'--skip-crack --clients-only -p {int(scan_time)} --daemon'
         )
         proc = subprocess.Popen(
-            cmd, shell=True, start_new_session=True,
+            ['sudo', '-n', 'script', '-q', '-c', wifite_cmd, tmpfile],
+            start_new_session=True,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         try:

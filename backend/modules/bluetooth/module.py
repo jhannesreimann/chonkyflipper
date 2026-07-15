@@ -8,16 +8,22 @@ device info via bluetoothctl.
 import asyncio
 import json
 import os
-import re
 import shutil
 import signal
-import struct
 import subprocess
 import sys
 import time
 from datetime import datetime
 
 from config import HCI_CAPTURES_DIR, INSTALL_DIR
+
+from .beacons import (
+    parse_ibeacon, parse_eddystone, encode_eddystone_url,
+    EDDYSTONE_UUID,
+)
+from .parsers import (
+    parse_hci_inq, parse_sdptool, parse_bettercap_ble, cod_major,
+)
 
 _ADVERTISER_SCRIPT = f'{INSTALL_DIR}/ble-advertiser.py'
 _ADVERTISER_PID = f'{INSTALL_DIR}/ble-advertiser.pid'
@@ -27,28 +33,6 @@ try:
 except ImportError:
     BleakScanner = None
     BleakClient = None
-
-
-# Eddystone service UUID (16-bit 0xFEAA in full 128-bit form)
-_EDDYSTONE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb'
-# Company identifier Apple uses for iBeacon manufacturer data
-_APPLE_COMPANY_ID = 0x004C
-
-# Eddystone-URL scheme prefixes and expansion codes (Eddystone spec)
-_URL_SCHEMES = ['http://www.', 'https://www.', 'http://', 'https://']
-_URL_EXPANSIONS = [
-    '.com/', '.org/', '.edu/', '.net/', '.info/', '.biz/', '.gov/',
-    '.com', '.org', '.edu', '.net', '.info', '.biz', '.gov',
-]
-
-# Bluetooth Class of Device -> major device class label (bits 8-12 of the CoD)
-_COD_MAJOR = {
-    0: 'Miscellaneous', 1: 'Computer', 2: 'Phone', 3: 'Network',
-    4: 'Audio/Video', 5: 'Peripheral', 6: 'Imaging', 7: 'Wearable',
-    8: 'Toy', 9: 'Health',
-}
-_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
-_MAC_RE = re.compile(r'([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})')
 
 
 class BluetoothModule:
@@ -86,7 +70,6 @@ class BluetoothModule:
                 'rssi': adv.rssi,
                 'services': len(adv.service_uuids),
             })
-        # Strongest signal first so the closest devices are easy to spot.
         devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'devices': devices}
 
@@ -99,7 +82,7 @@ class BluetoothModule:
 
         beacons = []
         for address, (device, adv) in found.items():
-            beacon = self._parse_ibeacon(adv) or self._parse_eddystone(adv)
+            beacon = parse_ibeacon(adv) or parse_eddystone(adv)
             if beacon:
                 beacon['mac'] = address.upper()
                 beacon['rssi'] = adv.rssi
@@ -110,12 +93,7 @@ class BluetoothModule:
     # advertisement logging
 
     def log_advertisements(self, duration=15):
-        """Passively log BLE advertisements over a time window.
-
-        Unlike scan_ble (one deduplicated snapshot), this counts every
-        advertisement seen per device, tracking sighting count and RSSI range,
-        so presence and signal drift over the window are visible.
-        """
+        """Passively log BLE advertisements over a time window."""
         if BleakScanner is None:
             return {'success': False, 'error': 'bleak is not installed', 'devices': []}
         try:
@@ -136,7 +114,7 @@ class BluetoothModule:
             mac = device.address.upper()
             name = adv.local_name or device.name or 'Unknown'
             rssi = adv.rssi
-            beacon = self._parse_ibeacon(adv) or self._parse_eddystone(adv)
+            beacon = parse_ibeacon(adv) or parse_eddystone(adv)
             btype = beacon['type'] if beacon else None
             ts = datetime.now().isoformat()
 
@@ -166,56 +144,10 @@ class BluetoothModule:
             await scanner.stop()
         return sorted(summary.values(), key=lambda d: d['count'], reverse=True)
 
-    # beacon decode
-
-    @staticmethod
-    def _parse_ibeacon(adv):
-        data = adv.manufacturer_data.get(_APPLE_COMPANY_ID)
-        # iBeacon prefix is 0x02 0x15 followed by 21 bytes (UUID + major + minor + tx).
-        if not data or len(data) < 23 or data[0] != 0x02 or data[1] != 0x15:
-            return None
-        u = data[2:18].hex()
-        uuid = f'{u[0:8]}-{u[8:12]}-{u[12:16]}-{u[16:20]}-{u[20:32]}'
-        return {
-            'type': 'iBeacon',
-            'uuid': uuid,
-            'major': int.from_bytes(data[18:20], 'big'),
-            'minor': int.from_bytes(data[20:22], 'big'),
-            'tx_power': struct.unpack('b', data[22:23])[0],
-        }
-
-    @classmethod
-    def _parse_eddystone(cls, adv):
-        data = adv.service_data.get(_EDDYSTONE_UUID)
-        if not data:
-            return None
-        frame = data[0]
-        if frame == 0x00 and len(data) >= 18:  # UID frame
-            namespace = data[2:12].hex()
-            instance = data[12:18].hex()
-            return {'type': 'Eddystone-UID', 'namespace': namespace,
-                    'instance': instance, 'id': namespace + instance}
-        if frame == 0x10:  # URL frame
-            return {'type': 'Eddystone-URL', 'id': cls._decode_eddystone_url(data)}
-        if frame == 0x20:  # TLM (telemetry) frame
-            return {'type': 'Eddystone-TLM'}
-        return {'type': 'Eddystone'}
-
-    @staticmethod
-    def _decode_eddystone_url(data):
-        if len(data) < 3:
-            return None
-        scheme = data[2]
-        url = _URL_SCHEMES[scheme] if scheme < len(_URL_SCHEMES) else ''
-        for b in data[3:]:
-            url += _URL_EXPANSIONS[b] if b < len(_URL_EXPANSIONS) else chr(b)
-        return url
-
     # GATT profiling
 
     def profile_device(self, mac_address, read_values=True):
-        """Connect to a BLE device and enumerate its GATT services,
-        characteristics, descriptors, and (optionally) readable values."""
+        """Connect to a BLE device and enumerate its GATT services."""
         if BleakClient is None:
             return {'success': False, 'error': 'bleak is not installed', 'mac': mac_address}
         try:
@@ -230,8 +162,6 @@ class BluetoothModule:
                 characteristics = []
                 for char in service.characteristics:
                     value_hex = value_text = None
-                    # Reading is best-effort: many characteristics are write/notify
-                    # only, or need pairing, so guard each read individually.
                     if read_values and 'read' in char.properties:
                         try:
                             raw = await client.read_gatt_char(char.uuid)
@@ -270,12 +200,7 @@ class BluetoothModule:
         return None
 
     def write_characteristic(self, mac_address, char_uuid, value_hex, without_response=None):
-        """Write bytes (given as a hex string) to a writable GATT characteristic.
-
-        without_response: None = auto (prefer write-with-response when the
-        characteristic supports it), True = force write-without-response,
-        False = force write-with-response.
-        """
+        """Write bytes (given as a hex string) to a writable GATT characteristic."""
         if BleakClient is None:
             return {'success': False, 'error': 'bleak is not installed', 'mac': mac_address}
         try:
@@ -316,14 +241,8 @@ class BluetoothModule:
     # Classic BT (BR/EDR) + SDP
 
     def scan_classic(self, duration=10):
-        """Discover Classic (BR/EDR) devices via hcitool inquiry.
-
-        hcitool inq performs a real BR/EDR inquiry (unlike bluetoothctl scan
-        which defaults to BLE).  Each response includes the Class of Device so
-        we know the device is BR/EDR-capable without guessing.
-        """
+        """Discover Classic (BR/EDR) devices via hcitool inquiry."""
         try:
-            # --length is in 1.28 s units; cap at a reasonable max.
             length = max(1, min(int(duration / 1.28), 60))
         except (TypeError, ValueError):
             length = 8
@@ -339,8 +258,7 @@ class BluetoothModule:
         except Exception as e:
             return {'success': False, 'error': str(e), 'devices': []}
 
-        devices = self._parse_hci_inq(result.stdout)
-        # Resolve friendly names (best-effort, one at a time).
+        devices = parse_hci_inq(result.stdout)
         for d in devices:
             try:
                 name = subprocess.run(
@@ -354,33 +272,6 @@ class BluetoothModule:
                 pass
         devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'duration': duration, 'devices': devices}
-
-    def _parse_hci_inq(self, output):
-        devices = []
-        for line in output.splitlines():
-            line = line.strip()
-            if not line or line.startswith('Inquiring'):
-                continue
-            m = _MAC_RE.search(line)
-            if not m:
-                continue
-            d = {'mac': m.group(1).upper(), 'name': None, 'rssi': None}
-            # Class of Device - e.g. "class: 0x0c043c"
-            cm = re.search(r'class:\s*(0x[0-9a-fA-F]+)', line)
-            if cm:
-                d['type'] = self._cod_major(cm.group(1))
-            else:
-                d['type'] = 'Unknown'
-            devices.append(d)
-        return devices
-
-    @staticmethod
-    def _cod_major(cod):
-        try:
-            val = int(cod, 16)
-        except (TypeError, ValueError):
-            return 'Unknown'
-        return _COD_MAJOR.get((val >> 8) & 0x1F, 'Unknown')
 
     def enumerate_services(self, mac_address):
         """SDP browse a Classic device via sdptool (part of bluez)."""
@@ -403,93 +294,13 @@ class BluetoothModule:
             return {'success': False, 'error': err or 'SDP browse failed',
                     'services': [], 'mac': mac_address}
 
-        services = self._parse_sdptool(result.stdout)
+        services = parse_sdptool(result.stdout)
         return {'success': True, 'mac': mac_address, 'services': services}
-
-    @staticmethod
-    def _parse_sdptool(output):
-        """Parse sdptool browse output into structured service records."""
-        services = []
-        cur = None
-        in_list = None  # current list key: 'classes', 'protocols', 'profiles'
-
-        for raw in output.splitlines():
-            line = raw.rstrip()
-
-            # Service Name: (may appear before or after RecHandle)
-            if line.startswith('Service Name:') or line.startswith('Service Provider:'):
-                if cur is None:
-                    cur = {'name': None, 'protocol': None, 'channel': None,
-                           'service_classes': [], 'profiles': []}
-                val = line.split(':', 1)[1].strip()
-                if val and line.startswith('Service Name:'):
-                    cur['name'] = val
-                continue
-
-            # Service RecHandle starts a new record (some records have no name)
-            if line.startswith('Service RecHandle:'):
-                if cur is not None:
-                    services.append(cur)
-                cur = {'name': None, 'protocol': None, 'channel': None,
-                       'service_classes': [], 'profiles': []}
-                in_list = None
-                continue
-
-            if cur is None:
-                continue
-
-            # "Service Class ID List:" / "Protocol Descriptor List:" / "Profile Descriptor List:"
-            if line.startswith('Service Class ID List:'):
-                in_list = 'classes'
-                continue
-            if line.startswith('Protocol Descriptor List:'):
-                in_list = 'protocols'
-                continue
-            if line.startswith('Profile Descriptor List:'):
-                in_list = 'profiles'
-                continue
-
-            # Indented list items
-            stripped = line.lstrip()
-            if not stripped:
-                in_list = None
-                continue
-
-            if in_list == 'classes':
-                # "Headset Audio Gateway" (0x1112)
-                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
-                if m:
-                    cur['service_classes'].append(m.group(1))
-
-            elif in_list == 'protocols':
-                # "L2CAP" (0x0100)  or  "RFCOMM" (0x0003)
-                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
-                if m:
-                    cur['protocol'] = m.group(1)
-                if stripped.startswith('Channel:'):
-                    try:
-                        cur['channel'] = int(stripped.split(':')[1].strip())
-                    except (ValueError, IndexError):
-                        pass
-
-            elif in_list == 'profiles':
-                m = re.match(r'"([^"]+)"\s*\(0x[0-9a-fA-F]+\)', stripped)
-                if m:
-                    cur['profiles'].append(m.group(1))
-
-        if cur is not None:
-            services.append(cur)
-        return services
 
     # raw HCI capture
 
     def capture_hci(self, duration=20, filename=None):
-        """Capture raw HCI traffic to a btsnoop (.pcap) file via btmon for
-        offline Wireshark analysis. Blocks for `duration` seconds.
-
-        btmon needs CAP_NET_RAW; install.sh grants it via setcap so this runs
-        without sudo and the file stays owned by the service user.
-        """
+        """Capture raw HCI traffic to a btsnoop (.pcap) file via btmon."""
         os.makedirs(HCI_CAPTURES_DIR, exist_ok=True)
         if not filename:
             filename = f'hci_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pcap'
@@ -516,13 +327,10 @@ class BluetoothModule:
         return {'success': True, 'filename': filename,
                 'size': os.path.getsize(path), 'duration': duration}
 
-
     # deep scan (bettercap)
 
     def deep_scan(self, duration=15):
-        """Deep BLE scan via bettercap for richer metadata (notably the MAC
-        manufacturer / vendor). Opt-in; falls back gracefully when bettercap
-        is not installed."""
+        """Deep BLE scan via bettercap for richer metadata."""
         if shutil.which('bettercap') is None:
             return {'success': False, 'devices': [],
                     'error': 'bettercap is not installed (sudo apt install bettercap)'}
@@ -540,7 +348,7 @@ class BluetoothModule:
         except Exception as e:
             return {'success': False, 'error': str(e), 'devices': []}
 
-        devices = self._parse_bettercap_ble(result.stdout)
+        devices = parse_bettercap_ble(result.stdout)
         if not devices and result.returncode not in (0, 124):
             err = (result.stderr or '').strip()
             return {'success': False, 'devices': [],
@@ -548,60 +356,10 @@ class BluetoothModule:
         devices.sort(key=lambda d: d['rssi'] if d['rssi'] is not None else -999, reverse=True)
         return {'success': True, 'duration': duration, 'engine': 'bettercap', 'devices': devices}
 
-    @staticmethod
-    def _parse_bettercap_ble(output):
-        # bettercap renders a table with a vertical-bar separator; normalise it
-        # to ASCII and map columns by their header so column order changes
-        # between versions don't break parsing.
-        devices = []
-        idx = None
-        for raw in output.splitlines():
-            line = _ANSI_RE.sub('', raw).replace(chr(0x2502), '|')
-            if '|' not in line:
-                continue
-            cells = [c.strip() for c in line.split('|')[1:-1]]
-            if not cells:
-                continue
-            upper = [c.upper() for c in cells]
-            if idx is None:
-                if any('RSSI' in c for c in upper) and any('MAC' in c for c in upper):
-                    idx = {
-                        'rssi': next((i for i, c in enumerate(upper) if 'RSSI' in c), 0),
-                        'mac': next((i for i, c in enumerate(upper) if c == 'MAC'), 0),
-                        'vendor': next((i for i, c in enumerate(upper) if c == 'VENDOR'), None),
-                        'name': next((i for i, c in enumerate(upper) if c == 'NAME'), None),
-                        'connect': next((i for i, c in enumerate(upper) if c == 'CONNECT'), None),
-                    }
-                continue
-            if idx['mac'] >= len(cells):
-                continue
-            mac = cells[idx['mac']]
-            if not mac or ':' not in mac:
-                continue
-            rssi = None
-            ri = idx['rssi']
-            if ri < len(cells) and cells[ri]:
-                try:
-                    rssi = int(cells[ri].split()[0])
-                except (ValueError, IndexError):
-                    pass
-            vendor = cells[idx['vendor']] if (idx['vendor'] is not None and idx['vendor'] < len(cells)) else None
-            name = cells[idx['name']] if (idx['name'] is not None and idx['name'] < len(cells)) else None
-            connect = cells[idx['connect']] if (idx['connect'] is not None and idx['connect'] < len(cells)) else ''
-            devices.append({
-                'mac': mac.upper(),
-                'name': name or 'Unknown',
-                'rssi': rssi,
-                'vendor': vendor or None,
-                'connectable': connect.strip().lower() in ('true', 'yes', '✓', '✔'),
-            })
-        return devices
-
     # advertisement spoofing
 
     def spoof_advertisement(self, params):
-        """Broadcast a crafted BLE advertisement (device spoof / beacon) via a
-        detached advertiser process. Replaces any advert already running."""
+        """Broadcast a crafted BLE advertisement via a detached advertiser process."""
         cfg, err = self._build_advert(params)
         if err:
             return {'success': False, 'error': err}
@@ -618,7 +376,6 @@ class BluetoothModule:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-        # If it dies right away it's usually a BlueZ permission / D-Bus issue.
         time.sleep(0.6)
         if proc.poll() is not None:
             return {'success': False,
@@ -670,8 +427,7 @@ class BluetoothModule:
             return None
 
     def _build_advert(self, params):
-        """Translate the high-level spoof form into the low-level advert config
-        the advertiser script consumes."""
+        """Translate the high-level spoof form into the low-level advert config."""
         try:
             duration = max(1, min(int(params.get('duration', 60)), 600))
         except (TypeError, ValueError):
@@ -702,12 +458,12 @@ class BluetoothModule:
             cfg['type'] = 'broadcast'
 
         elif frame == 'eddystone-url':
-            encoded, err = self._encode_eddystone_url(params.get('url') or '')
+            encoded, err = encode_eddystone_url(params.get('url') or '')
             if err:
                 return None, err
             tx = int(params.get('tx_power', -59)) & 0xFF
             cfg['service_uuids'] = sorted(set(cfg['service_uuids'] + ['feaa']))
-            cfg['service_data'] = {'0000feaa-0000-1000-8000-00805f9b34fb': f'10{tx:02x}{encoded}'}
+            cfg['service_data'] = {EDDYSTONE_UUID: f'10{tx:02x}{encoded}'}
             cfg['type'] = 'broadcast'
 
         elif frame == 'eddystone-uid':
@@ -717,7 +473,7 @@ class BluetoothModule:
                 return None, 'Eddystone-UID needs a 10-byte namespace and 6-byte instance'
             tx = int(params.get('tx_power', -59)) & 0xFF
             cfg['service_uuids'] = sorted(set(cfg['service_uuids'] + ['feaa']))
-            cfg['service_data'] = {'0000feaa-0000-1000-8000-00805f9b34fb': f'00{tx:02x}{ns}{inst}'}
+            cfg['service_data'] = {EDDYSTONE_UUID: f'00{tx:02x}{ns}{inst}'}
             cfg['type'] = 'broadcast'
 
         else:  # custom / raw
@@ -734,31 +490,6 @@ class BluetoothModule:
         if not (cfg['name'] or cfg['service_uuids'] or cfg['manufacturer_data'] or cfg['service_data']):
             return None, 'advertisement is empty; set a name, service UUID, or data'
         return cfg, None
-
-    @staticmethod
-    def _encode_eddystone_url(url):
-        if not url:
-            return None, 'Eddystone-URL requires a url'
-        scheme = None
-        rest = url
-        for i, prefix in enumerate(_URL_SCHEMES):
-            if url.startswith(prefix):
-                scheme, rest = i, url[len(prefix):]
-                break
-        if scheme is None:
-            return None, 'url must start with http(s):// (optionally www.)'
-        out = f'{scheme:02x}'
-        i = 0
-        while i < len(rest):
-            for code, exp in enumerate(_URL_EXPANSIONS):
-                if rest.startswith(exp, i):
-                    out += f'{code:02x}'
-                    i += len(exp)
-                    break
-            else:
-                out += f'{ord(rest[i]):02x}'
-                i += 1
-        return out, None
 
     # pairing (bluetoothctl)
 

@@ -208,5 +208,5 @@ class IRModule:
     # Protocol detection
 
     def detect_protocol(self, pulses, spaces=None):
-        from modules.ir_protocols import detect_protocol as _detect
+        from modules.ir.protocols import detect_protocol as _detect
         return _detect(pulses, spaces)

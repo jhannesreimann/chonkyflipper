@@ -25,7 +25,7 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 - Both addresses serve the same nginx instance (listens on 0.0.0.0:80, all interfaces)
 
 ## Development Notes
-- The Flask backend has **no test suite, no linter** and runs directly: `python3 backend/app.py` on the Pi.
+- The Flask backend has **no test suite, no linter** and runs directly: `python3 backend/app.py` on the Pi (debug mode is off by default; set `FLASK_DEBUG=1` to enable).
 - The frontend IS built: `cd frontend && npm run build` produces static files in `frontend/dist/`.  The dev server (`npm run dev`) proxies `/api` to the Pi so you can work on the UI locally against live hardware.
 - All module code runs only on the Pi -- it imports hardware-specific libraries (RPi.GPIO, spidev, board, adafruit_pn532). You can edit files locally, but testing requires deploying to the Pi.
 - The `requirements.txt` lists Pi-only packages. No venv is needed locally unless you want syntax checking.
@@ -63,26 +63,23 @@ Internet <---WiFi--> wlan1 (192.168.178.89, Alfa AWUS036ACS, client mode via wpa
 ## Backend Architecture
 
 ### Module Pattern
-Every hardware module follows the same lazy-init pattern in `app.py`:
+Every hardware module follows the same lazy-init pattern in `hardware.py`:
 ```python
-_modules = {}
+_instances = {}
+_MODULE_CLASSES = {
+    'wifi': 'modules.wifi.WiFiModule',
+    'bluetooth': 'modules.bluetooth.BluetoothModule',
+    ...
+}
 def get_module(name):
-    if name not in _modules:
-        module_map = {
-            'wifi': 'modules.wifi.WiFiModule',
-            'bluetooth': 'modules.bluetooth.BluetoothModule',
-            'ir': 'modules.ir.IRModule',
-            'cc1101': 'modules.cc1101.CC1101Module',
-            'pn532': 'modules.pn532.PN532Module',
-            'badusb': 'modules.badusb.BadUSBModule',
-            'zigbee': 'modules.zigbee.ZigbeeModule',
-        }
-        mod_path, cls_name = module_map[name].rsplit('.', 1)
-        mod = __import__(mod_path, fromlist=[cls_name])
-        _modules[name] = getattr(mod, cls_name)()
-    return _modules[name]
+    if name not in _instances:
+        target = _MODULE_CLASSES[name]
+        mod_path, cls_name = target.rsplit('.', 1)
+        mod = importlib.import_module(mod_path)
+        _instances[name] = getattr(mod, cls_name)()
+    return _instances[name]
 ```
-Modules are instantiated on first use via `__import__`. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
+Modules are instantiated on first use via `importlib.import_module`. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
 
 The `__init__.py` only lists `__all__` -- no eager imports. Use `from modules.ir import IRModule` inside the venv to import specific modules directly when testing.
 

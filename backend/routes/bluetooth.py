@@ -4,7 +4,7 @@ Bluetooth scanning endpoints.
 
 from flask import Blueprint, request
 from hardware import get_module
-from utils import api_success, api_error
+from utils import api_success, api_error, api_from_result
 
 bp = Blueprint('bluetooth', __name__, url_prefix='/api')
 
@@ -18,7 +18,7 @@ def bluetooth_scan():
     duration = max(1, min(duration, 120))
     bt = get_module('bluetooth')
     result = bt.scan_ble(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/beacons', methods=['GET'])
@@ -30,7 +30,7 @@ def bluetooth_beacons():
     duration = max(1, min(duration, 120))
     bt = get_module('bluetooth')
     result = bt.scan_beacons(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/gatt', methods=['POST'])
@@ -41,7 +41,7 @@ def bluetooth_gatt():
         return api_error('mac required', 400)
     bt = get_module('bluetooth')
     result = bt.profile_device(mac)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'GATT profiling failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/gatt/write', methods=['POST'])
@@ -54,7 +54,7 @@ def bluetooth_gatt_write():
         return api_error('mac, char_uuid, and value are required', 400)
     bt = get_module('bluetooth')
     result = bt.write_characteristic(mac, char_uuid, value, data.get('without_response'))
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Write failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/capture-hci', methods=['POST'])
@@ -67,7 +67,7 @@ def bluetooth_capture_hci():
     duration = max(1, min(duration, 300))
     bt = get_module('bluetooth')
     result = bt.capture_hci(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'HCI capture failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/spoof', methods=['POST'])
@@ -75,7 +75,7 @@ def bluetooth_spoof():
     params = request.json or {}
     bt = get_module('bluetooth')
     result = bt.spoof_advertisement(params)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Spoof failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/spoof/stop', methods=['POST'])
@@ -100,7 +100,7 @@ def bluetooth_deep_scan():
     duration = max(1, min(duration, 120))
     bt = get_module('bluetooth')
     result = bt.deep_scan(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Deep scan failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/classic-scan', methods=['GET'])
@@ -112,7 +112,7 @@ def bluetooth_classic_scan():
     duration = max(1, min(duration, 60))
     bt = get_module('bluetooth')
     result = bt.scan_classic(duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Classic scan failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/sdp', methods=['POST'])
@@ -123,7 +123,7 @@ def bluetooth_sdp():
         return api_error('mac required', 400)
     bt = get_module('bluetooth')
     result = bt.enumerate_services(mac)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'SDP enumeration failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 # background ad log daemon
@@ -132,7 +132,7 @@ def bluetooth_sdp():
 def bluetooth_log_start():
     bt = get_module('bluetooth')
     result = bt.start_advert_log()
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed to start logger'), 500)
+    return api_from_result(result, error_code=500)
 
 
 @bp.route('/bluetooth/log/stop', methods=['POST'])

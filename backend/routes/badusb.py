@@ -6,11 +6,10 @@ import os
 import json
 import fcntl
 import contextlib
-import threading
 import time
 from flask import Blueprint, request
 from hardware import get_module
-from utils import api_success, api_error
+from utils import api_success, api_error, api_from_result, SyncTask
 
 bp = Blueprint('badusb', __name__, url_prefix='/api')
 
@@ -19,8 +18,7 @@ bp = Blueprint('badusb', __name__, url_prefix='/api')
 
 _db = None
 _sync = None
-_sync_lock = threading.Lock()
-_sync_task = {'running': False, 'progress': 0, 'total': 0, 'current': ''}
+_sync_task = SyncTask()
 
 
 def _get_db():
@@ -74,26 +72,21 @@ def badusb_execute():
             p['content'],
             layout=layout or p.get('layout', 'us'),
             label=p.get('name', f'payload #{payload_id}'))
-        return api_success(result) if result.get('success') else api_error(
-            result.get('error', 'Failed'), 500)
-
-    # Inline content: execute raw DuckyScript
+        return api_from_result(result)
     content = data.get('content')
     if content:
         result = badusb.execute_content(
             content,
             layout=layout,
             label=data.get('label', 'inline'))
-        return api_success(result) if result.get('success') else api_error(
-            result.get('error', 'Failed'), 500)
+        return api_from_result(result)
 
     # Filesystem payload: execute by name
     payload_name = data.get('payload')
     if not payload_name:
         return api_error('payload name, id, or content required', 400)
     result = badusb.execute_payload(payload_name, layout=layout)
-    return api_success(result) if result.get('success') else api_error(
-        result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 # library (DB-backed)
@@ -161,42 +154,20 @@ def badusb_library_stats():
 def badusb_sync_check():
     sync = _get_sync()
     result = sync.check_for_updates()
-    return api_success(result) if result.get('success') else api_error(
-        result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 @bp.route('/badusb/library/sync/start', methods=['POST'])
 def badusb_sync_start():
-    global _sync_lock, _sync_task
-    if not _sync_lock.acquire(blocking=False):
-        return api_error('Sync already in progress', 400)
-
-    _sync_task = {'running': True, 'progress': 0, 'total': 0, 'current': ''}
-
-    def _progress(n, total, repo_name):
-        _sync_task['progress'] = n
-        _sync_task['total'] = total
-        _sync_task['current'] = repo_name
-
-    def _run():
-        try:
-            sync = _get_sync()
-            result = sync.sync(progress_callback=_progress)
-            _sync_task['result'] = result
-        except Exception as e:
-            _sync_task['error'] = str(e)
-        finally:
-            _sync_task['running'] = False
-            _sync_lock.release()
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return api_success({'status': 'started'})
+    def _run_sync():
+        sync = _get_sync()
+        return sync.sync(progress_callback=_sync_task.callback)
+    return _sync_task.start(_run_sync)
 
 
 @bp.route('/badusb/library/sync/status', methods=['GET'])
 def badusb_sync_status():
-    return api_success(_sync_task)
+    return _sync_task.status()
 
 
 # auto-fire

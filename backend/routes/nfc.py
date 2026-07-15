@@ -4,7 +4,7 @@ NFC/RFID read and write endpoints.
 
 from flask import Blueprint, request
 from hardware import get_module
-from utils import api_success, api_error
+from utils import api_success, api_error, api_from_result, parse_int
 
 bp = Blueprint('nfc', __name__, url_prefix='/api')
 
@@ -13,7 +13,7 @@ bp = Blueprint('nfc', __name__, url_prefix='/api')
 def nfc_read():
     pn532 = get_module('pn532')
     result = pn532.read_card()
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 @bp.route('/nfc/write', methods=['POST'])
@@ -23,7 +23,7 @@ def nfc_write():
     payload = data.get('payload')
     pn532 = get_module('pn532')
     result = pn532.write_card(uid, payload)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 @bp.route('/nfc/dump', methods=['POST'])
@@ -32,10 +32,10 @@ def nfc_dump():
     key-recovery based dumping via the Kali mfoc tool."""
     data = request.json or {}
     key = data.get('key', 'FFFFFFFFFFFF')
-    timeout = data.get('timeout', 30)
+    timeout = parse_int(data.get('timeout', 30), 30, 5, 300)
     pn532 = get_module('pn532')
     result = pn532.dump_card(key=key, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 @bp.route('/nfc/clone', methods=['POST'])
@@ -46,10 +46,10 @@ def nfc_clone():
     if not dump_data:
         return api_error('dump data (sectors dict) required', 400)
     key = data.get('key', 'FFFFFFFFFFFF')
-    timeout = data.get('timeout', 30)
+    timeout = parse_int(data.get('timeout', 30), 30, 5, 300)
     pn532 = get_module('pn532')
     result = pn532.clone_dump(dump_data, key=key, timeout=timeout)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 @bp.route('/nfc/mfoc', methods=['POST'])
@@ -57,7 +57,7 @@ def nfc_mfoc():
     """Run mfoc (Mifare Offline Cracker) for key recovery on a Mifare Classic."""
     import subprocess, os, tempfile
     data = request.json or {}
-    timeout_sec = data.get('timeout', 120)
+    timeout_sec = parse_int(data.get('timeout', 120), 120, 10, 600)
 
     tmpdir = tempfile.mkdtemp(prefix='nfc-mfoc-')
     outfile = os.path.join(tmpdir, 'dump.mfd')
@@ -93,4 +93,4 @@ def nfc_mfoc():
     except Exception as e:
         return api_error(str(e), 500)
 
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'mfoc failed'), 500)
+    return api_from_result(result, error_code=500)

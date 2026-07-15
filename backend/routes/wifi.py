@@ -5,7 +5,7 @@ and wifite-based vulnerability auditing.
 
 from flask import Blueprint, request
 from hardware import get_module
-from utils import api_success, api_error
+from utils import api_success, api_error, api_from_result, parse_int
 
 bp = Blueprint('wifi', __name__, url_prefix='/api')
 
@@ -26,16 +26,14 @@ def wifi_scan():
 @bp.route('/wifi/start_monitor', methods=['POST'])
 def wifi_start_monitor():
     wifi = get_module('wifi')
-    result = wifi.start_monitor_mode()
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(wifi.start_monitor_mode())
 
 
 @bp.route('/wifi/stop_monitor', methods=['POST'])
 def wifi_stop_monitor():
     """Return wlan1 to managed mode (e.g. after an attack) so scans work again."""
     wifi = get_module('wifi')
-    result = wifi.stop_monitor_mode()
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(wifi.stop_monitor_mode())
 
 
 # packet capture
@@ -43,12 +41,12 @@ def wifi_stop_monitor():
 @bp.route('/wifi/capture', methods=['POST'])
 def wifi_capture():
     data = request.json or {}
-    duration = data.get('duration', 60)
-    channel = data.get('channel')
+    duration = parse_int(data.get('duration', 60), 60, 1, 600)
+    channel = parse_int(data.get('channel'), None, 1, 165) if data.get('channel') is not None else None
     pkt_filter = data.get('filter')
     wifi = get_module('wifi')
     result = wifi.capture_packets(duration=duration, channel=channel, packet_filter=pkt_filter)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(result)
 
 
 # probes
@@ -56,10 +54,9 @@ def wifi_capture():
 @bp.route('/wifi/probes', methods=['POST'])
 def wifi_probes():
     data = request.json or {}
-    duration = data.get('duration', 30)
+    duration = parse_int(data.get('duration', 30), 30, 1, 300)
     wifi = get_module('wifi')
-    result = wifi.capture_probes(duration=duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Failed'), 500)
+    return api_from_result(wifi.capture_probes(duration=duration))
 
 
 # adapter reset (recover the wedged rtl8821au driver)
@@ -67,8 +64,7 @@ def wifi_probes():
 @bp.route('/wifi/reset_adapter', methods=['POST'])
 def wifi_reset_adapter():
     wifi = get_module('wifi')
-    result = wifi.reset_adapter()
-    return api_success(result) if result.get('success') else api_error('Adapter reset failed', 500)
+    return api_from_result(wifi.reset_adapter())
 
 
 # wifite audit -- serialized with a cross-process file lock so two runs (e.g.
@@ -97,7 +93,7 @@ def wifi_wifite_scan():
         return api_error('A Wi-Fi audit is already running', 409)
     try:
         data = request.json or {}
-        scan_time = data.get('scan_time', 10)
+        scan_time = parse_int(data.get('scan_time', 10), 10, 1, 120)
         wifi = get_module('wifi')
         targets = wifi.run_wifite_scan_only(scan_time=scan_time)
         return api_success({'targets': targets})
@@ -113,8 +109,8 @@ def wifi_wifite_attack():
         return api_error('A Wi-Fi audit is already running', 409)
 
     data = request.json or {}
-    scan_time = data.get('scan_time', 10)
-    attack_time = data.get('attack_time', 120)
+    scan_time = parse_int(data.get('scan_time', 10), 10, 1, 120)
+    attack_time = parse_int(data.get('attack_time', 120), 120, 10, 1800)
 
     wifi = get_module('wifi')
     import threading

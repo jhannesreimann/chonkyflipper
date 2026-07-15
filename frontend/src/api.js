@@ -5,7 +5,28 @@
 
 const API_URL = '/api'
 
+function _getToken() {
+  try {
+    return localStorage.getItem('chonky-api-token') || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+function _authHeaders() {
+  const token = _getToken()
+  return token ? { 'X-API-Token': token } : {}
+}
+
 async function parse(res) {
+  if (res.status === 401) {
+    const token = prompt('API token required. Enter the ChonkyFlipper API token:')
+    if (token) {
+      try { localStorage.setItem('chonky-api-token', token) } catch (e) {}
+      return null // caller should retry
+    }
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || `HTTP ${res.status}`)
@@ -16,7 +37,7 @@ async function parse(res) {
 export function apiGet(path, { timeout = 20000 } = {}) {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), timeout)
-  return fetch(`${API_URL}${path}`, { signal: ctrl.signal })
+  return fetch(`${API_URL}${path}`, { signal: ctrl.signal, headers: _authHeaders() })
     .then(parse)
     .finally(() => clearTimeout(t))
 }
@@ -26,7 +47,7 @@ export function apiPost(path, body = {}, { timeout = 180000 } = {}) {
   const t = setTimeout(() => ctrl.abort(), timeout)
   return fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ..._authHeaders() },
     body: JSON.stringify(body),
     signal: ctrl.signal,
   })
@@ -37,7 +58,7 @@ export function apiPost(path, body = {}, { timeout = 180000 } = {}) {
 export function apiDelete(path, { timeout = 20000 } = {}) {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), timeout)
-  return fetch(`${API_URL}${path}`, { method: 'DELETE', signal: ctrl.signal })
+  return fetch(`${API_URL}${path}`, { method: 'DELETE', signal: ctrl.signal, headers: _authHeaders() })
     .then(parse)
     .finally(() => clearTimeout(t))
 }

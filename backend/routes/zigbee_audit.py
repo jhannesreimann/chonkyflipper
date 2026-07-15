@@ -6,7 +6,7 @@ is RX-only and cannot transmit.
 
 from flask import Blueprint, request
 from hardware import get_module
-from utils import api_success, api_error
+from utils import api_success, api_error, api_from_result, parse_int
 
 bp = Blueprint('zigbee_audit', __name__, url_prefix='/api')
 
@@ -16,11 +16,11 @@ bp = Blueprint('zigbee_audit', __name__, url_prefix='/api')
 @bp.route('/zigbee/audit/capture', methods=['POST'])
 def zigbee_audit_capture():
     data = request.json or {}
-    channel = data.get('channel', 11)
-    duration = data.get('duration', 30)
+    channel = parse_int(data.get('channel', 11), 11, 11, 26)
+    duration = parse_int(data.get('duration', 30), 30, 1, 300)
     zb = get_module('zigbee_audit')
     result = zb.capture_packets(channel=channel, duration=duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Capture failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 # scan
@@ -29,10 +29,10 @@ def zigbee_audit_capture():
 def zigbee_audit_scan():
     data = request.json or {}
     channels = data.get('channels', '11-26')
-    duration = data.get('duration', 30)
+    duration = parse_int(data.get('duration', 30), 30, 1, 300)
     zb = get_module('zigbee_audit')
     result = zb.scan_channels(channels=channels, duration=duration)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Scan failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 # list captures
@@ -53,7 +53,7 @@ def zigbee_audit_extract():
         return api_error('file (path to pcap) required', 400)
     zb = get_module('zigbee_audit')
     result = zb.extract_keys(cap_file)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Key extraction failed'), 500)
+    return api_from_result(result, error_code=500)
 
 
 # device discovery
@@ -64,5 +64,5 @@ def zigbee_audit_discover():
     cap_file = data.get('file')
     zb = get_module('zigbee_audit')
     result = zb.discover_devices(cap_file)
-    return api_success(result) if result.get('success') else api_error(result.get('error', 'Discovery failed'), 500)
+    return api_from_result(result, error_code=500)
 

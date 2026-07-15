@@ -87,3 +87,21 @@ export function tabBar(tabs, activeId) {
       .join('')}
   </div>`
 }
+
+// Breadcrumb navigation. parts = [{label, action?}]. Renders into the element
+// matching selector within body, wires click handlers for items with actions.
+export function breadcrumb(body, selector, parts) {
+  const el = body.querySelector(selector)
+  if (!el) return
+  el.classList.toggle('hidden', !parts.length)
+  el.innerHTML = parts
+    .map((p, i) =>
+      p.action
+        ? `<a class="link link-hover text-primary cursor-pointer" data-crumb="${i}">${esc(p.label)}</a>`
+        : `<span class="font-semibold text-base-content">${esc(p.label)}</span>`,
+    )
+    .join('<i class="fa-solid fa-angle-right text-base-content/30 mx-1.5 text-[0.6rem]"></i>')
+  el.querySelectorAll('[data-crumb]').forEach((a) =>
+    a.addEventListener('click', () => parts[parseInt(a.dataset.crumb)].action()),
+  )
+}

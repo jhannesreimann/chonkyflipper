@@ -29,7 +29,7 @@ The system uses a three tier architecture: physical hardware layer (GPIO/SPI/I2C
 * SONOFF Zigbee 3.0 USB Dongle (EFR32MG21)
 * CC2531 USB Dongle (TI packet sniffer firmware) for Zigbee security auditing
 * CC1101 SPI module with SMA antenna (433/868MHz)
-* PN532 I2C module for NFC/RFID
+* PN532 UART/HSU module for NFC/RFID
 
 ### Auxiliary
 
@@ -135,16 +135,35 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/status | Module availability and health |
+| GET | /api/status | Module availability, power, BadUSB armed state |
 | GET | /api/system/info | Temperature and uptime |
+| GET | /api/system/version | Git SHA and repo URL |
+| POST | /api/system/update | Trigger background update.sh |
+| POST | /api/system/poweroff | Shut down the Pi |
+| GET | /api/system/power/shutdown-percentage | Read PiPower5 shutdown threshold |
+| POST | /api/system/power/shutdown-percentage | Set PiPower5 shutdown threshold |
+
+### Network
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/network/status | AP, Ethernet, WiFi client, and internet status |
+| POST | /api/network/wifi-connect | Connect wlan1 to a WiFi network |
+| POST | /api/network/wifi-disconnect | Disconnect wlan1 and remove config |
 
 ### WiFi Operations
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/wifi/scan | Discover access points |
-| POST | /api/wifi/start_monitor | Enable monitor mode |
-| POST | /api/wifi/capture | Record pcap files |
+| POST | /api/wifi/start_monitor | Enable monitor mode on wlan1 |
+| POST | /api/wifi/stop_monitor | Return wlan1 to managed mode |
+| POST | /api/wifi/capture | Record pcap files (duration, channel, filter) |
+| POST | /api/wifi/probes | Capture 802.11 probe requests |
+| POST | /api/wifi/reset_adapter | Reload rtl8821au driver |
+| POST | /api/wifi/audit/wifite-scan | Wifite scan only (no attacks) |
+| POST | /api/wifi/audit/wifite-attack | Wifite scan + attack (background) |
+| GET | /api/wifi/audit/wifite-status | Check if wifite audit is running |
 
 ### Bluetooth
 
@@ -154,19 +173,17 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 | GET | /api/bluetooth/beacons | Detect iBeacon / Eddystone beacons |
 | POST | /api/bluetooth/gatt | Profile GATT services on a BLE device |
 | POST | /api/bluetooth/gatt/write | Write to a GATT characteristic |
-| POST | /api/bluetooth/capture | One-shot BLE advertisement log (accepts `duration`) |
+| POST | /api/bluetooth/capture-hci | Capture raw HCI traffic (btmon, Wireshark pcap) |
+| POST | /api/bluetooth/spoof | Start BLE advertisement spoofing |
+| POST | /api/bluetooth/spoof/stop | Stop advertisement spoofing |
+| GET | /api/bluetooth/spoof/status | Check if spoofing is running |
+| POST | /api/bluetooth/deep-scan | Deep BLE scan via bettercap (vendor metadata) |
+| GET | /api/bluetooth/classic-scan | Discover Classic BR/EDR devices (hcitool inquiry) |
+| POST | /api/bluetooth/sdp | Enumerate SDP services on a Classic device |
 | POST | /api/bluetooth/log/start | Start background ad log daemon |
 | POST | /api/bluetooth/log/stop | Stop background ad log daemon |
 | GET | /api/bluetooth/log/status | Check if ad log daemon is running |
 | GET | /api/bluetooth/log/data | Read current ad log daemon data |
-| GET | /api/bluetooth/classic-scan | Discover Classic BR/EDR devices (hcitool inquiry) |
-| POST | /api/bluetooth/sdp | Enumerate SDP services on a Classic device |
-| POST | /api/bluetooth/deep-scan | Deep BLE scan via bettercap (vendor metadata) |
-| POST | /api/bluetooth/spoof | Start BLE advertisement spoofing |
-| POST | /api/bluetooth/spoof/stop | Stop advertisement spoofing |
-| GET | /api/bluetooth/spoof/status | Check if spoofing is running |
-| POST | /api/bluetooth/capture-hci | Capture raw HCI traffic (btmon, Wireshark pcap) |
-| GET | /api/bluetooth/captures | List saved HCI capture files |
 
 ### Infrared
 
@@ -174,6 +191,16 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 |--------|----------|-------------|
 | POST | /api/ir/record | Capture IR signals |
 | POST | /api/ir/transmit | Replay stored signals |
+| GET | /api/ir/signals | List recorded signals |
+| DELETE | /api/ir/signals/\<signal_id\> | Delete a recorded signal |
+| GET | /api/ir/library/brands | Browse IR library brands |
+| GET | /api/ir/library/brands/\<slug\>/devices | Devices for a brand |
+| GET | /api/ir/library/devices/\<device_id\>/buttons | Buttons for a device |
+| POST | /api/ir/library/devices/\<device_id\>/send | Transmit a library button |
+| GET | /api/ir/library/search?q=... | Full-text search across brands/devices/buttons |
+| POST | /api/ir/sync/check | Check for Flipper-IRDB updates |
+| POST | /api/ir/sync/start | Start background IRDB sync |
+| GET | /api/ir/sync/status | Sync progress |
 
 ### Sub-1GHz RF
 
@@ -181,13 +208,22 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 |--------|----------|-------------|
 | POST | /api/subghz/record | Capture at 433/868MHz |
 | POST | /api/subghz/transmit | Replay captured signals |
+| POST | /api/subghz/scan | Spectrum scan across a frequency range |
+| GET | /api/subghz/signals | List saved signals |
+| GET | /api/subghz/signals/\<signal_id\> | Get a single signal |
+| POST | /api/subghz/decode | Decode signal pulses into protocol data |
+| POST | /api/subghz/jam | Jam a frequency for a duration |
+| DELETE | /api/subghz/signals/\<signal_id\> | Delete a saved signal |
 
 ### NFC/RFID
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/nfc/read | Detect and read cards |
-| POST | /api/nfc/write | Write data to cards |
+| POST | /api/nfc/write | Write data to a specific block |
+| POST | /api/nfc/dump | Full Mifare Classic 1K dump (default key) |
+| POST | /api/nfc/clone | Write a sector dump to a magic card |
+| POST | /api/nfc/mfoc | Run mfoc for key recovery and dump |
 
 ### BadUSB
 
@@ -230,6 +266,14 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 | POST | /api/zigbee/audit/discover | Parse pcap for devices (MACs, roles, encryption) |
 | POST | /api/zigbee/audit/extract-keys | Extract network keys from capture (zbdsniff) |
 | GET | /api/zigbee/audit/captures | List saved pcap capture files |
+
+### Loot (Captured Data)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/loot | List captured files by type |
+| GET | /api/loot/download?category=\<type\>&name=\<filename\> | Download a captured file |
+| DELETE | /api/loot?category=\<type\>&name=\<filename\> | Delete a captured file |
 
 ## Usage Workflow
 

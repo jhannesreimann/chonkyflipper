@@ -2,18 +2,19 @@
 """
 BadUSB Payload Database - SQLite storage for DuckyScript payload library.
 Provides hierarchical browsing (OS -> categories -> payloads), search, and
-full-text retrieval. Modelled after the IR payload DB (ir_db.py).
+full-text retrieval. Modelled after the IR payload DB (ir/db.py).
 """
 
-import sqlite3
 import os
 import json
 
+from modules.base_db import BasePayloadDB
 
-class BadUSBDB:
+
+class BadUSBDB(BasePayloadDB):
     """SQLite-backed BadUSB payload database."""
 
-    SCHEMA_VERSION = 1
+    DB_FILENAME = 'badusb_payloads.db'
 
     OS_TYPES = [
         ('Cross-Platform', 'cross-platform'),
@@ -38,36 +39,6 @@ class BadUSBDB:
         'mobile',
         'incident_response',
     ]
-
-    def __init__(self, db_path=None):
-        if db_path is None:
-            candidates = [
-                '/opt/chonkyflipper/data/badusb_payloads.db',
-                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             '..', 'data', 'badusb_payloads.db'),
-            ]
-            db_path = candidates[0]
-            for p in candidates:
-                parent = os.path.dirname(p)
-                if os.path.isdir(parent):
-                    db_path = p
-                    break
-
-        self.db_path = db_path
-        self._conn = None
-
-    def _connect(self):
-        if self._conn is not None:
-            return self._conn
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA synchronous=NORMAL')
-        conn.execute('PRAGMA foreign_keys=ON')
-        conn.execute('PRAGMA busy_timeout=10000')
-        conn.row_factory = sqlite3.Row
-        self._conn = conn
-        return conn
 
     def init_db(self):
         """Create tables and seed OS types / categories if empty."""
@@ -152,11 +123,7 @@ class BadUSBDB:
                              (cat, slug))
 
         # Apply schema version if empty
-        cur = conn.execute('SELECT COUNT(*) FROM schema_version')
-        if cur.fetchone()[0] == 0:
-            conn.execute('INSERT INTO schema_version (version) VALUES (?)',
-                         (self.SCHEMA_VERSION,))
-
+        self._ensure_schema_version()
         conn.commit()
         return {'success': True, 'db_path': self.db_path}
 
@@ -511,24 +478,10 @@ class BadUSBDB:
             'by_category': {r['slug']: r['cnt'] for r in cat_rows},
         }
 
-    # Sync State
-
-    def get_sync_state(self, key):
+    def _find_by_source(self, repo, path):
         conn = self._connect()
         row = conn.execute(
-            'SELECT value FROM sync_state WHERE key = ?', (key,)
+            'SELECT id FROM payloads WHERE source_repo = ? AND source_path = ?',
+            (repo, path)
         ).fetchone()
-        return row['value'] if row else None
-
-    def set_sync_state(self, key, value):
-        conn = self._connect()
-        conn.execute('''
-            INSERT OR REPLACE INTO sync_state (key, value, updated_at)
-            VALUES (?, ?, datetime('now'))
-        ''', (key, value))
-        conn.commit()
-
-    def close(self):
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        return row['id'] if row else None

@@ -203,7 +203,6 @@ class ZigbeeAuditModule:
         """Parse a pcap file to discover Zigbee devices (MACs, PANs, roles)."""
         if cap_file is None:
             # Use the latest capture
-            captures = []
             try:
                 for f in sorted(os.listdir(self.captures_dir), reverse=True):
                     if f.endswith('.pcap'):

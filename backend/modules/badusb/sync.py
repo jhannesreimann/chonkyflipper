@@ -2,17 +2,16 @@
 """
 BadUSB Payload Sync Engine - keeps the local payload DB in sync with
 upstream GitHub payload repositories. Uses git for efficient incremental
-updates (avoids GitHub API rate limits). Modelled after ir_sync.py.
+updates (avoids GitHub API rate limits). Modelled after ir/sync.py.
 """
 
 import os
-import subprocess
-import re
-import time
 from datetime import datetime
 
+from modules.base_sync import BaseGitSync
 
-class BadUSBSync:
+
+class BadUSBSync(BaseGitSync):
     """Sync engine for GitHub DuckyScript repos -> local SQLite database."""
 
     REPOS = [
@@ -34,7 +33,6 @@ class BadUSBSync:
     ]
 
     def __init__(self, db, repos_dir=None):
-        self.db = db
         if repos_dir is None:
             candidates = [
                 '/opt/chonkyflipper/data/badusb_repos',
@@ -46,17 +44,7 @@ class BadUSBSync:
                 if os.path.isdir(os.path.dirname(p)):
                     repos_dir = p
                     break
-        self.repos_dir = repos_dir
-
-    def _run_git(self, repo_dir, *args):
-        cmd = ['git', '-C', repo_dir] + list(args)
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            return result.stdout.strip(), result.stderr.strip(), result.returncode
-        except subprocess.TimeoutExpired:
-            return '', 'Command timed out', 1
-        except Exception as e:
-            return '', str(e), 1
+        super().__init__(db, repos_dir)
 
     def clone_or_update(self, repo_info):
         """Clone a repo shallow, or git pull if already cloned. Returns status dict."""
@@ -65,44 +53,21 @@ class BadUSBSync:
 
         if not os.path.isdir(os.path.join(repo_dir, '.git')):
             os.makedirs(self.repos_dir, exist_ok=True)
-            stdout, stderr, rc = self._run_git(
-                self.repos_dir, 'clone', '--depth', '1',
-                repo_info['url'], repo_info['dir'],
-            )
-            if rc != 0:
-                return {'success': False, 'error': f'Clone failed: {stderr[:300]}',
+            success, result = self._clone_repo(
+                repo_info['url'], repo_dir)
+            if not success:
+                return {'success': False, 'error': result,
                         'repo': repo_info['name']}
-
-            # Get current SHA
-            sha, _, rc = self._run_git(repo_dir, 'rev-parse', '--short', 'HEAD')
-            if rc == 0 and sha:
-                self.db.set_sync_state(state_key, sha)
-                self.db.set_sync_state(f'last_sync_{repo_info["name"]}',
-                                      datetime.now().isoformat())
+            sha = result
+            self.db.set_sync_state(state_key, sha)
+            self.db.set_sync_state(f'last_sync_{repo_info["name"]}',
+                                  datetime.now().isoformat())
             return {'success': True, 'action': 'cloned', 'repo': repo_info['name'],
                     'sha': sha}
 
         # Already cloned — fetch and merge
-        old_sha, _, rc = self._run_git(repo_dir, 'rev-parse', '--short', 'HEAD')
-        if rc != 0:
-            old_sha = ''
-
-        self._run_git(repo_dir, 'fetch', 'origin', 'main')
-        self._run_git(repo_dir, 'fetch', 'origin', 'master')
-        # Try main first, fall back to master
-        merge_out, merge_err, merge_rc = self._run_git(
-            repo_dir, 'merge', 'origin/main', '--ff-only',
-        )
-        if merge_rc != 0:
-            merge_out, merge_err, merge_rc = self._run_git(
-                repo_dir, 'merge', 'origin/master', '--ff-only',
-            )
-
-        new_sha, _, rc = self._run_git(repo_dir, 'rev-parse', '--short', 'HEAD')
-        if rc != 0:
-            new_sha = old_sha
-
-        if old_sha == new_sha:
+        action, old_sha, new_sha = self._fetch_and_merge(repo_dir)
+        if action == 'up_to_date':
             return {'success': True, 'action': 'up_to_date', 'repo': repo_info['name'],
                     'sha': new_sha}
 
@@ -130,82 +95,6 @@ class BadUSBSync:
                     files.append(os.path.relpath(os.path.join(rootdir, fname), repo_dir))
         return files
 
-    def _parse_rem_headers(self, content):
-        """Extract metadata from REM comment headers in DuckyScript."""
-        headers = {}
-        # Match various formats: "REM Title: ..." / "REM # Title : ... |" / "REM  Title : ..."
-        patterns = {
-            'title': r'REM\s+#?\s*Title\s*:\s*(.+)',
-            'author': r'REM\s+#?\s*Author\s*:\s*(.+)',
-            'description': r'REM\s+#?\s*Description\s*:\s*(.+)',
-            'target': r'REM\s+#?\s*Target\s*:\s*(.+)',
-            'category': r'REM\s+#?\s*Category\s*:\s*(.+)',
-            'props': r'REM\s+#?\s*Props\s*:\s*(.+)',
-            'version': r'REM\s+#?\s*Version\s*:\s*(.+)',
-            'layout': r'REM\s+#?\s*Layout\s*:\s*(.+)',
-        }
-        for line in content.split('\n'):
-            line = line.strip()
-            if not line.upper().startswith('REM '):
-                if line and not line.upper().startswith('REM'):
-                    if headers:
-                        break
-                continue
-            for key, pat in patterns.items():
-                m = re.match(pat, line, re.IGNORECASE)
-                if m:
-                    val = m.group(1).strip().rstrip('|# ').strip()
-                    headers[key] = val
-        return headers
-
-    def _resolve_os(self, target_text, dirpath='', content=''):
-        t = (target_text or '').lower()
-        d = dirpath.lower()
-        c = (content or '').lower()
-        combined = f'{t} {d}'
-
-        # Check content for OS-specific indicators first
-        if 'powershell' in c or 'netsh ' in c or 'ipconfig' in c or 'reg add' in c or 'wmic ' in c:
-            return 'windows'
-        if 'cmd.exe' in c or '\\\\windows\\\\' in c or '\\\\win32\\\\' in c:
-            return 'windows'
-        if 'bash ' in c or '/etc/' in c or '#!/bin/bash' in c or '#!/bin/sh' in c:
-            return 'linux'
-        if 'apt-get' in c or 'apt install' in c or 'systemctl' in c or 'gsettings' in c:
-            return 'linux'
-
-        if 'windows' in t or 'win' in t:
-            return 'windows'
-        if 'unix-like' in d or 'gnu-linux' in d:
-            return 'linux'
-        if 'linux' in combined or 'ubuntu' in combined or 'debian' in combined or 'kali' in combined:
-            return 'linux'
-        if 'macos' in combined or 'mac os' in combined or 'osx' in combined or 'mac' in t:
-            return 'macos'
-        if 'unix-like' in d and 'macos' in d:
-            return 'macos'
-        # Starvinci: Unix-like/macOS vs Unix-like/Linux
-        if '/macos/' in d.lower() or 'macos' in d.lower():
-            return 'macos'
-        if 'android' in combined:
-            return 'android'
-        if 'ios' in combined or 'iphone' in combined or 'ipad' in combined:
-            return 'ios'
-        return 'cross-platform'
-
-    def _resolve_category(self, category_text, dirpath=''):
-        if category_text:
-            t = category_text.lower().replace(' ', '_').replace('-', '_')
-            for cat in self.db.CATEGORIES:
-                if cat.lower() in t:
-                    return cat.lower().replace(' ', '_')
-        if dirpath:
-            d = dirpath.lower()
-            for cat in self.db.CATEGORIES:
-                if cat.lower() in d:
-                    return cat.lower().replace(' ', '_')
-        return 'general'
-
     def _import_payload(self, filepath, repo_name, repo_dir):
         """Import a single .txt payload file into the database."""
         full_path = os.path.join(repo_dir, filepath)
@@ -221,7 +110,7 @@ class BadUSBSync:
         if not content.strip():
             return None
 
-        headers = self._parse_rem_headers(content)
+        headers = self.db._parse_rem_headers(content)
         fname = os.path.splitext(os.path.basename(filepath))[0]
         # If the filename is generic (payload, Payload) use the parent directory
         if fname.lower() in ('payload', 'inject', 'ducky'):
@@ -233,12 +122,12 @@ class BadUSBSync:
         name = headers.get('title') or fname
         name = name.replace('_', ' ').replace('-', ' ').strip().title()
 
-        os_slug = self._resolve_os(
+        os_slug = self.db._resolve_os(
             headers.get('target', ''),
             os.path.dirname(filepath),
             content
         )
-        cat = self._resolve_category(
+        cat = self.db._resolve_category(
             headers.get('category', ''),
             os.path.dirname(filepath)
         )
