@@ -1,7 +1,7 @@
 # ChonkyFlipper Backend Dependencies
 # Install with: pip3 install -r requirements.txt
 
-flask==2.3.3
+flask==3.1.3
 flask-cors==4.0.0
 spidev>=3.6
 lgpio>=0.2.2  # CC1101 GDO0 timing plane (OOK capture/replay/jam)
