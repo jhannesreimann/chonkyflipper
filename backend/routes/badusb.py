@@ -6,6 +6,7 @@ import os
 import json
 import fcntl
 import contextlib
+import threading
 import time
 from flask import Blueprint, request
 from hardware import get_module
