@@ -74,7 +74,7 @@ src/
   state.js         shared polling store (/status, /system, /network, /version)
   api.js           fetch wrappers (get / post / delete)
   toast.js         toast + long-running task notifications
-  ui.js            shared presentational fragments
+  ui.js            shared presentational fragments (pageHead, card, tabBar, breadcrumb, etc.)
   util.js          escaping + small DOM/format helpers
   style.css        Tailwind entry, theme definitions, component classes
   modules/

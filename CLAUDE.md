@@ -38,8 +38,8 @@ The Pi hosts a WiFi access point (Chonky_Control) controlled via smartphone brow
 |------|---------|
 | `/opt/chonkyflipper/` | Backend deployment (Flask app, venv, modules, scripts) |
 | `/opt/chonkyflipper/venv/` | Python virtual environment (must be chonky:chonky) |
-| `/opt/chonkyflipper/data/` | SQLite databases (ir_payloads.db), cloned Flipper-IRDB repo |
-| `/opt/chonkyflipper/payloads/` | IR JSON payloads (`ir/`) + BadUSB DuckyScripts (`badusb/`) |
+| `/opt/chonkyflipper/data/` | SQLite databases (ir_payloads.db, badusb_payloads.db), cloned Flipper-IRDB repo |
+| `/opt/chonkyflipper/payloads/` | BadUSB DuckyScripts (`badusb/`) |
 | `/var/www/html/` | Frontend deployment (nginx serves on port 80) |
 | `/home/kali/chonkyflipper/` | Git clone (source of truth for updates) |
 | `/opt/pipower5/` | PiPower5 UPS HAT (installed from local source, NOT on PyPI) |
@@ -79,16 +79,16 @@ def get_module(name):
         _instances[name] = getattr(mod, cls_name)()
     return _instances[name]
 ```
-Modules are instantiated on first use via `importlib.import_module`. Each module class lives in `backend/modules/<name>.py` and handles its own hardware detection, initialization, and cleanup.
+Modules are instantiated on first use via `importlib.import_module`. Each module class lives in `backend/modules/<name>.py` (or `backend/modules/<name>/module.py` for packages like `bluetooth/`, `ir/`, `badusb/`) and handles its own hardware detection, initialization, and cleanup.
 
 The `__init__.py` only lists `__all__` -- no eager imports. Use `from modules.ir import IRModule` inside the venv to import specific modules directly when testing.
 
 ### IR Library System (multi-file subsystem)
-The IR functionality spans four files:
-- **`ir.py`** -- Low-level IR: records from `/dev/lirc1` (RX), transmits via `ir-ctl` to `/dev/lirc0` (TX). Also provides `transmit_raw()`, `detect_protocol()`, and signal management (list/delete). Tempfiles use `tempfile.mkstemp` to avoid PID races.
-- **`ir_protocols.py`** -- Protocol encoder registry. `@register('NEC')` decorator pattern adds encoders to `PROTOCOL_REGISTRY`. Protocols: NEC, Samsung32, Sony SIRC, Panasonic, RC5. `encode(protocol, **params)` returns `(pulses, spaces)` for transmission.
-- **`ir_db.py`** -- SQLite-backed IR payload database. Tables: `brands`, `devices`, `buttons`, `schema_version`, `sync_state`. Provides hierarchical browsing (brands -> devices -> buttons), full-text search, and JSON seed import. Stores raw pulse/space arrays for each button. Auto-seeds from `payloads/ir/*.json` on first run.
-- **`ir_sync.py`** -- Incremental sync from [Flipper-IRDB](https://github.com/logickworkshop/Flipper-IRDB). Clones the repo shallow into `/opt/chonkyflipper/data/irdb/`, parses `.ir` files, and imports into the SQLite DB. Tracks sync state for incremental updates. Key bugfix: `parse_ir_file` now appends all signals (was only saving the last one per file).
+The IR functionality spans four files in the `ir/` package:
+- **`ir/module.py`** -- Low-level IR: records from `/dev/lirc1` (RX), transmits via `ir-ctl` to `/dev/lirc0` (TX). Also provides `transmit_raw()`, `detect_protocol()`, and signal management (list/delete). Tempfiles use `tempfile.mkstemp` to avoid PID races.
+- **`ir/protocols.py`** -- Protocol encoder registry. `@register('NEC')` decorator pattern adds encoders to `PROTOCOL_REGISTRY`. Protocols: NEC, Samsung32, Sony SIRC, Panasonic, RC5. `encode(protocol, **params)` returns `(pulses, spaces)` for transmission.
+- **`ir/db.py`** -- SQLite-backed IR payload database (inherits `BasePayloadDB`). Tables: `brands`, `devices`, `buttons`, `schema_version`, `sync_state`. Provides hierarchical browsing (brands -> devices -> buttons), full-text search, and raw pulse/space storage. The DB starts empty and is populated by the IRDB sync.
+- **`ir/sync.py`** -- Incremental sync from [Flipper-IRDB](https://github.com/logickworkshop/Flipper-IRDB) (inherits `BaseGitSync`). Clones the repo shallow into `/opt/chonkyflipper/data/irdb/`, parses `.ir` files, and imports into the SQLite DB. Tracks sync state for incremental updates.
 - **`routes/ir.py`** -- `/api/ir/library/*` endpoints for browsing, `/api/ir/sync/*` for sync management, `/api/ir/signals` for recorded signals.
 
 ### Zigbee2MQTT Bridge
@@ -129,9 +129,9 @@ The IR functionality spans four files:
 
 The BadUSB system has three layers: a filesystem scanner for local `.txt` payloads, a SQLite-backed library synced from GitHub payload repos (modelled after the IR library), and a USB HID gadget execution engine.
 
-- **`modules/badusb/`** — Package: `interpreter.py` (DuckyScript 3.0 parser with variables, IF/WHILE, expressions), `keymaps.py` (us/de layout tables + named keys + modifier bitmasks), `backends.py` (HidBackend writing 8-byte reports to `/dev/hidg0`, DryRunBackend for preview), `module.py` (filesystem payload discovery and execution).
-- **`modules/badusb/db.py`** — SQLite database: `os_types`, `categories`, `payloads` tables with FTS5 search. Stores payloads synced from GitHub with metadata parsed from REM headers (Title, Author, Description, Target OS, Category). Hierarchical browsing: OS → Category → Payloads.
-- **`modules/badusb/sync.py`** — Sync engine cloning payload repos (`hak5/usbrubberducky-payloads`, `Starvinci/BadUsb-Library`, `aleff-github/my-flipper-shits`) via shallow git clone. Incremental updates via `git diff`. Parses REM comment headers to extract OS, category, author, and description.
+- **`modules/badusb/`** -- Package: `interpreter.py` (DuckyScript 3.0 parser with variables, IF/WHILE, expressions), `keymaps.py` (us/de layout tables + named keys + modifier bitmasks), `backends.py` (HidBackend writing 8-byte reports to `/dev/hidg0`, DryRunBackend for preview), `module.py` (filesystem payload discovery and execution), `db.py` (SQLite library, inherits `BasePayloadDB`), `sync.py` (GitHub repo sync, inherits `BaseGitSync`).
+- **`modules/badusb/db.py`** -- SQLite database (inherits `BasePayloadDB`): `os_types`, `categories`, `payloads` tables with FTS5 search. Stores payloads synced from GitHub with metadata parsed from REM headers (Title, Author, Description, Target OS, Category). Hierarchical browsing: OS -> Category -> Payloads.
+- **`modules/badusb/sync.py`** -- Sync engine (inherits `BaseGitSync`) cloning payload repos (`hak5/usbrubberducky-payloads`, `Starvinci/BadUsb-Library`, `aleff-github/my-flipper-shits`) via shallow git clone. Incremental updates via `git diff`. Parses REM comment headers to extract OS, category, author, and description.
 - **`routes/badusb.py`** — Filesystem routes (`/badusb/payloads`, `/badusb/execute`), library routes (`/badusb/library/os`, `/categories`, `/payloads`, `/search`, `/stats`, `/sync/*`), and auto-fire routes (`/badusb/arm`, `/arm/status`, `/arm/cancel`).
 - **Auto-fire**: Arm a payload, and when the Pi's USB-C port detects a host connection (UDC state change), the payload fires automatically. State is polled via `/api/status` every 5 seconds.
 - **Frontend**: `badusb.js` — two-tab layout: Library (OS pills → category grid → payload list → detail with preview/edit/run/arm) and Files (existing filesystem browser).
@@ -160,7 +160,7 @@ WiFi scanning is in `routes/wifi.py` (uses `wpa_cli -i wlan1 scan` + `scan_resul
 - **`src/main.js`**: app shell -- sidebar nav, hash-based router, header (status dot + task counter), theme toggle.
 - **`src/state.js`**: central polling store -- `/api/status` (5s), `/api/system/info` (10s), `/api/network/status` (10s), `/api/system/version` (60s). Modules subscribe instead of polling independently.
 - **`src/api.js`**: `apiGet()`/`apiPost()`/`apiDelete()` wrappers with AbortController timeouts. Always hits `/api` (relative path; works in dev via Vite proxy and in prod via nginx).
-- **`src/ui.js`**: reusable fragments -- `pageHead()`, `card()`, `sectionTitle()`, `tabBar()`, `empty()`, `errorBox()`, `infoBox()`, `spinner()`, `riskBadge()`.
+- **`src/ui.js`**: reusable fragments -- `pageHead()`, `card()`, `sectionTitle()`, `tabBar()`, `breadcrumb()`, `empty()`, `errorBox()`, `infoBox()`, `spinner()`, `riskBadge()`.
 - **`src/toast.js`**: transient toasts (`notify()`) + persistent task handles (`startTask()` with `.done()`/`.fail()`/`.update()`). Tracks active task count shown in the header.
 - **`src/style.css`**: Tailwind entry point, `chonky` / `chonky-dark` DaisyUI themes, `.nav-link` / `.surface` / `.console` component classes.
 - **`src/modules/*.js`**: one file per hardware module, each exporting a `renderXxx(root)` function called by the router.

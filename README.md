@@ -1,4 +1,23 @@
-# ChonkyFlipper
+<p align="center">
+  <img src="assets/logo1.png" width="220" alt="ChonkyFlipper logo" />
+</p>
+
+<h1 align="center">ChonkyFlipper</h1>
+
+<p align="center">
+  <strong>Portable IoT Pentesting Framework</strong><br/>
+  <sub>Raspberry Pi 4 &middot; Kali Linux ARM64 &middot; WiFi AP + Smartphone Control</sub>
+</p>
+
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Raspberry%20Pi%204-c51a4a?style=for-the-badge" />
+  <img alt="OS" src="https://img.shields.io/badge/os-Kali%20Linux%20ARM64-367bf0?style=for-the-badge" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge" />
+  <img alt="Backend" src="https://img.shields.io/badge/backend-Flask%20%2B%20Gunicorn-000?style=for-the-badge" />
+  <img alt="Frontend" src="https://img.shields.io/badge/frontend-Vite%20%2B%20Tailwind-f88828?style=for-the-badge" />
+</p>
+
+---
 
 A portable penetration testing framework built on Raspberry Pi 4. This headless device creates its own WiFi access point for mobile control via smartphone browser.
 
@@ -82,21 +101,20 @@ I2C and SPI are enabled automatically by `install.sh` via `/boot/firmware/config
 backend/
     app.py              Flask application entrypoint
     config.py           Centralized paths and constants
-    utils.py            API response helpers (api_success / api_error)
+    utils.py            API helpers, request validation, SyncTask
     routes/             Flask blueprints (status, wifi, bluetooth, ir,
     |                     subghz, nfc, badusb, zigbee, zigbee_audit, network)
     modules/
+        base_db.py      Shared SQLite base class (WAL, schema versioning, sync state)
+        base_sync.py    Shared git sync base class (clone, fetch, merge, SHA tracking)
         wifi.py         Alfa adapter + WiFi scanning
-        bluetooth.py    BLE + Classic BT scanner, GATT, SDP, beacon decode, spoofing
-        ir.py           IR record + transmit (LIRC kernel drivers)
-        ir_protocols.py Protocol encoders (NEC, Samsung, Sony, RC5, etc.)
-        ir_db.py        SQLite IR payload database (brands/devices/buttons)
-        ir_sync.py      Flipper-IRDB incremental git sync
+        bluetooth/      BLE + Classic BT package (beacons, parsers, module)
+        ir/             IR package (module, db, sync, protocols)
         cc1101.py       Sub-1GHz transceiver (SPI)
-        pn532.py        NFC/RFID reader/writer (I2C)
+        pn532.py        NFC/RFID reader/writer (UART/HSU)
         zigbee.py       Zigbee2MQTT bridge (MQTT)
         zigbee_audit.py Zigbee security auditing (CC2531 + KillerBee)
-        badusb/         USB HID interpreter, keymaps, DB, sync engine
+        badusb/         USB HID package (interpreter, keymaps, backends, db, sync, module)
     requirements.txt
 
 frontend/
@@ -122,8 +140,7 @@ frontend/
             settings.js    WiFi connect, network status, power, system update
 
 payloads/
-    ir/                 Bootstrap IR JSON payloads (seed DB offline)
-    badusb/             DuckyScript payloads for BadUSB
+    badusb/             DuckyScript payloads for BadUSB (filesystem browser)
 
 install.sh              Full system setup (run once on fresh Pi)
 update.sh               Git pull + deploy (run via dashboard or CLI)
@@ -289,9 +306,29 @@ update.sh               Git pull + deploy (run via dashboard or CLI)
 
 All captured data (pcap files, IR signals, RF recordings, card data) stores locally on the device under /opt/chonkyflipper/ for later analysis.
 
+## Security
+
+### Threat model
+
+The Flask API is reachable by anyone connected to the `Chonky_Control` access point (`192.168.4.1`) and by anyone on the LAN the Pi is plugged into. When wlan1 is connected to an untrusted network for internet access, the API is also reachable from that network. The AP itself is the only network-level access control.
+
+### Mitigations in place
+
+- **API token auth**: If `/opt/chonkyflipper/config/api_token` exists, all `/api/` requests must include an `X-API-Token` header. The frontend prompts on 401 and stores the token in localStorage. If no token file exists, auth is disabled (backward compatible).
+- **No shell injection**: WiFi module subprocess calls use argv lists (`shell=False`). Route-level validation (`parse_int`/`parse_float` with bounds) prevents non-numeric values from reaching commands.
+- **wpa_supplicant escaping**: SSID and passphrase values are escaped via `_escape_wpa_value()` before interpolation into config files.
+- **CORS scoped**: CORS is limited to `/api/*` paths. In production, nginx serves the UI same-origin.
+- **Debug mode gated**: Flask debug mode is off by default, enabled only via `FLASK_DEBUG=1` env var.
+
+### Known limitations
+
+- **WiFi credentials in plaintext**: `wpa_supplicant-wlan1.conf` stores SSID and password in plaintext (mode `0600`, readable by root and service user). Acceptable for a single-user rig.
+- **Per-worker state**: Gunicorn runs with 2 workers; in-memory state (module cache, sync task handles) is per-worker. A status poll may land on a different worker than the one that started a task. Would require an external store (Redis) or single-worker mode to fix.
+- **Dependency hygiene**: Flask and flask-cors should be bumped to current patched releases. Werkzeug is not pinned explicitly.
+
 ## Development Status
 
-**Completed:** Backend API and core driver implementations (PN532 via CircuitPython, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing.
+**Completed:** Backend API and core driver implementations (PN532 via libnfc, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing.
 
 **Pending:** 3D printed enclosure.
 
