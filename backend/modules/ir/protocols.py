@@ -231,6 +231,28 @@ def encode_necext(address, command):
 
 # Raw Passthrough
 
+@register('Kaseikyo', carrier=38000)
+def encode_kaseikyo(address=0, command=0):
+    """Kaseikyo is Panasonic's 48-bit protocol family.
+    Flipper-IRDB stores 4-byte address + 4-byte command, but the frame is
+    16-bit vendor code (upper 16 bits of address) + 32-bit data (command,
+    byte-reversed because _parse_hex_bytes is little-endian)."""
+    vendor = (address >> 16) & 0xFFFF
+    # Byte-reverse the 32-bit command: 0xD1030000 -> 0x000003D1
+    cmd = ((command & 0xFF) << 24) | ((command & 0xFF00) << 8) | \
+          ((command >> 8) & 0xFF00) | ((command >> 24) & 0xFF)
+    return encode_panasonic(address=vendor, command=cmd)
+
+@register('SIRC', carrier=40000)
+def encode_sirc(command, address=0):
+    """SIRC is Sony SIRC 12-bit (Flipper-IRDB naming)."""
+    return encode_sony_12(command, address)
+
+@register('SIRC15', carrier=40000)
+def encode_sirc15(command, address=0):
+    """SIRC15 is Sony SIRC 15-bit (Flipper-IRDB naming)."""
+    return encode_sony_15(command, address)
+
 @register('raw', carrier=38000)
 def encode_raw(pulses, spaces=None, frequency=38000):
     """Pass through raw pulse/space arrays unchanged. Returns (pulses, spaces)."""

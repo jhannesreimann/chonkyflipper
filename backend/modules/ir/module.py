@@ -152,14 +152,29 @@ class IRModule:
 
     def _transmit_pairs(self, pairs, label='raw'):
         """Write pulse-space file and transmit via ir-ctl. Uses tempfile to avoid PID races."""
-        lines = []
+        # The kernel gpio-ir-tx buffer is ~512 entries. Signals with repeated
+        # frames (e.g. Panasonic projector "On" = 695 entries) overflow it and
+        # fail with EINVAL. Truncate at the first inter-frame gap (>40ms space)
+        # to send only the first frame, which is sufficient for decoding.
+        MAX_ENTRIES = 480
+        truncated = []
+        entry_count = 0
         for p in pairs:
             dur = p['duration_us']
             if dur >= 1000000:
                 continue
             if p['type'] == 'pulse' and dur > 100000:
                 continue
-            lines.append(f"{p['type']} {dur}")
+            if p['type'] == 'space' and dur > 40000 and entry_count > 20:
+                break  # inter-frame repeat gap: stop after first frame
+            truncated.append(p)
+            entry_count += 1
+            if entry_count >= MAX_ENTRIES:
+                break
+
+        lines = []
+        for p in truncated:
+            lines.append(f"{p['type']} {p['duration_us']}")
 
         fd, tmpfile = tempfile.mkstemp(prefix='ir-tx-', suffix='.txt')
         try:
