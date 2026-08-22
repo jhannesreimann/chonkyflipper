@@ -1,6 +1,6 @@
 # ChonkyFlipper Pinout & Wiring Guide
 
-This document provides a highly visual, easy-to-follow pinout and wiring guide for the ChonkyFlipper mobile auditing rig. It utilizes a Pinout.xyz-style vertical table and a highly structured unified system schematic that mirrors the exact physical wiring of your build.
+This document is a pinout and wiring reference for the ChonkyFlipper mobile auditing rig. It uses a Pinout.xyz-style vertical table plus a unified system schematic that mirrors the physical wiring of the build.
 
 ---
 
@@ -41,7 +41,7 @@ This table mirrors the physical layout of the 40-pin header on your Raspberry Pi
 
 ## 2. Complete, Unified System Schematic (Mermaid.js)
 
-This unified schematic shows all hardware modules connected simultaneously in their exact, factually correct physical wiring:
+This unified schematic shows all hardware modules connected simultaneously with their actual physical wiring:
 * **Cooling Fan:** Connected directly to the Pi's GPIO pins (Pins 4, 32, 34). Bypasses the breadboard completely.
 * **PN532 (NFC/RFID):** Powered by the 3.3V Breadboard Rail, Ground to the Breadboard GND Rail, and TXD/RXD lines wired directly to Pi UART (GPIO 14/15). Module is in HSU mode (both switches OFF).
 * **CC1101 (Sub-GHz):** Powered by the 3.3V Breadboard Rail, Ground to the Breadboard GND Rail, and SPI/GD0/GD2 lines wired directly to the Pi.
@@ -121,7 +121,7 @@ graph LR
     PIN2 --> VCC5
     PIN6 --> GND
 
-    %% Cooling Fan DIRECT connections (Bypasses Breadboard!)
+    %% Cooling Fan direct connections (bypasses breadboard)
     PIN4 ===> Fan_VCC
     PIN34 ===> Fan_GND
     PIN32 ===> Fan_PWM
@@ -162,7 +162,7 @@ graph LR
     
     class RPi,PIN1,PIN2,PIN3,PIN4,PIN5,PIN6,PIN11,PIN13,PIN18,PIN19,PIN21,PIN22,PIN23,PIN24,PIN32,PIN34 rpi;
     class Breadboard,VCC3,VCC5,GND board;
-    class NFC,PN_VCC,PN_GND,PN_SDA,PN_SCL nfc;
+    class NFC,PN_VCC,PN_GND,PN_TXD,PN_RXD nfc;
     class SubGHz,CC_VCC,CC_GND,CC_SI,CC_SO,CC_SCLK,CC_CS,CC_GD0,CC_GD2 subghz;
     class IR_TX,TX_VCC,TX_GND,TX_DAT,IR_RX,RX_VCC,RX_GND,RX_OUT ir;
     class Cooling,Fan_VCC,Fan_GND,Fan_PWM fan;
@@ -241,7 +241,7 @@ The SunFounder PiPower 5 UPS HAT supplies system-wide 5V power over the stacking
 
 ## 5. Hardware Verification Commands
 
-Verify that your physical connections are perfectly wired by running these commands on the Pi:
+Verify your physical connections with these commands on the Pi:
 
 ```bash
 # 1. Verify NFC PN532 via libnfc (must show pn532_uart device)
