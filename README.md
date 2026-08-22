@@ -15,6 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge" />
   <img alt="Backend" src="https://img.shields.io/badge/backend-Flask%20%2B%20Gunicorn-000?style=for-the-badge" />
   <img alt="Frontend" src="https://img.shields.io/badge/frontend-Vite%20%2B%20Tailwind-f88828?style=for-the-badge" />
+  <img alt="version" src="https://img.shields.io/github/v/tag/jhannesreimann/chonkyflipper?label=version&style=flat-square" />
 </p>
 
 ---
