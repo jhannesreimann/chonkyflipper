@@ -2,7 +2,7 @@
 # Install with: pip3 install -r requirements.txt
 
 flask==2.3.3
-flask-cors==4.0.0
+flask-cors==6.0.0
 spidev>=3.6
 lgpio>=0.2.2  # CC1101 GDO0 timing plane (OOK capture/replay/jam)
 # pipower5: installed from /opt/pipower5/ by install.sh (not on PyPI)
