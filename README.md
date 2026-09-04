@@ -327,11 +327,25 @@ The Flask API is reachable by anyone connected to the `Chonky_Control` access po
 - **Per-worker state**: Gunicorn runs with 2 workers; in-memory state (module cache, sync task handles) is per-worker. A status poll may land on a different worker than the one that started a task. Would require an external store (Redis) or single-worker mode to fix.
 - **Dependency hygiene**: Flask and flask-cors should be bumped to current patched releases. Werkzeug is not pinned explicitly.
 
+## Enclosure
+
+The custom case was 3D printed to house the Pi, UPS HAT, and all wireless modules in a compact stack. 3D animation of the assembled case:
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/38f3da91-3b78-46ec-9916-a03bee0d449f" width="480" controls autoplay muted loop playsinline>
+    <a href="assets/case-3d-animation.mp4">
+      <img src="assets/case-3d-animation.gif" width="480" alt="3D animation of the custom case" />
+    </a>
+  </video>
+</p>
+
+*Full-quality video: [`assets/case-3d-animation.mp4`](assets/case-3d-animation.mp4) — GIF preview autoplays inline; the video above is hosted on GitHub's CDN for native playback.*
+
+Thanks to [IsThisTheCrustyCrab-was-taken](https://github.com/IsThisTheCrustyCrab-was-taken) for help with the case design and 3D printing.
+
 ## Development Status
 
-**Completed:** Backend API and core driver implementations (PN532 via libnfc, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing.
-
-**Pending:** 3D printed enclosure.
+**Completed:** Backend API and core driver implementations (PN532 via libnfc, CC1101 via SpiDev, IR TX/RX via Kernel LIRC), mobile frontend, installation automation, hardware assembly and testing, 3D printed enclosure (see above).
 
 ## Disclaimer
 
